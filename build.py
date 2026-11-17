@@ -9,6 +9,7 @@
 产物都在 output/：
     EZNess-Setup-<版本>.exe      安装包（按用户安装，可改目录，自带卸载）
     EZNess-<版本>-x64.zip        免安装压缩包，解压即用
+    EZNess-<版本>-SHA256.txt     两个产物的 SHA-256 校验值，随 Release 一起上传
 
 只会用 Python 标准库；electron-builder 装在 .packaging-tools/ 里，
 不往项目 node_modules 里塞构建工具。
@@ -325,6 +326,21 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def write_checksums(digests: list[tuple[Path, str]], version: str) -> Path:
+    """给发布产物生成校验文件；下载后可以 sha256sum -c 或 certutil 对一遍。"""
+    target = OUTPUT / f"{APP_NAME}-{version}-SHA256.txt"
+    lines = [
+        f"# {APP_NAME} {version} — SHA-256 checksums",
+        f"# Windows:  certutil -hashfile {digests[0][0].name} SHA256",
+        f"# Git Bash: sha256sum -c {target.name}",
+    ]
+    lines += [f"{digest}  {path.name}" for path, digest in digests]
+    # 固定用 LF：Git Bash 的 sha256sum -c 不会替我们去掉文件名后面的 \r。
+    with target.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write("\n".join(lines) + "\n")
+    return target
+
+
 def report() -> None:
     step("产物")
     version = app_version()
@@ -335,9 +351,14 @@ def report() -> None:
     missing = [path.name for path in artifacts if not path.exists()]
     if missing:
         raise BuildError(f"预期产物缺失：{', '.join(missing)}")
+    digests: list[tuple[Path, str]] = []
     for path in artifacts:
+        digest = sha256(path)
+        digests.append((path, digest))
         size = path.stat().st_size / (1024 * 1024)
-        say(f"   {path.name:<32} {size:7.1f} MB   sha256 {sha256(path)[:16]}…")
+        say(f"   {path.name:<32} {size:7.1f} MB   sha256 {digest[:16]}…")
+    checksum_file = write_checksums(digests, version)
+    say(f"   {checksum_file.name:<32} 完整校验值（随 Release 一起上传）")
     say("")
     say("   安装包：双击安装，装到当前用户目录，可自选路径，卸载不会删你的数据。")
     say("   压缩包：解压到任意文件夹；想连数据一起带走，就在 exe 旁边建 EznessData 文件夹。")

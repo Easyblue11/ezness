@@ -226,7 +226,8 @@ python build.py
 ```
 
 脚本会依次做隐私检查、前端构建、electron-builder 打包和产物审计，
-最后得到安装包与免安装压缩包。electron-builder 会被装进 `.packaging-tools/`，
+最后得到安装包、免安装压缩包和一份 `EZNess-<版本>-SHA256.txt` 校验文件。
+electron-builder 会被装进 `.packaging-tools/`，
 不会污染项目依赖。常用参数：
 
 ```bash

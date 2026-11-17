@@ -258,7 +258,8 @@ python build.py
 ```
 
 The script runs a privacy scan, builds the renderer, packages with electron-builder and audits
-the result, producing both the installer and the portable zip. electron-builder is installed
+the result, producing the installer, the portable zip and an `EZNess-<version>-SHA256.txt`
+checksum file. electron-builder is installed
 into `.packaging-tools/` so the project dependencies stay clean. Useful flags:
 
 ```bash
