@@ -1,0 +1,76 @@
+# EZNess 打包配置（Windows x64）。
+# 产物统一进 output/：安装包 EZNess-Setup-<版本>.exe、免安装压缩包 EZNess-<版本>-x64.zip。
+# 一键入口是根目录的 build.py。
+
+appId: com.easyblue.ezness
+productName: EZNess
+copyright: Copyright © 2026 EasyBlue
+
+directories:
+  output: output
+  buildResources: build
+
+# 不用 asar：OCR/ASR 的原生库和模型、以及子进程跑的两个 Python 脚本都要按真实路径读取，
+# 包成 asar 后这些路径全部失效。宁可牺牲一点体积和源码可见性，也要保证装完就能跑。
+asar: false
+
+# 原生模块都是 N-API 预编译包，Electron 45 直接能用；本机没有 VS 构建环境，
+# 让 electron-builder 去 rebuild 只会失败。
+npmRebuild: false
+
+# 只保留中文和英文的 Chromium 语言包，其余 locale 省掉。
+electronLanguages:
+  - zh-CN
+  - en-US
+
+files:
+  - package.json
+  - electron/**/*
+  - dist/**/*
+  - "!**/*.map"
+  - "!**/*.md"
+  # 根目录的法律文件要随包分发；上面那条会排掉所有 Markdown，所以单独加回来。
+  - THIRD_PARTY_NOTICES.md
+  - LICENSE
+  - "!**/__pycache__/**"
+  - "!**/*.pyc"
+  # 别的平台的原生二进制，打 Windows x64 包用不上，删掉省 230MB
+  - "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**"
+  - "!node_modules/onnxruntime-node/bin/napi-v6/linux/**"
+  - "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+  - "!node_modules/**/*.{md,map}"
+
+publish: null
+
+win:
+  icon: build/icon.ico
+  requestedExecutionLevel: asInvoker
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: zip
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  legalTrademarks: EasyBlue
+
+nsis:
+  artifactName: EZNess-Setup-${version}.${ext}
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: EZNess
+  uninstallDisplayName: EZNess
+  # 卸载永远不碰用户数据：数据根目录和 API Key 都在用户自己选的位置。
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  # 不做增量更新，就不需要 blockmap 文件。
+  differentialPackage: false
+  installerLanguages:
+    - zh_CN
+    - en_US
+  language: "2052"

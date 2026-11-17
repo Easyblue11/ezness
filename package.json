@@ -1,0 +1,53 @@
+{
+  "name": "ezness",
+  "version": "1.0.0",
+  "description": "EZNess — a local-first Windows AI workbench with local and SSH workspaces",
+  "main": "electron/main.js",
+  "author": "EasyBlue",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Easyblue11/ezness.git"
+  },
+  "homepage": "https://github.com/Easyblue11/ezness",
+  "bugs": {
+    "url": "https://github.com/Easyblue11/ezness/issues"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "dev:web": "vite",
+    "build": "tsc --noEmit && vite build",
+    "start": "node scripts/start.js",
+    "preview": "npm run build && node scripts/start.js",
+    "check:i18n": "node scripts/check-i18n.mjs"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.1.0",
+    "exceljs": "^4.4.0",
+    "highlight.js": "^11.12.0",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "onnxruntime-node": "^1.31.1",
+    "paddleocr": "^1.2.0",
+    "pdfjs-dist": "^6.4.299",
+    "pdfmarkdown-ppocrv5-models": "^1.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "sharp": "^0.34.4",
+    "sherpa-onnx-node": "^2.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.1.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}
