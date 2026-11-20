@@ -18,6 +18,12 @@ export interface CompressionUi {
   error: string | null;
   /** Why compression cannot start right now (streaming, too few messages…). */
   disabledReason: string | null;
+  /**
+   * Task view: compression also folds the agent's own history, which the
+   * model reads on the next turn. That part cannot be undone one message at a
+   * time, so the explanation must not promise it can.
+   */
+  agentBacked?: boolean;
   /** Changes when the conversation changes, so the notice resets. */
   sessionKey: string;
   onCompress: () => void;
@@ -178,7 +184,9 @@ export function ContextRing({ used, limit, compression }: Props) {
             <span style={{ width: `${Math.min(100, percent)}%` }} />
           </div>
           <p className="ctx-pop__desc">
-            把最近 {compression.keepTurns} 轮以前的对话合并成一份摘要。原文会归档，随时可以撤销。
+            {compression.agentBacked
+              ? `把模型实际使用的早期上下文折叠成摘要，并收起最近 ${compression.keepTurns} 轮以前的显示记录。模型上下文压缩后不能逐条恢复，显示记录仍可撤销。`
+              : `把最近 ${compression.keepTurns} 轮以前的对话合并成一份摘要。原文会归档，随时可以撤销。`}
           </p>
           {compression.busy ? (
             <div className="ctx-pop__busy">

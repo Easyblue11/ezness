@@ -124,6 +124,13 @@ interface WorkspaceChat extends Session {
    * one are new since the last drag and stay on top, newest first.
    */
   order?: number;
+  /**
+   * Prompt size predicted right after a manual compaction, in provider terms.
+   * The last usage record still describes the pre-compaction request, so the
+   * ring uses this until a newer request reports the real number — including
+   * after a restart.
+   */
+  contextAfter?: { tokens: number; at: number };
 }
 
 interface Props {
@@ -310,6 +317,28 @@ export function WorkspacePage({
   const [compressionError, setCompressionError] = useState<{
     sessionId: string;
     message: string;
+  } | null>(null);
+  /**
+   * Tokens the agent history just shed. The ring reads the provider's last
+   * prompt count, which still describes the pre-compaction request until the
+   * next turn, so subtract this meanwhile.
+   */
+  const [agentCompactSaving, setAgentCompactSaving] = useState<{
+    sessionId: string;
+    saving: number;
+    at: number;
+  } | null>(null);
+  /**
+   * Live estimate of the task's agent history. Provider usage wins while it is
+   * current; after a manual compaction (which writes the file without making a
+   * request) the old count is far above this estimate, and the ring must not
+   * keep showing it — including after a restart.
+   */
+  const [agentContext, setAgentContext] = useState<{
+    sessionId: string;
+    tokens: number;
+    at: number;
+    digested: boolean;
   } | null>(null);
   const compressionToken = useRef<CompressionToken | null>(null);
   /** Mirror of streamsRef so renders see which tasks are still streaming. */
@@ -541,10 +570,48 @@ export function WorkspacePage({
    * a text estimate here is off by an order of magnitude. The ledger records
    * the provider's own prompt count for every model request — use that.
    */
+  useEffect(() => {
+    if (!activeChatId) {
+      setAgentContext(null);
+      return;
+    }
+    let live = true;
+    const request = window.ezness?.agentContext?.(activeChatId);
+    if (request) {
+      void request.then((info) => {
+        if (!live) return;
+        setAgentContext(info ? { sessionId: activeChatId, ...info } : null);
+      });
+    }
+    return () => {
+      live = false;
+    };
+  }, [activeChatId]);
+
   const activeContextUsed = useMemo(() => {
     const reported = contextTokensFromUsage(usage, activeChatId, 'workspace');
-    return reported ? reported.used : conversationTokens(activeMessages);
-  }, [usage, activeChatId, activeMessages]);
+    const live =
+      agentContext && agentContext.sessionId === activeChatId ? agentContext : null;
+    const chat = chats.find((item) => item.id === activeChatId);
+    const after = chat?.contextAfter;
+    // A prediction made at compression time beats both the stale provider
+    // count and the raw local estimate; the next real request replaces it.
+    if (after && (!reported || reported.at < after.at)) return after.tokens;
+    if (!reported) return live?.tokens ?? conversationTokens(activeMessages);
+    const pending =
+      agentCompactSaving &&
+      agentCompactSaving.sessionId === activeChatId &&
+      reported.at < agentCompactSaving.at
+        ? Math.min(agentCompactSaving.saving, reported.used)
+        : 0;
+    if (pending > 0) return Math.max(0, reported.used - pending);
+    // A compacted session whose estimate is far below the reported prompt can
+    // only mean the file was rewritten after that request (manual compaction,
+    // possibly before a restart). The estimate is the honest number until the
+    // next request reports the real one.
+    if (live?.digested && reported.used > live.tokens * 1.6) return live.tokens;
+    return reported.used;
+  }, [usage, activeChatId, activeMessages, agentCompactSaving, agentContext, chats]);
 
   /** Every request this task spent, for the header stats panel. */
   const activeSessionUsage = useMemo(
@@ -2925,10 +2992,11 @@ export function WorkspacePage({
   }
 
   /**
-   * Manual compression of the task's display transcript. The agent keeps its
-   * own session file (electron/agent/loop.js) and compacts that automatically;
-   * this card only folds what the page shows, which is why tasks have no
-   * automatic trigger here.
+   * Manual compression of a task. Two layers move together: the page's display
+   * transcript folds into a summary card the user can undo, and the agent's own
+   * session file — the history the model actually reads — is compacted by the
+   * main process. The second part cannot be undone one message at a time, so it
+   * runs only after the display phase finishes and the user has not cancelled.
    */
   async function handleCompress(sessionId: string) {
     if (compressingId) return;
@@ -2947,10 +3015,6 @@ export function WorkspacePage({
 
     const all = messages.filter((message) => message.sessionId === sessionId);
     const selected = selectCompressible(all, work.compressionKeepTurns);
-    if (selected.length < 2) {
-      setCompressionError({ sessionId, message: '更早的消息太少，暂时不需要压缩。' });
-      return;
-    }
 
     const token: CompressionToken = { canceled: false, abort: null };
     compressionToken.current = token;
@@ -2958,45 +3022,128 @@ export function WorkspacePage({
     setCompressionError(null);
     setCompressionStep({ sessionId, step: 1, total: 1, phase: 'map' });
 
+    let agentCompacted = false;
     try {
-      const result = await compressConversation({
-        target,
-        messages: selected,
-        token,
-        onProgress: (progress) => setCompressionStep({ sessionId, ...progress }),
-      });
-      if (token.canceled) return;
+      // 1) Fold the visible transcript first: it is the slow, cancellable
+      // phase. Cancelling here must stop before the agent file — the part the
+      // model actually reads — is rewritten.
+      let displayError: Error | null = null;
+      if (selected.length >= 2) {
+        try {
+          const result = await compressConversation({
+            target,
+            messages: selected,
+            token,
+            onProgress: (progress) => setCompressionStep({ sessionId, ...progress }),
+          });
+          if (token.canceled) return;
 
-      const summaryId = uid();
-      const summary: CompressionInfo = {
-        count: result.count,
-        tokensBefore: result.tokensBefore,
-        tokensAfter: estimateTokens(result.summary),
-        messageIds: selected.map((message) => message.id),
-      };
-      const card: Message = {
-        id: summaryId,
+          const summaryId = uid();
+          const summary: CompressionInfo = {
+            count: result.count,
+            tokensBefore: result.tokensBefore,
+            tokensAfter: estimateTokens(result.summary),
+            messageIds: selected.map((message) => message.id),
+          };
+          const card: Message = {
+            id: summaryId,
+            sessionId,
+            role: 'assistant',
+            content: result.summary,
+            summary,
+            createdAt: Date.now(),
+          };
+
+          setMessages((prev) => {
+            const at = prev.findIndex((message) => message.id === selected[0].id);
+            const ids = new Set(selected.map((message) => message.id));
+            const patched = prev.map((message) =>
+              ids.has(message.id) ? { ...message, hiddenBy: summaryId } : message,
+            );
+            if (at === -1) return [...patched, card];
+            return [...patched.slice(0, at), card, ...patched.slice(at)];
+          });
+        } catch (error) {
+          if (token.canceled) return;
+          displayError = error instanceof Error ? error : new Error(String(error));
+        }
+      }
+
+      // 2) Fold the task's own agent history. Without this the next request
+      // still carries the same enormous prompt; the card above only changes
+      // what this page shows.
+      const agent = await window.ezness?.agentCompact?.({
         sessionId,
-        role: 'assistant',
-        content: result.summary,
-        summary,
-        createdAt: Date.now(),
-      };
-
-      setMessages((prev) => {
-        const at = prev.findIndex((message) => message.id === selected[0].id);
-        const ids = new Set(selected.map((message) => message.id));
-        const patched = prev.map((message) =>
-          ids.has(message.id) ? { ...message, hiddenBy: summaryId } : message,
-        );
-        if (at === -1) return [...patched, card];
-        return [...patched.slice(0, at), card, ...patched.slice(at)];
+        contextLimit: work.contextLimit,
       });
-    } catch (error) {
-      if (!token.canceled) {
+      if (!agent) throw new Error('压缩只在桌面端可用。');
+      if (agent.ok === false) throw new Error(agent.error || '压缩模型上下文失败。');
+      if (agent.compacted) {
+        agentCompacted = true;
+        const saving = Math.max(0, (agent.before ?? 0) - (agent.after ?? 0));
+        if (saving > 0) {
+          setAgentCompactSaving({ sessionId, saving, at: Date.now() });
+        }
+        flash(
+          `已压缩模型上下文（${Math.round((agent.before ?? 0) / 1000)}K → ${Math.round(
+            (agent.after ?? 0) / 1000,
+          )}K 词元）`,
+        );
+        // The provider count from the last request describes the old, larger
+        // prompt. Predict the next one with the same estimate-to-provider
+        // ratio, and keep it with the task so a restart does not fall back to
+        // the stale number.
+        const reported = contextTokensFromUsage(usage, sessionId, 'workspace');
+        const before = agent.before ?? 0;
+        const after = agent.after ?? 0;
+        const ratio =
+          reported && before > 0
+            ? Math.min(4, Math.max(0.5, reported.used / before))
+            : 1;
+        setChats((prev) =>
+          prev.map((item) =>
+            item.id === sessionId
+              ? {
+                  ...item,
+                  contextAfter: {
+                    tokens: Math.round(after * ratio),
+                    at: Date.now(),
+                  },
+                }
+              : item,
+          ),
+        );
+      }
+      // Refresh the live size even when the fold was a no-op: the ring may
+      // still be showing a provider count from before an earlier compaction.
+      const refreshed = window.ezness?.agentContext?.(sessionId);
+      if (refreshed) {
+        void refreshed.then((info) => {
+          if (info) setAgentContext({ sessionId, ...info });
+        });
+      }
+
+      if (displayError) {
         setCompressionError({
           sessionId,
-          message: error instanceof Error ? error.message : String(error),
+          message: agentCompacted
+            ? `模型上下文已压缩，但显示摘要生成失败：${displayError.message}`
+            : `显示摘要生成失败：${displayError.message}`,
+        });
+      } else if (selected.length < 2 && !agentCompacted) {
+        setCompressionError({
+          sessionId,
+          message: `模型上下文已经压缩过，当前约 ${Math.round(
+            (agent.before ?? 0) / 1000,
+          )}K 词元，没有新的更早内容可折叠。`,
+        });
+      }
+    } catch (error) {
+      if (!token.canceled) {
+        const message = error instanceof Error ? error.message : String(error);
+        setCompressionError({
+          sessionId,
+          message: agentCompacted ? `模型上下文已压缩，但后续步骤失败：${message}` : message,
         });
       }
     } finally {
@@ -3489,11 +3636,10 @@ export function WorkspacePage({
     if (compressionBusy) return null;
     if (streamingId !== null) return '等当前任务结束后再压缩。';
     if (!chatTarget(activeChat)) return '当前没有可用的模型。';
-    const older = selectCompressible(
-      messages.filter((message) => message.sessionId === activeChatId),
-      work.compressionKeepTurns,
-    );
-    return older.length < 2 ? '更早的消息太少，暂时不需要压缩。' : null;
+    // The visible transcript may be short while the agent's own history is
+    // long, so the page cannot decide "nothing to compress" from its messages.
+    // The handler compacts the agent file and reports when both are empty.
+    return null;
   })();
 
   // 待确认的条目读过后仍然是待确认，红点不能因为点开过就消失。
@@ -4070,6 +4216,7 @@ export function WorkspacePage({
           compressionProgress={compressionProgressLabel}
           compressionError={compressionErrorText}
           compressionDisabledReason={compressionDisabledReason}
+          contextMode="task"
           onCompress={() => activeChat && void handleCompress(activeChat.id)}
           onCancelCompress={handleCancelCompression}
           onUndoCompression={(summaryId) =>

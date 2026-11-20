@@ -275,6 +275,37 @@ function repair(messages) {
   return out;
 }
 
+const DIGEST_HEADER = '[更早的对话已压缩为摘要，下面是此前做过的事]';
+
+/** True for the summary message compact() puts at the front of a session. */
+function isDigest(message) {
+  return (
+    message?.role === 'user' &&
+    typeof message.content === 'string' &&
+    message.content.startsWith(DIGEST_HEADER)
+  );
+}
+
+/**
+ * Build the new leading summary. An existing digest is carried forward
+ * verbatim and only genuinely new turns are appended — otherwise every
+ * further compaction would digest the previous digest, nesting the header and
+ * throwing away everything it had recorded.
+ */
+function mergeDigest(previous, older) {
+  const body = digest(older);
+  // `split` on the header rather than replaceAll: an older digest may contain
+  // nested copies from before this guard existed, and they read as noise.
+  const prior = previous
+    ? previous.content.slice(DIGEST_HEADER.length).split(DIGEST_HEADER).join('').trim()
+    : '';
+  const merged = prior ? `${DIGEST_HEADER}\n${prior}\n${body}` : `${DIGEST_HEADER}\n${body}`;
+  if (merged.length <= DIGEST_LIMIT) return merged;
+  // Keep the newest lines: they describe the work closest to the live tail.
+  const tail = merged.slice(merged.length - (DIGEST_LIMIT - DIGEST_HEADER.length - 24));
+  return `${DIGEST_HEADER}\n…（更早的摘要已省略）\n${tail}`;
+}
+
 /** Human-readable digest of turns that are about to leave the live context. */
 function digest(messages) {
   const lines = [];
@@ -356,9 +387,17 @@ function compact(messages, options = {}) {
   }
   if (split <= 0) return { messages, compacted: false, before, after: before };
 
-  const older = messages.slice(0, split);
+  const previous = isDigest(messages[0]) ? messages[0] : null;
+  // Everything before `split`, minus the existing digest: only new turns are
+  // summarised, so repeated manual compactions cannot fold a summary into
+  // itself.
+  const older = messages.slice(previous ? 1 : 0, split);
+  if (older.length === 0) {
+    // The tail already fits the keep budget; there is nothing new to fold.
+    return { messages, compacted: false, before, after: before };
+  }
   const recent = messages.slice(split);
-  const summary = `[更早的对话已压缩为摘要，下面是此前做过的事]\n${digest(older)}`;
+  const summary = mergeDigest(previous, older);
   const next = [{ role: 'user', content: summary }, ...recent];
   return { messages: next, compacted: true, before, after: sizeOf(next) };
 }
@@ -416,6 +455,14 @@ class AgentRun {
     const window = Math.trunc(Number(contextLimit));
     this.contextLimit =
       Number.isFinite(window) && window >= 1000 ? window : DEFAULT_CONTEXT_LIMIT;
+    /**
+     * Provider prompt tokens divided by our own estimate. JSON tool results
+     * and punctuation are denser than the renderer's four-characters-per-token
+     * rule, so on a large window the estimate can sit a quarter below what the
+     * provider actually charges; compaction would then never fire while the
+     * ring already looks full. Calibrated after every request.
+     */
+    this.tokenScale = null;
     // Settings may say -1 (unlimited). Anything unusable keeps the old default.
     const steps = Math.trunc(Number(maxSteps));
     this.maxSteps =
@@ -552,13 +599,39 @@ class AgentRun {
   }
 
   /**
+   * Compare the provider's prompt count with our text estimate and keep a
+   * smoothed ratio. One unusual count (cached token accounting, a gateway
+   * quirk) must not swing the budget, hence the 60/40 blend and the clamp.
+   */
+  calibrateUsage(usage, messages, system, tools) {
+    if (!usage?.reported || !(usage.inputTokens > 0)) return;
+    const estimated =
+      estimateTokens(system) +
+      estimateTokens(JSON.stringify(tools)) +
+      sizeOf(messages.slice(1));
+    if (estimated <= 0) return;
+    const ratio = usage.inputTokens / estimated;
+    if (!Number.isFinite(ratio) || ratio <= 0) return;
+    const clamped = Math.min(4, Math.max(0.5, ratio));
+    this.tokenScale =
+      this.tokenScale === null ? clamped : this.tokenScale * 0.6 + clamped * 0.4;
+  }
+
+  /**
    * Fold older turns when the next request would cross the budget. Called
    * before every model request, so a single long tool-heavy turn is capped too
    * — not only the start of a new user turn.
    */
   async compactNow(messages, system) {
     const budget = this.contextBudget(system);
-    const folded = compact(messages.slice(1), budget);
+    // compact() measures with sizeOf(); scale its budgets into that same unit
+    // so "85% of the window" means what the provider reports, not what the
+    // rough estimate wishes it were.
+    const scale = this.tokenScale ?? 1;
+    const folded = compact(messages.slice(1), {
+      at: Math.round(budget.at / scale),
+      keep: Math.max(1000, Math.round(budget.keep / scale)),
+    });
     if (!folded.compacted) return messages;
     this.send({
       type: 'compact',
@@ -687,6 +760,7 @@ class AgentRun {
         }
       }
       const { text, toolCalls, finishReason } = result;
+      this.calibrateUsage(result.usage, messages, system, tools);
       this.onUsage?.({ feature: 'workspace', usage: result.usage });
 
       if (text.trim() || toolCalls.length > 0) {
@@ -1192,6 +1266,8 @@ module.exports = {
   runPool,
   compact,
   digest,
+  isDigest,
+  sizeOf,
   repair,
   callSucceeded,
 };

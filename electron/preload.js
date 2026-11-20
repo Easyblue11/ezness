@@ -79,6 +79,8 @@ contextBridge.exposeInMainWorld('ezness', {
   agentActive: () => ipcRenderer.invoke('agent:active'),
   agentResolve: (request) => ipcRenderer.invoke('agent:resolve', request),
   agentDeleteSession: (sessionId) => ipcRenderer.invoke('agent:delete-session', sessionId),
+  agentCompact: (request) => ipcRenderer.invoke('agent:compact', request),
+  agentContext: (sessionId) => ipcRenderer.invoke('agent:context', sessionId),
   agentCapabilities: () => ipcRenderer.invoke('agent:capabilities'),
   agentCustomTools: () => ipcRenderer.invoke('agent:custom-tools'),
   agentRuntimes: () => ipcRenderer.invoke('agent:runtimes'),

@@ -75,6 +75,29 @@ class AgentSession {
     await fs.rename(temp, this.file);
   }
 
+  /**
+   * Keep one copy of the session as it was before its first manual rewrite.
+   * Compaction is irreversible; without this a bad manual fold has no way
+   * back. An existing backup is never replaced, so it keeps the oldest —
+   * and therefore most complete — version.
+   */
+  async backup() {
+    const target = `${this.file}.bak`;
+    try {
+      await fs.access(target);
+      return target;
+    } catch {
+      /* no backup yet */
+    }
+    try {
+      await fs.copyFile(this.file, target);
+      return target;
+    } catch {
+      /* nothing to back up */
+      return null;
+    }
+  }
+
   static async remove(dir, sessionId) {
     const file = path.join(dir, `${safeId(sessionId)}.jsonl`);
     try {

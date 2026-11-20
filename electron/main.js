@@ -695,7 +695,7 @@ ipcMain.handle('usage:export', async (_event, payload) => {
    through `agent:resolve` from the renderer.
    ------------------------------------------------------------------ */
 
-const { AgentRun } = require('./agent/loop');
+const { AgentRun, compact, isDigest, sizeOf } = require('./agent/loop');
 const { normalizeAskLevel, DEFAULT_ASK_LEVEL } = require('./agent/policy');
 const { AgentSession } = require('./agent/session');
 const { describeCapabilities, builtinCategorySummary, CATEGORY_ORDER } = require('./agent/capabilities');
@@ -1881,6 +1881,66 @@ ipcMain.handle('agent:abort', (_event, requestId) => {
 ipcMain.handle('agent:delete-session', async (_event, sessionId) => {
   await AgentSession.remove(agentSessionDir(), sessionId);
   return true;
+});
+
+/**
+ * Fold a task's own agent history now. The renderer's summary card only
+ * changes what the page shows; the model reads this JSONL file, so a manual
+ * "压缩上下文" that does not touch it leaves the real prompt unchanged.
+ */
+ipcMain.handle('agent:compact', async (_event, request) => {
+  const sessionId = String(request?.sessionId ?? '');
+  if (!sessionId) return { ok: false, error: '缺少任务 id。' };
+  for (const snapshot of agentSnapshots.values()) {
+    if (snapshot.sessionId === sessionId && snapshot.finishedAt === null) {
+      return { ok: false, error: '这个任务正在运行，结束后再压缩。' };
+    }
+  }
+  const work = await readWorkSettings();
+  const requested = Math.trunc(Number(request?.contextLimit ?? work.contextLimit));
+  const limit = Number.isFinite(requested) && requested >= 1000
+    ? Math.min(requested, 8_000_000)
+    : 128000;
+  const session = new AgentSession({ dir: agentSessionDir(), sessionId });
+  const messages = await session.load();
+  if (messages.length === 0) {
+    return { ok: true, compacted: false, before: 0, after: 0 };
+  }
+  const folded = compact(messages, {
+    at: Math.round(limit * 0.85),
+    keep: Math.max(1000, Math.round(limit * 0.3)),
+    force: true,
+  });
+  if (!folded.compacted) {
+    return { ok: true, compacted: false, before: folded.before, after: folded.before };
+  }
+  // Manual compaction rewrites the file the model reads and cannot be undone
+  // message by message, so keep the pre-compaction version once per session.
+  await session.backup();
+  await session.save(folded.messages);
+  return { ok: true, compacted: true, before: folded.before, after: folded.after };
+});
+
+/**
+ * Current size of a task's agent history. The ring normally trusts the last
+ * provider-reported prompt count, but a manual compaction changes the file
+ * without making a request — after a restart that old count is stale and the
+ * ring would still show the pre-compaction fill. This lets the renderer notice
+ * the mismatch and fall back to the live estimate.
+ */
+ipcMain.handle('agent:context', async (_event, sessionId) => {
+  const id = String(sessionId ?? '');
+  if (!id) return null;
+  const session = new AgentSession({ dir: agentSessionDir(), sessionId: id });
+  const messages = await session.load();
+  if (messages.length === 0) return null;
+  let at = Date.now();
+  try {
+    at = (await fs.stat(session.file)).mtimeMs;
+  } catch {
+    /* fall back to now */
+  }
+  return { tokens: sizeOf(messages), at, digested: isDigest(messages[0]) };
 });
 
 ipcMain.handle('agent:capabilities', () => describeCapabilities(agentSessionDir()));

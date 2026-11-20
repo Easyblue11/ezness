@@ -359,6 +359,29 @@ Yes. The project is MIT-licensed; keep the copyright notice.
 The full path is shown in Settings. Copying that folder is a complete backup; point the app
 back at it on another machine.
 
+## Maintenance log
+
+### 2026-11-20
+
+- Fixed context compression in task workspaces: it used to fold only the visible transcript,
+  leaving the agent history the model actually reads untouched. It now compacts that agent
+  session too, so the next request is genuinely smaller; the ring subtracts the saving until
+  that request lands.
+- Agent auto-compaction now calibrates its threshold against provider-reported prompt tokens,
+  instead of a rough estimate that could stay below the limit while the ring already looked full.
+- Compressing again no longer digests the previous summary into a new one: the existing summary
+  is kept and only genuinely new turns are appended; with nothing new to fold it reports that and
+  leaves the file alone. The first manual compression also keeps a `.jsonl.bak` copy.
+- After compression the context ring no longer keeps showing the pre-compression fill: the
+  predicted new size is stored with the task and survives a restart, and when no stored
+  prediction exists the ring falls back to the live agent-history estimate.
+- `build.py` now writes `EZNess-<version>-SHA256.txt` after auditing the artifacts.
+
+### 2026-11-17
+
+- First public 1.0.0 release: bilingual READMEs, interface language switching, English-first
+  installed builds, SSH remote workspaces and third-party license notices.
+
 ---
 
 <div align="center">

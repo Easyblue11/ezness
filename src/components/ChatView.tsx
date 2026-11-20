@@ -162,6 +162,11 @@ interface Props {
   onCancelCompress?: () => void;
   /** Restore the messages a summary card replaced. */
   onUndoCompression?: (summaryId: string) => void;
+  /**
+   * `task` compression also folds the agent's own history, which cannot be
+   * restored one message at a time; the popover says so.
+   */
+  contextMode?: 'chat' | 'task';
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -1003,6 +1008,7 @@ export function ChatView({
   onCompress,
   onCancelCompress,
   onUndoCompression,
+  contextMode = 'chat',
 }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -1873,6 +1879,7 @@ export function ChatView({
                 error: compressionError,
                 disabledReason: compressionDisabledReason,
                 sessionKey: session?.id ?? 'none',
+                agentBacked: contextMode === 'task',
                 onCompress,
                 onCancel: onCancelCompress ?? (() => undefined),
               }

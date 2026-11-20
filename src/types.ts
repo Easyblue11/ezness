@@ -2284,6 +2284,32 @@ declare global {
         };
       }) => Promise<boolean>;
       agentDeleteSession: (sessionId: string) => Promise<boolean>;
+      /**
+       * Fold the task's agent history — the file the model actually reads on
+       * the next turn. The renderer summary card alone does not shrink the
+       * prompt, so task compression calls this as well.
+       */
+      agentCompact: (request: {
+        sessionId: string;
+        /** 工作设置 → 最大上下文, in tokens. */
+        contextLimit?: number;
+      }) => Promise<{
+        ok: boolean;
+        compacted?: boolean;
+        before?: number;
+        after?: number;
+        error?: string;
+      }>;
+      /**
+       * Live size of the task's agent history. Used when a manual compaction
+       * happened after the last request, so the provider's last prompt count
+       * no longer describes the file the model will read next.
+       */
+      agentContext: (sessionId: string) => Promise<{
+        tokens: number;
+        at: number;
+        digested: boolean;
+      } | null>;
       agentCapabilities: () => Promise<AgentCapabilities>;
       agentCustomTools: () => Promise<CustomToolDefinition[]>;
       agentRuntimes: () => Promise<AgentRuntimeInfo[]>;
