@@ -59,6 +59,7 @@ import {
 import { WorkspaceFiles } from './WorkspaceFiles';
 import { WorkspaceVisualize } from './WorkspaceVisualize';
 import {
+  AlertIcon,
   CheckIcon,
   ChevronRightIcon,
   DirectorIcon,
@@ -98,6 +99,40 @@ interface Workspace {
   /** `agent-editor` binds the conversation to one Agent definition. */
   agentId?: string;
   agentName?: string;
+}
+
+/** Last reachability result for one real workspace (not the virtual editors). */
+interface SpaceHealth {
+  ok: boolean;
+  /** missing | not-dir | unreachable | error — drives the wording. */
+  reason?: string;
+  error?: string;
+  at: number;
+}
+
+/** Full reason for the sidebar tooltip. */
+function spaceHealthDetail(workspace: Workspace, health: SpaceHealth): string {
+  const target =
+    workspace.kind === 'remote' && workspace.remote
+      ? `${workspace.remote.username}@${workspace.remote.host}:${workspace.remote.root}`
+      : workspace.path;
+  const suffix = health.error ? `\n${health.error}` : '';
+  if (health.reason === 'missing') return `路径不存在：${target}${suffix}`;
+  if (health.reason === 'not-dir') return `路径不是文件夹：${target}${suffix}`;
+  if (health.reason === 'unreachable') return `远程连接失败：${target}${suffix}`;
+  return `无法访问：${target}${suffix}`;
+}
+
+/** One short line above the task list when the open workspace is unhealthy. */
+function spaceHealthSummary(workspace: Workspace, health: SpaceHealth): string {
+  if (health.reason === 'missing') {
+    return workspace.kind === 'remote'
+      ? '远程根目录不存在，任务无法读写文件'
+      : '本地路径不存在，任务无法读写文件';
+  }
+  if (health.reason === 'not-dir') return '这个路径不是文件夹';
+  if (health.reason === 'unreachable') return '远程工作空间连不上，检查网络或登录凭据';
+  return '工作空间当前无法访问';
 }
 
 interface WorkspaceChat extends Session {
@@ -186,6 +221,9 @@ const DEFAULT_CHAT_KB: KbChatSettings = {
 };
 
 const EMPTY_PROMPT_VARIABLES: Record<string, string> = {};
+
+/** Stable empty search index for the no-query case. */
+const NO_MESSAGE_TEXTS: Map<string, string[]> = new Map();
 
 /** One in-flight agent run; each task may own at most one at a time. */
 interface StreamEntry {
@@ -291,6 +329,10 @@ export function WorkspacePage({
   agentEditorFocus,
 }: Props) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  /** Reachability per real workspace: missing local path or unreachable host. */
+  const [spaceHealth, setSpaceHealth] = useState<Record<string, SpaceHealth>>({});
+  /** Workspaces with a probe in flight, so the interval never stacks them. */
+  const probingSpaces = useRef<Set<string>>(new Set());
   const [panel, setPanel] = useState<WorkspacePanel | null>('work');
   const [spaceQuery, setSpaceQuery] = useState('');
   const [chatQuery, setChatQuery] = useState('');
@@ -457,6 +499,7 @@ export function WorkspacePage({
   const toolProgressRef = useRef(new Map<string, number>());
 
   const activeWorkspace = workspaces.find((item) => item.id === activeWorkspaceId) ?? null;
+  const activeHealth = activeWorkspace ? spaceHealth[activeWorkspace.id] : undefined;
   /** 总监视察任务时工具调用只带 taskId，这里补上任务本来的名字。 */
   const taskTitles = useMemo(() => {
     const map: Record<string, string> = {};
@@ -484,7 +527,12 @@ export function WorkspacePage({
   const chatKeyword = chatQuery.trim().toLowerCase();
   // Search covers the transcript, not just the title: a task whose messages
   // mention the words is listed too, with a snippet showing where.
-  const messageTexts = useMemo(() => textByConversation(messages), [messages]);
+  // Building this index walks every message; `messages` changes on every
+  // streamed token. Only pay for it while the task search box has a query.
+  const messageTexts = useMemo(
+    () => (chatKeyword ? textByConversation(messages) : NO_MESSAGE_TEXTS),
+    [messages, chatKeyword],
+  );
   const chatSnippets = useMemo(() => {
     const map = new Map<string, string>();
     if (!chatKeyword) return map;
@@ -781,6 +829,62 @@ export function WorkspacePage({
       cancelled = true;
     };
   }, []);
+
+  /**
+   * Keep every real workspace's reachability current. A local folder is gone,
+   * or a remote host cannot be reached, and the sidebar marks it instead of
+   * letting the next task fail with a raw tool error. Probes run on load, when
+   * the window regains focus, and once a minute while visible — a live remote
+   * connection answers with a single stat, so this stays cheap.
+   */
+  useEffect(() => {
+    if (!restored) return;
+    const targets = workspaces.filter(
+      (space) => !space.kind || space.kind === 'folder' || space.kind === 'remote',
+    );
+    if (targets.length === 0) return;
+
+    let cancelled = false;
+    const probe = (space: Workspace) => {
+      if (probingSpaces.current.has(space.id)) return;
+      const request = window.ezness?.workspaceProbe?.({
+        id: space.id,
+        kind: space.kind === 'remote' ? 'remote' : 'folder',
+        path: space.path,
+        remote: space.remote,
+      });
+      if (!request) return;
+      probingSpaces.current.add(space.id);
+      void request
+        .then((result) => {
+          if (cancelled || !result) return;
+          setSpaceHealth((prev) => ({
+            ...prev,
+            [space.id]: {
+              ok: result.ok,
+              reason: result.reason,
+              error: result.error,
+              at: Date.now(),
+            },
+          }));
+        })
+        .finally(() => {
+          probingSpaces.current.delete(space.id);
+        });
+    };
+
+    const run = () => targets.forEach(probe);
+    run();
+    const timer = window.setInterval(() => {
+      if (!document.hidden) run();
+    }, 60_000);
+    window.addEventListener('focus', run);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', run);
+    };
+  }, [restored, workspaces]);
 
   /** 总监对话的 id；汇报会作为消息写进这条对话，不再是单独的收件箱界面。 */
   const directorChatId = useMemo(() => {
@@ -3758,6 +3862,8 @@ export function WorkspacePage({
             const renamingThis = renaming?.kind === 'space' && renaming.id === workspace.id;
             const editor =
               workspace.kind === 'tool-editor' || workspace.kind === 'agent-editor';
+            const health = spaceHealth[workspace.id];
+            const offline = Boolean(health && !health.ok);
             return (
               <div
                 key={workspace.id}
@@ -3765,6 +3871,7 @@ export function WorkspacePage({
                   'ws-space',
                   workspace.id === activeWorkspaceId ? 'is-active' : '',
                   editor ? 'ws-space--editor' : '',
+                  offline ? 'is-offline' : '',
                   selectedSpaceIds?.has(workspace.id) ? 'is-selected' : '',
                   dragSpaceId === workspace.id ? 'is-dragging' : '',
                   dropSpaceAt?.id === workspace.id
@@ -3775,7 +3882,13 @@ export function WorkspacePage({
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                title={editor ? workspacePathLabel(workspace) : workspace.path}
+                title={
+                  offline && health
+                    ? spaceHealthDetail(workspace, health)
+                    : editor
+                      ? workspacePathLabel(workspace)
+                      : workspace.path
+                }
                 role={selectingSpaces ? 'checkbox' : 'button'}
                 aria-checked={selectingSpaces ? selectedSpaceIds?.has(workspace.id) : undefined}
                 aria-selected={selectingSpaces ? undefined : workspace.id === activeWorkspaceId}
@@ -3830,9 +3943,21 @@ export function WorkspacePage({
                 )}
                 <ActivityDot status={spaceActivity.get(workspace.id) ?? null} />
                 <span className="ws-space__text">
-                  {renamingThis ? renameInput('space') : (
-                    <span className="ws-space__name">{workspace.name}</span>
-                  )}
+                  <span className="ws-space__title">
+                    {renamingThis ? renameInput('space') : (
+                      <span className="ws-space__name">{workspace.name}</span>
+                    )}
+                    {!renamingThis && offline && health && (
+                      <span
+                        className="ws-space__warn"
+                        role="img"
+                        title={spaceHealthDetail(workspace, health)}
+                        aria-label={spaceHealthDetail(workspace, health)}
+                      >
+                        <AlertIcon size={11} />
+                      </span>
+                    )}
+                  </span>
                   <span className="ws-space__path">
                     {editor ? workspacePathLabel(workspace) : workspace.path}
                   </span>
@@ -3914,6 +4039,16 @@ export function WorkspacePage({
             >
               {workspacePathLabel(activeWorkspace)}
             </button>
+          )}
+          {activeWorkspace && activeHealth && !activeHealth.ok && (
+            <div
+              className="ws__health"
+              role="status"
+              title={spaceHealthDetail(activeWorkspace, activeHealth)}
+            >
+              <AlertIcon size={12} />
+              <span>{spaceHealthSummary(activeWorkspace, activeHealth)}</span>
+            </div>
           )}
         </div>
         <div className="ws__tools">

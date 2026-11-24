@@ -2594,6 +2594,23 @@ declare global {
         workspaceId: string;
         path: string;
       }) => Promise<{ ok: boolean; error?: string }>;
+      /**
+       * Is this workspace still usable? Local folders are stat'ed, remote roots
+       * are reached over SSH. `reason` tells the badge what to say: missing,
+       * not-dir, unreachable or error.
+       */
+      workspaceProbe: (request: {
+        id: string;
+        kind?: 'folder' | 'remote';
+        path?: string;
+        remote?: {
+          host: string;
+          port: number;
+          username: string;
+          root: string;
+          fingerprint?: string;
+        };
+      }) => Promise<{ ok: boolean; reason?: string; error?: string }>;
       workspaceCreateFolder: (request: {
         workspaceId: string;
         parent?: string;

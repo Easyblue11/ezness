@@ -9,6 +9,9 @@ import { CheckIcon, MoreIcon, PinIcon, PlusIcon, SearchIcon } from './Icons';
 const DAY = 86_400_000;
 const GROUP_ORDER = ['今天', '昨天', '本周', '更早'] as const;
 
+/** Stable empty index for the no-search case. */
+const NO_TEXTS: Map<string, string[]> = new Map();
+
 function groupOf(timestamp: number): (typeof GROUP_ORDER)[number] {
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -79,8 +82,13 @@ export function Sidebar({
 
   // A session matches on its title or on anything said in it; content hits get
   // a snippet so the row says why it is there.
-  const messageTexts = useMemo(() => textByConversation(messages), [messages]);
+  // The index costs a pass over every message, and `messages` changes on every
+  // streamed token. Only build it while a search is actually running.
   const keyword = query.trim().toLowerCase();
+  const messageTexts = useMemo(
+    () => (keyword ? textByConversation(messages) : NO_TEXTS),
+    [messages, keyword],
+  );
   const snippets = useMemo(() => {
     const map = new Map<string, string>();
     if (!keyword) return map;

@@ -37,11 +37,11 @@ class SshBridge {
   }
 
   /** Start the process (once) and open the SSH connection. */
-  async connect(config) {
+  async connect(config, timeoutMs = 60000) {
     if (this.child) throw new BridgeError('这条连接已经建立。', 'already_connected');
     this.launching = this.#spawn();
     await this.launching;
-    const info = await this.request('connect', { config }, 60000);
+    const info = await this.request('connect', { config }, timeoutMs);
     this.home = info?.home ?? '/';
     this.fingerprint = info?.fingerprint ?? '';
     this.platform = info?.platform ?? '';

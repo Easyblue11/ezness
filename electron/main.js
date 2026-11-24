@@ -3893,6 +3893,61 @@ ipcMain.handle('workspace:remote-close', async (_event, request) => {
   return { ok: true };
 });
 
+/** stat() with a deadline: a dead mapped drive should not hang the probe. */
+async function statWithTimeout(target, timeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([
+      fs.stat(target),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reject(Object.assign(new Error('检查路径超时。'), { code: 'ETIMEDOUT' }));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Workspace health for the sidebar badge. Local folders are stat'ed, remote
+ * roots are reached over SSH; a missing path or failed connection comes back
+ * as data, not as a thrown error — the renderer only needs a mark and a reason.
+ */
+ipcMain.handle('workspace:probe', async (_event, request) => {
+  const id = String(request?.id ?? '');
+  if (!id) return { ok: false, reason: 'error', error: '缺少工作空间 id。' };
+  if (String(request?.kind ?? 'folder') === 'remote') {
+    const result = await remotes().probe(id, request?.remote ?? {});
+    if (result.ok) return { ok: true };
+    if (result.phase === 'connect') {
+      return { ok: false, reason: 'unreachable', error: result.error };
+    }
+    // The host answered, so a failed stat means the root itself is gone.
+    const gone = /no such file|not found|不存在/i.test(result.error ?? '');
+    return {
+      ok: false,
+      reason: gone ? 'missing' : 'error',
+      error: result.error,
+    };
+  }
+  const target = String(request?.path ?? '');
+  if (!target) return { ok: false, reason: 'missing', error: '没有填写路径。' };
+  try {
+    const info = await statWithTimeout(target, 10000);
+    return info.isDirectory()
+      ? { ok: true }
+      : { ok: false, reason: 'not-dir', error: '这个路径不是文件夹。' };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error?.code === 'ENOENT' ? 'missing' : 'error',
+      error: error?.message || String(error),
+    };
+  }
+});
+
 ipcMain.handle('workspace:pick-key-file', async () => {
   const result = await openDialog({
     title: '选择私钥文件',

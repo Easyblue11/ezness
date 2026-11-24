@@ -361,6 +361,19 @@ back at it on another machine.
 
 ## Maintenance log
 
+### 2026-11-24
+
+- The workspace list now checks whether each workspace is still usable. A deleted local folder, a path
+  that is no longer a directory, or an unreachable SSH host shows a red warning marker on the list
+  item, and the open workspace explains the reason above its task list. Checks run at launch, when
+  the window regains focus and once a minute; the marker clears by itself when the workspace recovers.
+- Long conversations and long tasks no longer get slower the longer they run. Each message row is
+  memoised, so a streaming answer re-renders only the row being written while finished messages keep
+  their parsed Markdown; Markdown rendering runs at low priority, which keeps typing and scrolling
+  responsive during generation. Only the most recent 60 messages stay mounted, with a "load earlier"
+  button that restores older ones a page at a time instead of putting thousands of rows on the page
+  at once. The conversation and task search index is now built only while a search query is active.
+
 ### 2026-11-20
 
 - Fixed context compression in task workspaces: it used to fold only the visible transcript,

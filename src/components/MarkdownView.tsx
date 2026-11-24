@@ -1,4 +1,12 @@
-import { isValidElement, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  isValidElement,
+  memo,
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { highlightBlock } from '../lib/highlight';
@@ -253,7 +261,17 @@ function CitationChip({ cite }: { cite: CitationLink }) {
  * is escaped by highlight.js, so `dangerouslySetInnerHTML` only ever receives
  * its own `<span class="hljs-*">` markup.
  */
-export function MarkdownView({ text, citations }: { text: string; citations?: CitationLink[] }) {
+export const MarkdownView = memo(function MarkdownView({
+  text,
+  citations,
+}: {
+  text: string;
+  citations?: CitationLink[];
+}) {
+  // Parsing Markdown is the expensive part of a transcript row. While an answer
+  // is streaming the text changes ~20 times a second; deferring lets React keep
+  // the keystroke and scroll on the fast path and re-parse in the background.
+  const deferredText = useDeferredValue(text);
   const byLabel = useMemo(() => {
     const map = new Map<string, CitationLink>();
     for (const cite of citations ?? []) map.set(cite.label, cite);
@@ -261,8 +279,8 @@ export function MarkdownView({ text, citations }: { text: string; citations?: Ci
   }, [citations]);
 
   const body = useMemo(
-    () => (byLabel.size > 0 ? linkCitations(text, byLabel) : text),
-    [text, byLabel],
+    () => (byLabel.size > 0 ? linkCitations(deferredText, byLabel) : deferredText),
+    [deferredText, byLabel],
   );
 
   return (
@@ -308,4 +326,4 @@ export function MarkdownView({ text, citations }: { text: string; citations?: Ci
       </ReactMarkdown>
     </div>
   );
-}
+});

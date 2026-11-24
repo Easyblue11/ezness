@@ -237,7 +237,7 @@ class RemoteManager {
    * The adapter for one saved remote workspace. Reconnects transparently if
    * the host dropped the connection.
    */
-  async fsFor(workspaceId, remote = {}) {
+  async fsFor(workspaceId, remote = {}, options = {}) {
     const id = String(workspaceId ?? '');
     const config = cleanConfig(remote);
     const root = String(remote.root ?? '');
@@ -267,13 +267,42 @@ class RemoteManager {
 
     const bridge = new SshBridge();
     try {
-      await bridge.connect(merged);
+      await bridge.connect(merged, options.connectTimeoutMs);
     } catch (error) {
       await bridge.close().catch(() => undefined);
       throw error;
     }
     this.workspaces.set(id, { bridge, config: merged, root });
     return new RemoteWorkspaceFs({ bridge, root, config: merged });
+  }
+
+  /**
+   * Lightweight reachability check used by the workspace list. Reuses a live
+   * connection when there is one; otherwise connects with a shorter timeout so
+   * a dead host is marked quickly instead of tying up a full 60-second connect.
+   * A failed check drops the cached connection so the next attempt reconnects
+   * from scratch.
+   */
+  async probe(workspaceId, remote = {}) {
+    const id = String(workspaceId ?? '');
+    let fs;
+    try {
+      fs = await this.fsFor(id, remote, { connectTimeoutMs: 15000 });
+    } catch (error) {
+      this.closeWorkspace(id);
+      return { ok: false, phase: 'connect', error: error?.message || String(error) };
+    }
+    try {
+      const info = await fs.stat(fs.root);
+      return info.isDirectory
+        ? { ok: true }
+        : { ok: false, phase: 'stat', error: '远程根目录不是文件夹。' };
+    } catch (error) {
+      // Drop the connection as well: a stat can fail because the bridge died
+      // quietly, and the next check should start from a fresh one.
+      this.closeWorkspace(id);
+      return { ok: false, phase: 'stat', error: error?.message || String(error) };
+    }
   }
 }
 

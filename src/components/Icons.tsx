@@ -235,6 +235,13 @@ export const InfoIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const AlertIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 4.5 21 19.5H3z" />
+    <path d="M12 10v4.5M12 17.3h.01" />
+  </Icon>
+);
+
 export const RefreshIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M20 11a8 8 0 1 0-.7 4" />

@@ -240,6 +240,7 @@ contextBridge.exposeInMainWorld('ezness', {
   workspaceReadFile: (request) => ipcRenderer.invoke('workspace:read-file', request),
   workspaceOpenFile: (request) => ipcRenderer.invoke('workspace:open-file', request),
   workspaceReveal: (request) => ipcRenderer.invoke('workspace:reveal', request),
+  workspaceProbe: (request) => ipcRenderer.invoke('workspace:probe', request),
   workspaceCreateFolder: (request) => ipcRenderer.invoke('workspace:create-folder', request),
   workspaceMove: (request) => ipcRenderer.invoke('workspace:move', request),
   workspaceRename: (request) => ipcRenderer.invoke('workspace:rename', request),

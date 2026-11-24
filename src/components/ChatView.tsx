@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type {
   AgentActivity,
   AgentDefinition,
@@ -44,8 +51,19 @@ import { conversationTokens, isVisible } from '../lib/compression';
 
 const SUGGESTIONS = ['帮我梳理这个项目的结构', '解释一下这段代码', '把刚才的结论整理成要点'];
 
+/**
+ * How many messages stay mounted. Every rendered row is real DOM plus a
+ * Markdown tree; a conversation of a few thousand turns made the page itself
+ * sluggish. Older rows are unloaded and brought back a page at a time.
+ */
+const WINDOW_SIZE = 60;
+const WINDOW_STEP = 60;
+
 /** Stable fallback so the stats panel's memo does not rebuild every render. */
 const EMPTY_USAGE: UsageRecord[] = [];
+
+/** Stable empty list so a missing prop does not defeat the row memo. */
+const NO_SPACES: DirectorWorkspaceOption[] = [];
 
 function formatSize(bytes: number): string {
   if (!bytes) return '0 B';
@@ -839,6 +857,184 @@ function ToolStepGroup({
   );
 }
 
+interface RowActions {
+  showAttachment: (file: WarehouseItem) => void;
+  undoCompression?: (summaryId: string) => void;
+  directorAct?: (itemId: string, action: string, value?: string) => void;
+  directorOpenTask?: (taskId: string) => void;
+  directorAddSpace?: (kind: 'local' | 'remote', itemId: string) => void;
+  directorDeleteSpace?: (id: string) => void;
+}
+
+interface RowProps {
+  message: Message;
+  /** This row is the one still being written. */
+  streaming: boolean;
+  phase: 'retrieving' | 'generating';
+  activity?: AgentActivity | null;
+  taskTitles?: Record<string, string>;
+  spaces: DirectorWorkspaceOption[];
+  models: ModelOption[];
+  /** A summary card can offer "撤销压缩" only when the parent can handle it. */
+  canUndo: boolean;
+  /** Stable dispatcher: the parent's callbacks change identity every render. */
+  actions: RowActions;
+}
+
+/**
+ * One transcript row. Memoised on purpose: while an answer streams, the parent
+ * re-renders ~20 times a second, and re-parsing the Markdown of every finished
+ * message at that rate is what made long conversations lag — even while typing.
+ * Only the row whose message object actually changed is rendered again.
+ */
+function ChatMessageRowView({
+  message,
+  streaming,
+  phase,
+  activity,
+  taskTitles,
+  spaces,
+  models,
+  canUndo,
+  actions,
+}: RowProps) {
+  if (message.director) {
+    return (
+      <DirectorReportCard
+        message={message}
+        report={message.director}
+        spaces={spaces}
+        models={models}
+        onAct={actions.directorAct}
+        onOpenTask={actions.directorOpenTask}
+        onAddSpace={actions.directorAddSpace}
+        onDeleteSpace={actions.directorDeleteSpace}
+      />
+    );
+  }
+
+  if (message.summary) {
+    return (
+      <article className="msg msg--assistant msg--summary" data-message-id={message.id}>
+        <div className="msg__avatar">摘</div>
+        <div className="msg__content">
+          <div className="msg__bubble summary-card">
+            <div className="summary-card__head">
+              <span className="summary-card__badge">压缩摘要</span>
+              <span className="summary-card__stats">
+                已压缩 {message.summary.count} 条 · {formatTokens(message.summary.tokensBefore)} →{' '}
+                {formatTokens(message.summary.tokensAfter)} 词元
+              </span>
+            </div>
+            <MarkdownView text={message.content} />
+            <div className="summary-card__foot">
+              <span>原文仍保存在本地，用会话搜索还能找到</span>
+              {canUndo && (
+                <button
+                  className="summary-card__undo"
+                  onClick={() => actions.undoCompression?.(message.id)}
+                >
+                  撤销压缩
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article className={`msg msg--${message.role}`} data-message-id={message.id}>
+      <div className="msg__avatar">{message.role === 'user' ? '我' : 'E'}</div>
+      <div className="msg__content">
+        {message.role === 'assistant' && message.thinking && (
+          <details className="msg__think" open={streaming}>
+            <summary>思考过程</summary>
+            <div className="msg__think-body">{message.thinking}</div>
+          </details>
+        )}
+
+        {message.role === 'assistant' && message.steps && message.steps.length > 0 && (
+          <ToolSteps steps={message.steps} taskTitles={taskTitles} />
+        )}
+
+        {(message.role === 'assistant' || message.content) && (
+          <div className="msg__bubble">
+            {message.role === 'assistant' ? (
+              <MarkdownView text={message.content} citations={message.citations} />
+            ) : (
+              message.content
+            )}
+            {streaming &&
+              (activity ? (
+                <ActivityLine activity={activity} />
+              ) : (
+                !message.content && (
+                  <span className="msg__typing">
+                    {phase === 'retrieving'
+                      ? '正在检索资料…'
+                      : message.thinking
+                        ? '正在思考…'
+                        : '正在生成…'}
+                  </span>
+                )
+              ))}
+          </div>
+        )}
+
+        {message.role === 'user' && message.attachments && message.attachments.length > 0 && (
+          <div className="msg__files">
+            {message.attachments.map((file) => (
+              <button
+                key={file.id}
+                className="msg__file"
+                title={`${file.name} · ${formatSize(file.size)}（点击在仓库中定位）`}
+                onClick={() => actions.showAttachment(file)}
+              >
+                <span className="msg__file-ext">{extLabel(file.ext)}</span>
+                <span className="msg__file-name">{file.name}</span>
+                <span className="msg__file-size">{formatSize(file.size)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="msg__foot">
+          <time className="msg__time">{formatClock(message.createdAt)}</time>
+          {message.stopped && <span className="msg__stopped">已中断</span>}
+          {message.content && <CopyButton text={message.content} />}
+        </div>
+
+        {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
+          <div className="msg__sources" title={message.sources.join('、')}>
+            参考：{message.sources.join(' · ')}
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function sameRow(prev: RowProps, next: RowProps): boolean {
+  if (prev.message !== next.message) return false;
+  if (prev.streaming !== next.streaming) return false;
+  if (prev.taskTitles !== next.taskTitles) return false;
+  if (prev.canUndo !== next.canUndo) return false;
+  // Only the streaming row needs the live activity/phase; everyone else keeps
+  // whatever they had, so a phase flip does not wake the whole transcript.
+  if (next.streaming) {
+    if (prev.activity !== next.activity) return false;
+    if (prev.phase !== next.phase) return false;
+  }
+  if (next.message.director && (prev.spaces !== next.spaces || prev.models !== next.models)) {
+    return false;
+  }
+  return true;
+}
+
+const ChatMessageRow = memo(ChatMessageRowView, sameRow);
+
 export function ToolSteps({
   steps,
   taskTitles,
@@ -994,7 +1190,7 @@ export function ChatView({
   onTyping,
   onDirectorAct,
   onDirectorOpenTask,
-  directorSpaces = [],
+  directorSpaces = NO_SPACES,
   onDirectorAddSpace,
   onDirectorDeleteSpace,
   taskTitles,
@@ -1098,6 +1294,71 @@ export function ChatView({
   const pinnedAt = useRef(0);
   const prevSession = useRef(session?.id);
   const prevCount = useRef(messages.length);
+
+  // The trailing window of messages that is actually mounted. Reset in the
+  // render phase so switching between two long conversations never paints the
+  // previous window size over the new transcript for a frame.
+  const [windowState, setWindowState] = useState<{ session?: string; count: number }>({
+    session: session?.id,
+    count: WINDOW_SIZE,
+  });
+  if (windowState.session !== session?.id) {
+    setWindowState({ session: session?.id, count: WINDOW_SIZE });
+  }
+  const visibleCount =
+    windowState.session === session?.id ? windowState.count : WINDOW_SIZE;
+  const hiddenCount = Math.max(0, messages.length - visibleCount);
+  const shownMessages = hiddenCount > 0 ? messages.slice(hiddenCount) : messages;
+
+  /** While prepending older rows, keep the reader's line where it was. */
+  const scrollAnchor = useRef<{ height: number; top: number } | null>(null);
+  const pendingJump = useRef<{
+    id: string;
+    block: ScrollLogicalPosition;
+    flash?: boolean;
+  } | null>(null);
+
+  function growWindow(count: number) {
+    setWindowState((prev) => ({
+      session: session?.id,
+      count: Math.max(prev.session === session?.id ? prev.count : WINDOW_SIZE, count),
+    }));
+  }
+
+  function loadEarlier() {
+    const el = bodyRef.current;
+    scrollAnchor.current = el ? { height: el.scrollHeight, top: el.scrollTop } : null;
+    stickRef.current = false;
+    growWindow(visibleCount + WINDOW_STEP);
+  }
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    const anchor = scrollAnchor.current;
+    scrollAnchor.current = null;
+    if (!el || !anchor || el.clientHeight === 0) return;
+    // Height above the viewport grew by exactly the restored rows.
+    el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
+    pinnedAt.current = performance.now();
+  }, [visibleCount]);
+
+  // A jump target can live above the mounted window: grow first, scroll once
+  // the row is actually in the DOM.
+  useEffect(() => {
+    const jump = pendingJump.current;
+    if (!jump) return;
+    const node = bodyRef.current?.querySelector<HTMLElement>(
+      `[data-message-id="${jump.id}"]`,
+    );
+    if (!node) return;
+    pendingJump.current = null;
+    stickRef.current = false;
+    node.scrollIntoView({ block: jump.block, behavior: 'smooth' });
+    if (jump.flash) {
+      node.classList.add('msg--target');
+      window.setTimeout(() => node.classList.remove('msg--target'), 2200);
+    }
+  }, [visibleCount, messages.length]);
 
   useEffect(() => {
     const el = bodyRef.current;
@@ -1210,7 +1471,8 @@ export function ChatView({
       )
       .filter((node): node is HTMLElement => Boolean(node));
     if (nodes.length === 0) {
-      setPendingHint(null);
+      // Nothing to measure — every pending card sits above the mounted window.
+      setPendingHint({ count: pendingRef.current.length, direction: 'up' });
       return;
     }
     let frame = 0;
@@ -1257,6 +1519,21 @@ export function ChatView({
   function jumpToPending(direction: 'up' | 'down') {
     const el = bodyRef.current;
     if (!el) return;
+    // 有待确认的卡片在窗口之外（更早的历史）：先把那段载回来再滚过去。
+    const rendered = new Set<string>();
+    for (const node of el.querySelectorAll<HTMLElement>('[data-message-id]')) {
+      const id = node.dataset.messageId;
+      if (id) rendered.add(id);
+    }
+    const offWindow = pendingRef.current.find((message) => !rendered.has(message.id));
+    if (offWindow) {
+      const index = messages.findIndex((message) => message.id === offWindow.id);
+      if (index >= 0) {
+        pendingJump.current = { id: offWindow.id, block: 'center' };
+        growWindow(messages.length - index + 8);
+        return;
+      }
+    }
     const box = el.getBoundingClientRect();
     const nodes = pendingRef.current
       .map((message) =>
@@ -1277,8 +1554,15 @@ export function ChatView({
   }
   // The scroll handler is attached once per conversation; the list it reads
   // changes on every streamed token, so it reads the latest array via a ref.
-  const userMessagesRef = useRef(userMessages);
-  userMessagesRef.current = userMessages;
+  // 滚动时每帧都要判断“哪条提问被卷上去了”。按 id 建一次表，量的是已挂载的
+  // DOM 节点，而不是拿每条历史消息去 querySelector 一遍。
+  const userTextById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const message of userMessages) map.set(message.id, message.content);
+    return map;
+  }, [userMessages]);
+  const userTextRef = useRef(userTextById);
+  userTextRef.current = userTextById;
   // Only a conversation switch clears the pin; a growing transcript re-measures
   // in place, so the reader keeps the question they were looking at.
   const stuckSession = useRef<string | undefined>(session?.id);
@@ -1298,12 +1582,15 @@ export function ChatView({
       if (el.clientHeight === 0) return;
       const top = el.getBoundingClientRect().top;
       let found: { id: string; text: string } | null = null;
-      for (const message of userMessagesRef.current) {
-        const node = el.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`);
-        if (!node) continue;
+      // Walk the mounted rows in document order; only user rows count.
+      for (const node of el.querySelectorAll<HTMLElement>('[data-message-id]')) {
+        const id = node.dataset.messageId;
+        if (!id) continue;
+        const text = userTextRef.current.get(id);
+        if (text === undefined) continue;
         // Fully above the scrollport: this is the prompt now hidden by answers.
         if (node.getBoundingClientRect().bottom <= top + 4) {
-          found = { id: message.id, text: message.content };
+          found = { id, text };
         } else {
           break;
         }
@@ -1327,7 +1614,14 @@ export function ChatView({
 
   function jumpToPrompt(id: string) {
     const el = bodyRef.current?.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
-    if (!el) return;
+    if (!el) {
+      // The prompt is older than the mounted window — load up to it, then jump.
+      const index = messages.findIndex((message) => message.id === id);
+      if (index < 0) return;
+      pendingJump.current = { id, block: 'start' };
+      growWindow(messages.length - index + 8);
+      return;
+    }
     stickRef.current = false;
     el.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
@@ -1336,6 +1630,17 @@ export function ChatView({
   // lets a just-activated view lay out before scrollIntoView measures it.
   useEffect(() => {
     if (!focus) return;
+    const node = bodyRef.current?.querySelector<HTMLElement>(
+      `[data-message-id="${focus.messageId}"]`,
+    );
+    if (!node) {
+      const index = messages.findIndex((message) => message.id === focus.messageId);
+      if (index >= 0) {
+        pendingJump.current = { id: focus.messageId, block: 'center', flash: true };
+        growWindow(messages.length - index + 8);
+      }
+      return;
+    }
     stickRef.current = false;
     let timer = 0;
     const frame = requestAnimationFrame(() => {
@@ -1351,6 +1656,9 @@ export function ChatView({
       cancelAnimationFrame(frame);
       if (timer) window.clearTimeout(timer);
     };
+    // `messages` is only read to locate an off-window target; re-running on
+    // every token would keep re-centering the same message.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus]);
 
   useEffect(
@@ -1379,6 +1687,31 @@ export function ChatView({
     }
     onShowWarehouse(file.id);
   }
+
+  // Rows stay mounted across renders, so the callbacks they hold must be one
+  // stable object that always forwards to this render's props.
+  const actionsRef = useRef<RowActions>({ showAttachment });
+  actionsRef.current = {
+    showAttachment,
+    undoCompression: onUndoCompression,
+    directorAct: onDirectorAct,
+    directorOpenTask: onDirectorOpenTask,
+    directorAddSpace: onDirectorAddSpace,
+    directorDeleteSpace: onDirectorDeleteSpace,
+  };
+  const rowActions = useMemo<RowActions>(
+    () => ({
+      showAttachment: (file) => void actionsRef.current.showAttachment(file),
+      undoCompression: (id) => actionsRef.current.undoCompression?.(id),
+      directorAct: (itemId, action, value) =>
+        actionsRef.current.directorAct?.(itemId, action, value),
+      directorOpenTask: (taskId) => actionsRef.current.directorOpenTask?.(taskId),
+      directorAddSpace: (kind, itemId) =>
+        actionsRef.current.directorAddSpace?.(kind, itemId),
+      directorDeleteSpace: (id) => actionsRef.current.directorDeleteSpace?.(id),
+    }),
+    [],
+  );
 
   const current = models.find((item) => item.id === model) ?? null;
 
@@ -1455,133 +1788,26 @@ export function ChatView({
           </div>
         ) : (
           <div className="messages">
-            {messages.map((message) => {
-              if (message.director) {
-                return (
-                  <DirectorReportCard
-                    key={message.id}
-                    message={message}
-                    report={message.director}
-                    spaces={directorSpaces}
-                    models={models}
-                    onAct={onDirectorAct}
-                    onOpenTask={onDirectorOpenTask}
-                    onAddSpace={onDirectorAddSpace}
-                    onDeleteSpace={onDirectorDeleteSpace}
-                  />
-                );
-              }
-              if (message.summary) {
-                return (
-                  <article
-                    key={message.id}
-                    className="msg msg--assistant msg--summary"
-                    data-message-id={message.id}
-                  >
-                    <div className="msg__avatar">摘</div>
-                    <div className="msg__content">
-                      <div className="msg__bubble summary-card">
-                        <div className="summary-card__head">
-                          <span className="summary-card__badge">压缩摘要</span>
-                          <span className="summary-card__stats">
-                            已压缩 {message.summary.count} 条 ·{' '}
-                            {formatTokens(message.summary.tokensBefore)} →{' '}
-                            {formatTokens(message.summary.tokensAfter)} 词元
-                          </span>
-                        </div>
-                        <MarkdownView text={message.content} />
-                        <div className="summary-card__foot">
-                          <span>原文仍保存在本地，用会话搜索还能找到</span>
-                          {onUndoCompression && (
-                            <button
-                              className="summary-card__undo"
-                              onClick={() => onUndoCompression(message.id)}
-                            >
-                              撤销压缩
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                );
-              }
-
-              return (
-              <article
+            {hiddenCount > 0 && (
+              <button type="button" className="messages__earlier" onClick={loadEarlier}>
+                <span>载入更早的 {Math.min(WINDOW_STEP, hiddenCount)} 条</span>
+                <span className="messages__earlier-rest">还有 {hiddenCount} 条在更早的历史里</span>
+              </button>
+            )}
+            {shownMessages.map((message) => (
+              <ChatMessageRow
                 key={message.id}
-                className={`msg msg--${message.role}`}
-                data-message-id={message.id}
-              >
-                <div className="msg__avatar">{message.role === 'user' ? '我' : 'E'}</div>
-                <div className="msg__content">
-                  {message.role === 'assistant' && message.thinking && (
-                    <details className="msg__think" open={message.id === streamingId}>
-                      <summary>思考过程</summary>
-                      <div className="msg__think-body">{message.thinking}</div>
-                    </details>
-                  )}
-
-                  {message.role === 'assistant' && message.steps && message.steps.length > 0 && (
-                    <ToolSteps steps={message.steps} taskTitles={taskTitles} />
-                  )}
-
-                  {(message.role === 'assistant' || message.content) && (
-                    <div className="msg__bubble">
-                      {message.role === 'assistant' ? (
-                        <MarkdownView text={message.content} citations={message.citations} />
-                      ) : (
-                        message.content
-                      )}
-                      {message.id === streamingId &&
-                        (activity ? (
-                          <ActivityLine activity={activity} />
-                        ) : (
-                          !message.content && (
-                            <span className="msg__typing">
-                              {phase === 'retrieving'
-                                ? '正在检索资料…'
-                                : message.thinking
-                                  ? '正在思考…'
-                                  : '正在生成…'}
-                            </span>
-                          )
-                        ))}
-                    </div>
-                  )}
-
-                  {message.role === 'user' && message.attachments && message.attachments.length > 0 && (
-                    <div className="msg__files">
-                      {message.attachments.map((file) => (
-                        <button
-                          key={file.id}
-                          className="msg__file"
-                          title={`${file.name} · ${formatSize(file.size)}（点击在仓库中定位）`}
-                          onClick={() => void showAttachment(file)}
-                        >
-                          <span className="msg__file-ext">{extLabel(file.ext)}</span>
-                          <span className="msg__file-name">{file.name}</span>
-                          <span className="msg__file-size">{formatSize(file.size)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="msg__foot">
-                    <time className="msg__time">{formatClock(message.createdAt)}</time>
-                    {message.stopped && <span className="msg__stopped">已中断</span>}
-                    {message.content && <CopyButton text={message.content} />}
-                  </div>
-
-                  {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
-                    <div className="msg__sources" title={message.sources.join('、')}>
-                      参考：{message.sources.join(' · ')}
-                    </div>
-                  )}
-                </div>
-              </article>
-              );
-            })}
+                message={message}
+                streaming={message.id === streamingId}
+                phase={phase}
+                activity={message.id === streamingId ? activity : undefined}
+                taskTitles={taskTitles}
+                spaces={directorSpaces}
+                models={models}
+                canUndo={Boolean(onUndoCompression)}
+                actions={rowActions}
+              />
+            ))}
           </div>
         )}
       </div>
