@@ -444,7 +444,12 @@ export interface StoredSettings {
   rmbAnimation?: boolean;
   /** 界面语言代码（BCP 47，例如 zh-CN、en-US）。默认 zh-CN。 */
   language?: string;
+  /** 关闭窗口时：最小化到托盘 / 直接退出；空值 = 第一次关时询问。 */
+  closeAction?: CloseAction;
 }
+
+/** '' = not chosen yet: the first close asks and remembers the answer. */
+export type CloseAction = '' | 'tray' | 'quit';
 
 /* ---------------- voice input ---------------- */
 
@@ -2182,6 +2187,10 @@ declare global {
       }) => Promise<FetchModelsResult>;
       loadSettings: () => Promise<StoredSettings | null>;
       saveSettings: (settings: StoredSettings) => Promise<boolean>;
+      /** Apply a new close behaviour now; persists it to settings.json. */
+      setCloseAction: (value: CloseAction) => Promise<boolean>;
+      /** Fired when the close dialog or tray changes the close behaviour. */
+      onCloseAction: (callback: (value: CloseAction) => void) => () => void;
       /** Apply proxy settings now; resolves with the resulting live status. */
       proxyApply: (settings: ProxySettings) => Promise<ProxyStatus>;
       proxyStatus: () => Promise<ProxyStatus>;

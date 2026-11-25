@@ -361,6 +361,16 @@ back at it on another machine.
 
 ## Maintenance log
 
+### 2026-11-25
+
+- You now choose what closing the window does: **Settings → System** has a "When closing
+  the window" option with minimize to tray, quit, or ask every time. The first ✕ asks once —
+  minimize to tray is the default — and the answer is remembered. Dismissing the prompt
+  (✕ or Esc) is not a decision: nothing happens and the window stays open. While minimized to tray
+  the app keeps running in the background and tasks in progress are not interrupted;
+  double-click the tray icon to come back, or right-click it to quit. The prompt and the
+  tray menu follow the interface language (Chinese / English).
+
 ### 2026-11-24
 
 - The workspace list now checks whether each workspace is still usable. A deleted local folder, a path

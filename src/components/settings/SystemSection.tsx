@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { StorageInfo, WorkSettings } from '../../types';
+import type { CloseAction, StorageInfo, WorkSettings } from '../../types';
 import { useI18n } from '../../i18n';
-import { BillingIcon, FolderIcon, GlobeIcon, RefreshIcon, SettingsIcon } from '../Icons';
+import {
+  BillingIcon,
+  CloseIcon,
+  FolderIcon,
+  GlobeIcon,
+  RefreshIcon,
+  SettingsIcon,
+} from '../Icons';
 import { ContextSettings } from './ContextSettings';
 
 interface Props {
@@ -9,6 +16,8 @@ interface Props {
   onWorkChange: (work: WorkSettings) => void;
   rmbAnimation: boolean;
   onRmbAnimationChange: (on: boolean) => void;
+  closeAction: CloseAction;
+  onCloseActionChange: (action: CloseAction) => void;
 }
 
 function formatSize(bytes: number): string {
@@ -28,6 +37,8 @@ export function SystemSection({
   onWorkChange,
   rmbAnimation,
   onRmbAnimationChange,
+  closeAction,
+  onCloseActionChange,
 }: Props) {
   const { t, language, setLanguage, languages, errors, loading, refresh: refreshPacks, openFolder } =
     useI18n();
@@ -135,6 +146,27 @@ export function SystemSection({
             })}
           </div>
         )}
+      </section>
+
+      <section className="kb-card">
+        <div className="kb-card__title">
+          <CloseIcon size={15} />
+          {t('system.close.title')}
+        </div>
+        <p className="kb-card__desc">{t('system.close.desc')}</p>
+        <div className="kb-card__row">
+          <select
+            className="select select--inline"
+            aria-label={t('system.close.label')}
+            value={closeAction}
+            onChange={(event) => onCloseActionChange(event.target.value as CloseAction)}
+          >
+            <option value="">{t('system.close.ask')}</option>
+            <option value="tray">{t('system.close.tray')}</option>
+            <option value="quit">{t('system.close.quit')}</option>
+          </select>
+        </div>
+        <div className="field__hint">{t('system.close.hint')}</div>
       </section>
 
       <ContextSettings work={work} onChange={onWorkChange} />

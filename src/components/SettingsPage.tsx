@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type {
+  CloseAction,
   Defaults,
   DefaultsKey,
   OcrSettings,
@@ -68,6 +69,9 @@ interface Props {
   onWorkChange: (work: WorkSettings) => void;
   rmbAnimation: boolean;
   onRmbAnimationChange: (on: boolean) => void;
+  /** 'tray' 最小化到托盘 / 'quit' 直接退出 / '' 第一次关时询问。 */
+  closeAction: CloseAction;
+  onCloseActionChange: (action: CloseAction) => void;
 }
 
 export function SettingsPage({
@@ -88,6 +92,8 @@ export function SettingsPage({
   onWorkChange,
   rmbAnimation,
   onRmbAnimationChange,
+  closeAction,
+  onCloseActionChange,
 }: Props) {
   const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>('providers');
@@ -115,6 +121,8 @@ export function SettingsPage({
             onWorkChange={onWorkChange}
             rmbAnimation={rmbAnimation}
             onRmbAnimationChange={onRmbAnimationChange}
+            closeAction={closeAction}
+            onCloseActionChange={onCloseActionChange}
           />
         )}
         {section === 'providers' && (

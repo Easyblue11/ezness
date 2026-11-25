@@ -23,6 +23,14 @@ contextBridge.exposeInMainWorld('ezness', {
   fetchModels: (payload) => ipcRenderer.invoke('models:fetch', payload),
   loadSettings: () => ipcRenderer.invoke('settings:load'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  // Apply the close behaviour immediately, without waiting for settings.json.
+  setCloseAction: (value) => ipcRenderer.invoke('settings:close-action', value),
+  // The close dialog lives in the main process and can change the setting.
+  onCloseAction: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on('settings:close-action', listener);
+    return () => ipcRenderer.removeListener('settings:close-action', listener);
+  },
   proxyApply: (settings) => ipcRenderer.invoke('proxy:apply', settings),
   proxyStatus: () => ipcRenderer.invoke('proxy:status'),
   proxyTest: (url) => ipcRenderer.invoke('proxy:test', url),

@@ -12,7 +12,18 @@ if (typeof electron === 'string' || !electron.app) {
   process.exit(1);
 }
 
-const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, session } = electron;
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  dialog,
+  clipboard,
+  session,
+  Tray,
+  Menu,
+  nativeImage,
+} = electron;
 
 // userData only holds the pointer to the real data root, but losing it looks
 // exactly like a first run. Pin the folder name so renaming the product
@@ -92,9 +103,205 @@ if (process.env.EZNESS_FAKE_MIC) {
 const DEV_URL = process.env.EZNESS_DEV_URL || '';
 let mainWindow = null;
 
+/* ------------------------------------------------------------------
+   Close behaviour
+   'tray'  → closing the window only hides it; the app keeps running.
+   'quit'  → closing the window exits the app.
+   ''      → not chosen yet: ask once, then remember the answer.
+   The renderer keeps the value in settings.json; the main process needs it
+   synchronously inside the window's 'close' event, so it is cached here.
+   ------------------------------------------------------------------ */
+const CLOSE_ACTIONS = new Set(['tray', 'quit']);
+let closeAction = '';
+/** 'zh' | 'en' | '' (= follow the build default) for main-process UI text. */
+let uiLanguage = '';
+let tray = null;
+let trayHintShown = false;
+/** True while the app is really quitting, so 'close' stops being intercepted. */
+let quitting = false;
+/** One close dialog at a time; extra clicks on the X do not stack them. */
+let askingClose = false;
+
+function trayIcon() {
+  const ico = path.join(__dirname, 'assets', 'icon.ico');
+  const png = path.join(__dirname, '..', 'build', 'icon.png');
+  const image = nativeImage.createFromPath(ico);
+  return image.isEmpty() ? nativeImage.createFromPath(png) : image;
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function trayMenu() {
+  const text = uiText();
+  return Menu.buildFromTemplate([
+    { label: text.open, click: () => showMainWindow() },
+    { type: 'separator' },
+    { label: text.quitApp, click: () => quitApp() },
+  ]);
+}
+
+function ensureTray() {
+  if (tray && !tray.isDestroyed()) return tray;
+  tray = new Tray(trayIcon());
+  tray.setToolTip('EZNess');
+  tray.setContextMenu(trayMenu());
+  // 双击托盘图标回到主界面；单击不抢，右键出菜单。
+  tray.on('double-click', () => showMainWindow());
+  return tray;
+}
+
+function hideToTray() {
+  ensureTray();
+  // The language may have changed since the tray was created.
+  if (tray && !tray.isDestroyed()) tray.setContextMenu(trayMenu());
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+  if (!trayHintShown && tray && !tray.isDestroyed()) {
+    trayHintShown = true;
+    const text = uiText();
+    // Windows balloons are best-effort; never let a missing notification matter.
+    try {
+      tray.displayBalloon({ title: text.balloonTitle, content: text.balloonBody });
+    } catch {
+      /* no shell notification support */
+    }
+  }
+}
+
+function quitApp() {
+  quitting = true;
+  app.quit();
+}
+
+/* ------------------------------------------------------------------
+   The close dialog and tray are main-process UI, outside the renderer's
+   translation runtime. They read the interface language from settings.json
+   (mirrored in `uiLanguage` on every save) and ship Chinese + English text.
+   ------------------------------------------------------------------ */
+const CLOSE_TEXT = {
+  zh: {
+    title: '关闭 EZNess',
+    message: '关闭窗口后要做什么？',
+    tray: '最小化到托盘',
+    quit: '直接退出',
+    open: '打开 EZNess',
+    quitApp: '退出 EZNess',
+    balloonTitle: 'EZNess 还在运行',
+    balloonBody: '双击托盘图标打开主界面，右键可以退出。',
+  },
+  en: {
+    title: 'Close EZNess',
+    message: 'What should closing the window do?',
+    tray: 'Minimize to tray',
+    quit: 'Quit EZNess',
+    open: 'Open EZNess',
+    quitApp: 'Quit EZNess',
+    balloonTitle: 'EZNess is still running',
+    balloonBody: 'Double-click the tray icon to reopen, or right-click it to quit.',
+  },
+};
+
+/** 'en' | 'zh'; anything custom falls back to Chinese, like missing i18n keys. */
+function normalizeLanguage(value) {
+  const text = String(value ?? '');
+  if (/^en/i.test(text)) return 'en';
+  if (!text) return '';
+  return 'zh';
+}
+
+function uiText() {
+  return CLOSE_TEXT[uiLanguage || (app.isPackaged ? 'en' : 'zh')];
+}
+
+/** The toggle lives in the renderer's settings; the close event needs both. */
+async function readPreferences() {
+  try {
+    const data = JSON.parse(await fs.readFile(settingsFile(), 'utf8'));
+    const value = String(data?.closeAction ?? '');
+    return {
+      closeAction: CLOSE_ACTIONS.has(value) ? value : '',
+      language: normalizeLanguage(data?.language),
+    };
+  } catch {
+    return { closeAction: '', language: '' };
+  }
+}
+
+/**
+ * Persist one field without touching the rest of settings.json: the renderer
+ * writes this file too, so the main process merges instead of overwriting.
+ */
+async function setCloseAction(value) {
+  closeAction = CLOSE_ACTIONS.has(value) ? value : '';
+  try {
+    const file = settingsFile();
+    let existing = {};
+    try {
+      existing = JSON.parse(await fs.readFile(file, 'utf8'));
+    } catch {
+      /* first write or unreadable — start from an empty file */
+    }
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const temp = `${file}.tmp`;
+    await fs.writeFile(temp, JSON.stringify({ ...existing, closeAction }, null, 2), 'utf8');
+    await fs.rename(temp, file);
+  } catch (error) {
+    console.error('[Ezness] 保存关闭行为失败：', error);
+  }
+  // Keep the settings page in step with a choice made from the close dialog.
+  broadcast('settings:close-action', closeAction);
+}
+
+/**
+ * Ask once, remember the answer, then act on it. Esc or the dialog's close
+ * button report this index instead of a real button, so dismissing the prompt
+ * is not a decision: the window simply stays open.
+ */
+const CLOSE_PROMPT_DISMISSED = 2;
+
+function askCloseAction() {
+  if (!mainWindow || mainWindow.isDestroyed() || askingClose) return;
+  askingClose = true;
+  const text = uiText();
+  void dialog
+    .showMessageBox(mainWindow, {
+      type: 'question',
+      title: text.title,
+      message: text.message,
+      buttons: [text.tray, text.quit],
+      defaultId: 0,
+      cancelId: CLOSE_PROMPT_DISMISSED,
+      noLink: true,
+    })
+    .then((result) => {
+      askingClose = false;
+      const choice = result.response;
+      if (choice !== 0 && choice !== 1) return;
+      const quit = choice === 1;
+      void setCloseAction(quit ? 'quit' : 'tray');
+      if (quit) quitApp();
+      else hideToTray();
+    })
+    .catch(() => {
+      askingClose = false;
+    });
+}
+
 // A second launch of the installed app surfaces the window it already has.
 app.on('second-instance', () => {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Hidden-to-tray counts as running: bring the window back instead of
+  // starting a second copy. If it was destroyed, build a fresh one.
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (app.isReady()) createWindow();
+    return;
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -146,6 +353,19 @@ function createWindow() {
   };
   mainWindow.on('maximize', pushState);
   mainWindow.on('unmaximize', pushState);
+
+  // The title bar's ✕ and Alt+F4 both land here. Hiding keeps the renderer,
+  // the agent runs and any in-flight task alive; quitting is explicit.
+  mainWindow.on('close', (event) => {
+    if (quitting) return;
+    if (closeAction === 'quit') return;
+    event.preventDefault();
+    if (closeAction === 'tray') hideToTray();
+    else askCloseAction();
+  });
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
   mainWindow.on('enter-full-screen', pushState);
   mainWindow.on('leave-full-screen', pushState);
 
@@ -282,6 +502,12 @@ app.whenReady().then(async () => {
   });
   proxyManager.init({ settingsFile: settingsFile() });
 
+  // Read the close behaviour and interface language after the first-run
+  // migration settled the data root.
+  const preferences = await readPreferences();
+  closeAction = preferences.closeAction;
+  uiLanguage = preferences.language;
+
   createWindow();
   // Applying an SSH proxy can take a few seconds; the window must not wait.
   proxyManager.loadSaved().catch(() => undefined);
@@ -291,7 +517,23 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform === 'darwin') return;
+  // Hide-to-tray normally keeps the window alive; this only matters if it was
+  // destroyed anyway (renderer crash). Stay available in the tray instead of
+  // silently exiting, but never leave a headless process with no tray icon.
+  if (!quitting && closeAction === 'tray') {
+    ensureTray();
+    return;
+  }
+  app.quit();
+});
+
+// A real quit (tray menu, the close dialog's 直接退出, or the OS) must not be
+// held back by the hide-to-tray handler, and the tray icon goes with it.
+app.on('before-quit', () => {
+  quitting = true;
+  if (tray && !tray.isDestroyed()) tray.destroy();
+  tray = null;
 });
 
 // Close SSH bridges before the process exits so no python child is orphaned.
@@ -404,6 +646,21 @@ ipcMain.handle('settings:save', async (_event, data) => {
   const temp = `${file}.tmp`;
   await fs.writeFile(temp, JSON.stringify(data, null, 2), 'utf8');
   await fs.rename(temp, file);
+  // The window's 'close' handler needs this synchronously; settings.json is
+  // async, so keep a copy in memory in step with what the settings page saves.
+  if (data && typeof data === 'object') {
+    const value = String(data.closeAction ?? '');
+    closeAction = CLOSE_ACTIONS.has(value) ? value : '';
+    // Main-process text (close dialog, tray) follows the interface language.
+    uiLanguage = normalizeLanguage(data.language);
+  }
+  return true;
+});
+
+// The settings page applies the close behaviour at once instead of waiting for
+// the debounced settings.json write, so the next ✕ already follows the choice.
+ipcMain.handle('settings:close-action', async (_event, value) => {
+  await setCloseAction(String(value ?? ''));
   return true;
 });
 

@@ -47,6 +47,7 @@ import type {
   ChatTarget,
   ChatTurn,
   CitationLink,
+  CloseAction,
   CompressionInfo,
   Defaults,
   DefaultsKey,
@@ -196,6 +197,8 @@ export default function App() {
   const hadCachedLanguage = useRef(cachedLanguage() !== null);
   /** 系统设置里的「金额动画」开关；关掉后花费不再触发金币动画。 */
   const [rmbAnimation, setRmbAnimation] = useState(true);
+  /** 关闭窗口时：'tray' 最小化到托盘，'quit' 直接退出，'' = 第一次关时询问。 */
+  const [closeAction, setCloseAction] = useState<CloseAction>('');
   const [view, setView] = useState<ViewKey>('chat');
   const [sessions, setSessions] = useState<Session[]>(INITIAL_SESSIONS);
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
@@ -493,6 +496,12 @@ export default function App() {
       }
       if (
         !cancelled &&
+        (saved?.closeAction === 'tray' || saved?.closeAction === 'quit')
+      ) {
+        setCloseAction(saved.closeAction);
+      }
+      if (
+        !cancelled &&
         !hadCachedLanguage.current &&
         typeof saved?.language === 'string' &&
         LANGUAGE_CODE.test(saved.language)
@@ -526,6 +535,7 @@ export default function App() {
         theme,
         rmbAnimation,
         language,
+        closeAction,
       };
       window.ezness?.saveSettings?.(payload);
     }, 500);
@@ -542,7 +552,17 @@ export default function App() {
     theme,
     rmbAnimation,
     language,
+    closeAction,
   ]);
+
+  // The first-close dialog (and the tray) lives in the main process; mirror its
+  // choice here so the next settings save does not write an older value back.
+  useEffect(() => {
+    const unsubscribe = window.ezness?.onCloseAction?.((value) => {
+      setCloseAction(value === 'tray' || value === 'quit' ? value : '');
+    });
+    return () => unsubscribe?.();
+  }, []);
 
   // Ollama runs locally, so pull its model list once on startup instead of
   // making the user click「获取模型」before the chat dropdown is useful.
@@ -1705,6 +1725,12 @@ export default function App() {
               onWorkChange={setWork}
               rmbAnimation={rmbAnimation}
               onRmbAnimationChange={setRmbAnimation}
+              closeAction={closeAction}
+              onCloseActionChange={(action) => {
+                setCloseAction(action);
+                // Take effect before the debounced settings.json write lands.
+                void window.ezness?.setCloseAction?.(action);
+              }}
             />
           </ViewSlot>
 
