@@ -173,6 +173,8 @@ export function Composer({
   const [docCount, setDocCount] = useState<number | null>(null);
   const [catOpen, setCatOpen] = useState(false);
   const [catQuery, setCatQuery] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+  const publishComposerHeight = useRef<() => void>(() => undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const kbRef = useRef<HTMLDivElement>(null);
@@ -360,7 +362,51 @@ export function Composer({
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    publishComposerHeight.current();
   }, [value]);
+
+  // The composer floats over the transcript, so its height is published as a
+  // CSS variable that the scroll box reserves as bottom padding. Only real size
+  // changes (a new line, an attachment strip) reach it — typing inside one line
+  // does not — so the conversation is never re-laid-out on a keystroke.
+  useEffect(() => {
+    const el = rootRef.current;
+    const host = el?.closest('.chat') as HTMLElement | null;
+    const slot = el?.closest('.view-slot') as HTMLElement | null;
+    if (!el || !host) return;
+    let last = -1;
+    const publish = () => {
+      const height = el.getBoundingClientRect().height;
+      // A view that is not on screen has no box; keep the last real value.
+      if (height <= 0) return;
+      const next = Math.round(height);
+      if (next === last) return;
+      const scroll = host.querySelector('.chat__body') as HTMLElement | null;
+      // Growing the reserved space pushes the transcript up; if the reader was
+      // at the bottom, move with it so the newest message stays visible.
+      const pinned = scroll
+        ? scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= 48
+        : false;
+      last = next;
+      host.style.setProperty('--composer-h', `${next}px`);
+      if (pinned && scroll) scroll.scrollTop = scroll.scrollHeight;
+    };
+    publishComposerHeight.current = publish;
+    publish();
+    // ResizeObserver alone is not enough: this view may finish mounting while
+    // its slot is still hidden, and a hidden window does not deliver resize
+    // notifications at all. The slot's class change is what makes it visible.
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    const reveal = new MutationObserver(publish);
+    if (slot) reveal.observe(slot, { attributes: true, attributeFilter: ['class'] });
+    return () => {
+      observer.disconnect();
+      reveal.disconnect();
+      publishComposerHeight.current = () => undefined;
+      host.style.removeProperty('--composer-h');
+    };
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -869,7 +915,7 @@ export function Composer({
   );
 
   return (
-    <div className="composer">
+    <div className="composer" ref={rootRef}>
       <div
         className={`composer__box ${dropActive ? 'is-drop' : ''}`}
         onDragEnter={(event) => {

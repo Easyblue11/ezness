@@ -37,6 +37,11 @@ import type {
   WorkspaceLibrary,
 } from '../types';
 import { buildAttachmentContext, buildSessionMarkdown, estimateTokens } from '../lib/chat';
+import {
+  appendStreamText,
+  clearStreamText,
+  takeStreamText,
+} from '../lib/streamText';
 import { readWebMode } from '../data/web';
 import {
   compressConversation,
@@ -2288,13 +2293,26 @@ export function WorkspacePage({
     buffer.content = '';
     buffer.thinking = '';
 
+    // Only the streaming bubble listens to this; the task list and the
+    // composer stay untouched while a run writes.
+    if (content) appendStreamText(messageId, 'content', content);
+    if (thinking) appendStreamText(messageId, 'thinking', thinking);
+  }
+
+  /** Move the live tail into the stored message, then drop the tail. */
+  function commitStreamText(messageId: string) {
+    flushDeltas(messageId);
+    const live = takeStreamText(messageId);
+    if (!live.content && !live.thinking) return;
     setMessages((prev) =>
       prev.map((message) =>
         message.id === messageId
           ? {
               ...message,
-              content: content ? message.content + content : message.content,
-              thinking: thinking ? (message.thinking ?? '') + thinking : message.thinking,
+              content: message.content + live.content,
+              thinking: live.thinking
+                ? (message.thinking ?? '') + live.thinking
+                : message.thinking,
             }
           : message,
       ),
@@ -2505,7 +2523,7 @@ export function WorkspacePage({
         if (key.startsWith(`${event.requestId}:`)) runningCalls.current.delete(key);
       }
 
-      flushDeltas(messageId);
+      commitStreamText(messageId);
       dropDeltaBuffer(messageId);
       // Only this run ends; the other tasks keep their entries and streams.
       streamsRef.current.delete(active.requestId);
@@ -2979,6 +2997,7 @@ export function WorkspacePage({
     for (const stream of [...streamsRef.current.values()]) {
       if (!affected.has(stream.chatId)) continue;
       streamsRef.current.delete(stream.requestId);
+      clearStreamText(stream.messageId);
       dropDeltaBuffer(stream.messageId);
       removedRequests.push(stream.requestId);
       void window.ezness?.agentAbort?.(stream.requestId);
@@ -3417,6 +3436,7 @@ export function WorkspacePage({
     const previous = [...streamsRef.current.values()].find((stream) => stream.chatId === chat.id);
     if (previous) {
       streamsRef.current.delete(previous.requestId);
+      commitStreamText(previous.messageId);
       dropDeltaBuffer(previous.messageId);
       syncStreams();
       for (const key of runningCalls.current) {
@@ -3475,6 +3495,7 @@ export function WorkspacePage({
     const fail = (content: string) => {
       streamsRef.current.delete(requestId);
       touchFloating(chat.id, 'error');
+      clearStreamText(assistantId);
       dropDeltaBuffer(assistantId);
       syncStreams();
       setActivity((prev) => (prev?.messageId === assistantId ? null : prev));
@@ -3638,6 +3659,7 @@ export function WorkspacePage({
       // The IPC itself failed (the run's own errors arrive as stream events),
       // so this stream would otherwise stay registered forever.
       streamsRef.current.delete(requestId);
+      clearStreamText(assistantId);
       dropDeltaBuffer(assistantId);
       syncStreams();
       setActivity((prev) => (prev?.messageId === assistantId ? null : prev));

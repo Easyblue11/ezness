@@ -1,4 +1,5 @@
 import type { Message, Session, WarehouseReadResult } from '../types';
+import { streamTextOf } from './streamText';
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -117,6 +118,9 @@ export function buildSessionMarkdown(
   for (const message of items) {
     const who = message.role === 'user' ? t('app.export.user') : t('app.export.assistant');
     const time = new Date(message.createdAt).toLocaleString(locale);
+    // A run that is still writing lives outside the message list; an export
+    // taken mid-answer should still contain what is already on screen.
+    const content = message.content + streamTextOf(message.id).content;
     if (message.summary) {
       lines.push(
         `## ${t('app.export.summaryHeading', { time })}`,
@@ -132,7 +136,7 @@ export function buildSessionMarkdown(
       );
       continue;
     }
-    lines.push(`## ${who} · ${time}`, '', message.content.trim() || t('app.export.empty'), '');
+    lines.push(`## ${who} · ${time}`, '', content.trim() || t('app.export.empty'), '');
   }
 
   return lines.join('\n');

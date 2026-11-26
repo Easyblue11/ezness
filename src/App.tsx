@@ -27,6 +27,7 @@ import {
   type RagContext,
 } from './lib/rag';
 import { buildAttachmentContext, buildSessionMarkdown } from './lib/chat';
+import { appendStreamText, clearStreamText, takeStreamText } from './lib/streamText';
 import { DEFAULT_FX_RATE } from './lib/usage';
 import {
   compressConversation,
@@ -714,17 +715,10 @@ function AppBody({
     buffer.content = '';
     buffer.thinking = '';
 
-    setMessages((prev) =>
-      prev.map((message) =>
-        message.id === messageId
-          ? {
-              ...message,
-              content: content ? message.content + content : message.content,
-              thinking: thinking ? (message.thinking ?? '') + thinking : message.thinking,
-            }
-          : message,
-      ),
-    );
+    // Written to the live tail, not the message list: only the streaming
+    // bubble re-renders, not the whole window.
+    if (content) appendStreamText(messageId, 'content', content);
+    if (thinking) appendStreamText(messageId, 'thinking', thinking);
   }
 
   // Stream deltas from the main process into the matching assistant bubble.
@@ -746,8 +740,26 @@ function AppBody({
       }
 
       flushDeltas();
+      // Fold the live tail into the stored message; the run is over, so from
+      // here on the transcript is the single source of truth.
+      const live = takeStreamText(messageId);
       streamRef.current = null;
       setStreamingId(null);
+      if (live.content || live.thinking) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === messageId
+              ? {
+                  ...message,
+                  content: message.content + live.content,
+                  thinking: live.thinking
+                    ? (message.thinking ?? '') + live.thinking
+                    : message.thinking,
+                }
+              : message,
+          ),
+        );
+      }
 
       // 用户切到了别的会话时，这一轮跑完要留个红点提醒；用户主动停止不算。
       if ((event.type === 'done' || event.type === 'error') && active.sessionId !== activeIdRef.current) {
@@ -1293,10 +1305,20 @@ function AppBody({
     if (previous) {
       streamRef.current = null;
       void api?.chatAbort?.(previous.requestId);
+      flushDeltas();
+      const live = takeStreamText(previous.messageId);
       setMessages((prev) =>
         prev.map((message) =>
           message.id === previous.messageId
-            ? { ...message, stopped: true, content: message.content || tRef.current('app.chat.stopped') }
+            ? {
+                ...message,
+                stopped: true,
+                content:
+                  message.content + live.content || tRef.current('app.chat.stopped'),
+                thinking: live.thinking
+                  ? (message.thinking ?? '') + live.thinking
+                  : message.thinking,
+              }
             : message,
         ),
       );
@@ -1533,6 +1555,7 @@ function AppBody({
 
     if (streamRef.current && removed.has(activeId)) {
       void window.ezness?.chatAbort?.(streamRef.current.requestId);
+      clearStreamText(streamRef.current.messageId);
       streamRef.current = null;
       setStreamingId(null);
     }

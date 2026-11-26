@@ -764,8 +764,12 @@ button {
   min-height: 0;
   overflow-y: auto;
   /* No top padding: a sticky code header pins to the scrollport's edge, and
-     padding here would leave a strip of scrolling code above it. */
-  padding: 0 0 10px;
+     padding here would leave a strip of scrolling code above it.
+     The composer floats over the transcript (see `.composer`), so its height
+     is reserved as padding instead of shrinking the scrollport: growing the
+     input must never re-lay-out the conversation, which gets slower the longer
+     the transcript is. `--composer-h` is kept current from Composer.tsx. */
+  padding: 0 0 calc(var(--composer-h, 96px) + 10px);
   /* The view is pinned by script; browser scroll anchoring would fight it and
      shift the reader's position whenever markdown re-lays-out mid-stream. */
   overflow-anchor: none;
@@ -1474,7 +1478,16 @@ button {
 /* ---------- composer ---------- */
 
 .composer {
-  flex: none;
+  /* Floats over the transcript rather than sitting in the flex column: in flow,
+     every textarea growth shrank `.chat__body` and forced a full-document
+     layout of the whole conversation on each keystroke. The scroll box reserves
+     this height as padding instead, so typing only lays out the composer. */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  background: var(--bg);
   padding: 4px 28px 14px;
 }
 
@@ -9745,8 +9758,12 @@ button {
 
 /* Plan mode hand-off: the plan is done, ask before executing it. */
 .plan-start {
-  flex: none;
-  margin: 0 18px 10px;
+  /* Floats just above the composer, which no longer takes part in the column. */
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: calc(var(--composer-h, 96px) + 10px);
+  z-index: 4;
   padding: 10px 14px;
   display: flex;
   align-items: center;

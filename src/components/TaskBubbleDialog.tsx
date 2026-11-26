@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Message } from '../types';
 import { useI18n } from '../i18n';
+import { streamTextOf, useStreamsVersion } from '../lib/streamText';
 import { ToolSteps } from './ChatView';
 import { MarkdownView } from './MarkdownView';
 
@@ -42,6 +43,9 @@ export function TaskBubbleDialog({
   onEnter,
 }: TaskBubbleDialogProps) {
   const { t } = useI18n();
+  // The message list no longer changes per token; this bubble follows the live
+  // tail directly so a running task still visibly writes here.
+  const streamVersion = useStreamsVersion();
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -55,7 +59,7 @@ export function TaskBubbleDialog({
   useEffect(() => {
     const list = listRef.current;
     if (list && stickRef.current) list.scrollTop = list.scrollHeight;
-  }, [task.id, messages]);
+  }, [task.id, messages, streamVersion]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -69,6 +73,7 @@ export function TaskBubbleDialog({
     (message) =>
       message.role !== 'system' &&
       (Boolean(message.content?.trim()) ||
+        Boolean(streamTextOf(message.id).content.trim()) ||
         (message.attachments?.length ?? 0) > 0 ||
         (message.steps?.length ?? 0) > 0),
   );
@@ -138,7 +143,10 @@ export function TaskBubbleDialog({
                         <ToolSteps steps={message.steps} />
                       </div>
                     )}
-                  <MarkdownView text={message.content} citations={message.citations} />
+                  <MarkdownView
+                    text={message.content + streamTextOf(message.id).content}
+                    citations={message.citations}
+                  />
                   {message.attachments && message.attachments.length > 0 && (
                     <div className="bubble__files">
                       {message.attachments.map((file) => (

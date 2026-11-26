@@ -50,6 +50,7 @@ import { MaterialFileIcon } from './MaterialFileIcon';
 import { SessionStats } from './SessionStats';
 import { formatTokens } from './ContextRing';
 import { conversationTokens, isVisible } from '../lib/compression';
+import { useStreamText, type StreamText } from '../lib/streamText';
 
 /** Suggestion chips on the empty screen; resolved through `t` when rendered. */
 const SUGGESTION_KEYS = ['chat.suggestion.1', 'chat.suggestion.2', 'chat.suggestion.3'] as const;
@@ -904,6 +905,8 @@ interface RowProps {
   message: Message;
   /** This row is the one still being written. */
   streaming: boolean;
+  /** Live tail for the streaming row; the stored message gets it when the run ends. */
+  live?: StreamText;
   phase: 'retrieving' | 'generating';
   activity?: AgentActivity | null;
   taskTitles?: Record<string, string>;
@@ -928,6 +931,7 @@ interface RowProps {
 function ChatMessageRowView({
   message,
   streaming,
+  live,
   phase,
   activity,
   taskTitles,
@@ -987,16 +991,21 @@ function ChatMessageRowView({
     );
   }
 
+  // The streaming row shows what has arrived so far; finished rows have no live
+  // tail and read straight from the stored message.
+  const thinking = live ? (message.thinking ?? '') + live.thinking : message.thinking;
+  const content = live ? message.content + live.content : message.content;
+
   return (
     <article className={`msg msg--${message.role}`} data-message-id={message.id}>
       <div className="msg__avatar">
         {message.role === 'user' ? t('chat.avatar.user') : 'E'}
       </div>
       <div className="msg__content">
-        {message.role === 'assistant' && message.thinking && (
+        {message.role === 'assistant' && thinking && (
           <details className="msg__think" open={streaming}>
             <summary>{t('chat.thinking')}</summary>
-            <div className="msg__think-body">{message.thinking}</div>
+            <div className="msg__think-body">{thinking}</div>
           </details>
         )}
 
@@ -1004,18 +1013,18 @@ function ChatMessageRowView({
           <ToolSteps steps={message.steps} taskTitles={taskTitles} />
         )}
 
-        {(message.role === 'assistant' || message.content) && (
+        {(message.role === 'assistant' || content) && (
           <div className="msg__bubble">
             {message.role === 'assistant' ? (
-              <MarkdownView text={message.content} citations={message.citations} />
+              <MarkdownView text={content} citations={message.citations} />
             ) : (
-              message.content
+              content
             )}
             {streaming &&
               (activity ? (
                 <ActivityLine activity={activity} />
               ) : (
-                !message.content && (
+                !content && (
                   <span className="msg__typing">
                     {phase === 'retrieving'
                       ? t('chat.typing.retrieving')
@@ -1051,7 +1060,7 @@ function ChatMessageRowView({
         <div className="msg__foot">
           <time className="msg__time">{formatClock(message.createdAt, locale)}</time>
           {message.stopped && <span className="msg__stopped">{t('chat.stopped')}</span>}
-          {message.content && <CopyButton text={message.content} />}
+          {content && <CopyButton text={content} />}
         </div>
 
         {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
@@ -1070,6 +1079,7 @@ function ChatMessageRowView({
 function sameRow(prev: RowProps, next: RowProps): boolean {
   if (prev.message !== next.message) return false;
   if (prev.streaming !== next.streaming) return false;
+  if (prev.live !== next.live) return false;
   if (prev.taskTitles !== next.taskTitles) return false;
   if (prev.canUndo !== next.canUndo) return false;
   // `t` changes identity when the language pack changes; rows that cached
@@ -1272,6 +1282,14 @@ export function ChatView({
   contextMode = 'chat',
 }: Props) {
   const { t, locale } = useI18n();
+  // The tail of the answer being written. Subscribing here keeps this view in
+  // step without the page that owns the transcript re-rendering per token. A
+  // run in some other conversation is none of this view's business.
+  const liveId =
+    streamingId && messages.some((message) => message.id === streamingId)
+      ? streamingId
+      : null;
+  const liveText = useStreamText(liveId);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [answerDraft, setAnswerDraft] = useState('');
@@ -1352,8 +1370,8 @@ export function ChatView({
     setAnswerDraft('');
   }, [question?.callId]);
   const toastTimer = useRef(0);
-  const lastContent = messages[messages.length - 1]?.content ?? '';
-  const lastThinking = messages[messages.length - 1]?.thinking ?? '';
+  const lastContent = (messages[messages.length - 1]?.content ?? '') + liveText.content;
+  const lastThinking = (messages[messages.length - 1]?.thinking ?? '') + liveText.thinking;
 
   /** Follow new tokens only while the reader is at the bottom of the list. */
   const stickRef = useRef(true);
@@ -1889,6 +1907,7 @@ export function ChatView({
                 key={message.id}
                 message={message}
                 streaming={message.id === streamingId}
+                live={message.id === liveId ? liveText : undefined}
                 phase={phase}
                 activity={message.id === streamingId ? activity : undefined}
                 taskTitles={taskTitles}
