@@ -2,7 +2,7 @@
 
 <img src="build/icon.png" width="96" alt="EZNess" />
 
-# EZNess
+# EZNess v1.0.1
 
 **把 AI 放回你自己的电脑里。**
 
