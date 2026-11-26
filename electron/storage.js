@@ -24,6 +24,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { KbStore } = require('./kb/store');
+const uiText = require('./ui-text');
 
 const BOOTSTRAP = 'system-config.json';
 const PORTABLE_DIR = 'EznessData';
@@ -296,7 +297,12 @@ async function copyKbTo(kb, from, to) {
     copy.close();
     if (after.documents !== before.documents || after.chunks !== before.chunks) {
       throw new Error(
-        `数据核对不一致（${after.documents} 个文件 / ${after.chunks} 段 ≠ ${before.documents} / ${before.chunks}）`,
+        uiText.t('main.storage.kbMismatch', {
+          afterDocs: after.documents,
+          afterChunks: after.chunks,
+          beforeDocs: before.documents,
+          beforeChunks: before.chunks,
+        }),
       );
     }
   } catch (error) {
@@ -307,7 +313,9 @@ async function copyKbTo(kb, from, to) {
     } catch {
       /* the old store could not be reopened; the caller reports the error */
     }
-    throw new Error(`知识库复制失败：${error?.message || String(error)}`);
+    throw new Error(
+      uiText.t('main.storage.kbCopyFailed', { error: error?.message || String(error) }),
+    );
   }
 
   kb.store = new KbStore(from).open();
@@ -335,7 +343,7 @@ async function copyWarehouseTo(warehouse, from, to) {
   for (const item of items) {
     const suffix = item.ext ? `.${item.ext}` : '';
     if (!fs.existsSync(path.join(to, 'files', `${item.id}${suffix}`))) {
-      throw new Error(`仓库文件「${item.name}」没有复制过去`);
+      throw new Error(uiText.t('main.storage.warehouseFileMissing', { name: item.name }));
     }
   }
 }
@@ -346,9 +354,9 @@ async function copyWarehouseTo(warehouse, from, to) {
  * knowledge base and warehouse may live elsewhere and are read from the engines.
  */
 async function migrateDataRoot({ storage, kb, warehouse, voice, persistKb }, rawTarget, options = {}) {
-  if (!rawTarget) throw new Error('没有选择新的存储位置');
+  if (!rawTarget) throw new Error(uiText.t('main.storage.noTarget'));
   if (!path.isAbsolute(String(rawTarget))) {
-    throw new Error('请选择一个完整的文件夹路径');
+    throw new Error(uiText.t('main.storage.absolutePath'));
   }
 
   const target = path.resolve(String(rawTarget));
@@ -356,7 +364,7 @@ async function migrateDataRoot({ storage, kb, warehouse, voice, persistKb }, raw
   const targetPaths = storage.pathsAt(target);
   const sourcePaths = storage.pathsAt(source);
 
-  if (kb.working || kb.queue.length > 0) throw new Error('正在导入文件，请等导入完成后再迁移');
+  if (kb.working || kb.queue.length > 0) throw new Error(uiText.t('main.storage.kbBusy'));
   await warehouse.load();
 
   const oldKbRoot = path.resolve(kb.config.storageRoot || sourcePaths.rag);
@@ -364,26 +372,26 @@ async function migrateDataRoot({ storage, kb, warehouse, voice, persistKb }, raw
 
   const sameRoot = samePath(target, source);
   if (!sameRoot && (inside(target, source) || inside(source, target))) {
-    throw new Error('存储位置不能设成当前目录的上层或下层，请选择其他文件夹');
+    throw new Error(uiText.t('main.storage.nestedRoot'));
   }
   for (const root of [oldKbRoot, oldWhRoot]) {
     if (inside(target, root)) {
-      throw new Error('不能把存储位置设成知识库或仓库目录本身，请选择其他文件夹');
+      throw new Error(uiText.t('main.storage.rootIsLibrary'));
     }
   }
 
   if (!sameRoot) {
     for (const name of RESERVED) {
       if (fs.existsSync(path.join(target, name))) {
-        throw new Error('这个文件夹里已经有一套 Ezness 数据，请换一个空文件夹');
+        throw new Error(uiText.t('main.storage.dataExists'));
       }
     }
   } else {
     if (fs.existsSync(targetPaths.rag) && !samePath(targetPaths.rag, oldKbRoot)) {
-      throw new Error('目标文件夹里已经有一个 ezrag，请换一个位置');
+      throw new Error(uiText.t('main.storage.ragExists'));
     }
     if (fs.existsSync(targetPaths.warehouse) && !samePath(targetPaths.warehouse, oldWhRoot)) {
-      throw new Error('目标文件夹里已经有一个 ezstorge，请换一个位置');
+      throw new Error(uiText.t('main.storage.warehouseExists'));
     }
   }
 
@@ -410,13 +418,20 @@ async function migrateDataRoot({ storage, kb, warehouse, voice, persistKb }, raw
   }
   const free = await freeBytes(target);
   if (free !== null && free < need + 32 * 1024 * 1024) {
-    throw new Error(`目标位置空间不足：需要约 ${formatBytes(need)}，可用 ${formatBytes(free)}`);
+    throw new Error(
+      uiText.t('main.storage.notEnoughSpace', {
+        need: formatBytes(need),
+        free: formatBytes(free),
+      }),
+    );
   }
 
   try {
     await fsp.mkdir(target, { recursive: true });
   } catch (error) {
-    throw new Error(`无法创建目标文件夹：${error?.message || String(error)}`);
+    throw new Error(
+      uiText.t('main.storage.mkdirFailed', { error: error?.message || String(error) }),
+    );
   }
 
   const staging = path.join(target, STAGING);

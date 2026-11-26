@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Message } from '../types';
+import { useI18n } from '../i18n';
 import { ToolSteps } from './ChatView';
 import { MarkdownView } from './MarkdownView';
 
@@ -12,11 +13,11 @@ export interface BubbleTask {
   status: BubbleTaskStatus;
 }
 
-const STATUS_LABEL: Record<BubbleTaskStatus, string> = {
-  running: '运行中',
-  done: '已完成',
-  error: '出错',
-  stopped: '已停止',
+const STATUS_LABEL_KEY: Record<BubbleTaskStatus, string> = {
+  running: 'workspace.status.running',
+  done: 'workspace.status.done',
+  error: 'workspace.status.error',
+  stopped: 'workspace.status.stopped',
 };
 
 interface TaskBubbleDialogProps {
@@ -40,6 +41,7 @@ export function TaskBubbleDialog({
   onSend,
   onEnter,
 }: TaskBubbleDialogProps) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -83,19 +85,26 @@ export function TaskBubbleDialog({
       <div
         className="bubble"
         role="dialog"
-        aria-label={`${task.title} 的对话`}
+        aria-label={t('workspace.bubble.dialogAria', { title: task.title })}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="bubble__head">
           <div className="bubble__who">
             <strong>{task.title}</strong>
-            <span className={`bubble__status is-${task.status}`}>{STATUS_LABEL[task.status]}</span>
+            <span className={`bubble__status is-${task.status}`}>
+              {t(STATUS_LABEL_KEY[task.status])}
+            </span>
           </div>
           <div className="bubble__acts">
             <button type="button" className="btn btn--primary btn--tiny" onClick={onEnter}>
-              进入工作
+              {t('workspace.bubble.enter')}
             </button>
-            <button type="button" className="bubble__close" aria-label="关闭" onClick={onClose}>
+            <button
+              type="button"
+              className="bubble__close"
+              aria-label={t('workspace.bubble.close')}
+              onClick={onClose}
+            >
               ×
             </button>
           </div>
@@ -112,11 +121,15 @@ export function TaskBubbleDialog({
           }}
         >
           {visible.length === 0 ? (
-            <p className="bubble__empty">这个任务还没有对话。可以直接在下面说一句。</p>
+            <p className="bubble__empty">{t('workspace.bubble.empty')}</p>
           ) : (
             visible.map((message) => (
               <div key={message.id} className={`bubble__msg is-${message.role}`}>
-                <span className="bubble__role">{message.role === 'user' ? '你' : '任务'}</span>
+                <span className="bubble__role">
+                  {message.role === 'user'
+                    ? t('workspace.bubble.roleUser')
+                    : t('workspace.bubble.roleTask')}
+                </span>
                 <div className="bubble__text">
                   {message.role === 'assistant' &&
                     message.steps &&
@@ -139,7 +152,9 @@ export function TaskBubbleDialog({
               </div>
             ))
           )}
-          {task.status === 'running' && <p className="bubble__typing">正在生成…</p>}
+          {task.status === 'running' && (
+            <p className="bubble__typing">{t('workspace.bubble.typing')}</p>
+          )}
         </div>
 
         <footer className="bubble__foot">
@@ -147,7 +162,7 @@ export function TaskBubbleDialog({
             ref={inputRef}
             rows={2}
             value={draft}
-            placeholder="直接对这个任务说话，回车发送（Shift+回车换行）"
+            placeholder={t('workspace.bubble.placeholder')}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -162,7 +177,7 @@ export function TaskBubbleDialog({
             disabled={!draft.trim()}
             onClick={submit}
           >
-            发送
+            {t('workspace.bubble.send')}
           </button>
         </footer>
       </div>

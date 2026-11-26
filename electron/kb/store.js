@@ -8,9 +8,9 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
+const uiText = require('../ui-text');
 
 const DEFAULT_CATEGORY_ID = 'default';
-const DEFAULT_CATEGORY_NAME = '默认分类';
 const SCHEMA_VERSION = 1;
 
 const SCHEMA = `
@@ -86,7 +86,7 @@ class KbStore {
     if (!seeded) {
       this.db
         .prepare('INSERT INTO categories (id, name, created_at) VALUES (?, ?, ?)')
-        .run(DEFAULT_CATEGORY_ID, DEFAULT_CATEGORY_NAME, Date.now());
+        .run(DEFAULT_CATEGORY_ID, uiText.t('main.kb.defaultCategoryName'), Date.now());
     }
     this.bumpVersion();
     return this;
@@ -223,18 +223,18 @@ class KbStore {
   }
 
   renameCategory(id, name) {
-    if (id === DEFAULT_CATEGORY_ID) throw new Error('默认分类不能重命名');
+    if (id === DEFAULT_CATEGORY_ID) throw new Error(uiText.t('main.kb.error.defaultRename'));
     this.db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(name, id);
   }
 
   /** `includes` only applies to 组合分类; 文件分类 ignore it. */
   setCategoryIncludes(id, includes) {
-    if (id === DEFAULT_CATEGORY_ID) throw new Error('默认分类不能改成组合分类');
+    if (id === DEFAULT_CATEGORY_ID) throw new Error(uiText.t('main.kb.error.defaultToGroup'));
     this.db.prepare('UPDATE categories SET includes = ? WHERE id = ?').run(JSON.stringify(includes), id);
   }
 
   deleteCategory(id) {
-    if (id === DEFAULT_CATEGORY_ID) throw new Error('默认分类不能删除');
+    if (id === DEFAULT_CATEGORY_ID) throw new Error(uiText.t('main.kb.error.defaultDelete'));
     this.db.prepare('UPDATE documents SET category_id = ? WHERE category_id = ?').run(DEFAULT_CATEGORY_ID, id);
     this.db.prepare('DELETE FROM categories WHERE id = ?').run(id);
 
@@ -398,4 +398,12 @@ class KbStore {
   }
 }
 
-module.exports = { KbStore, DEFAULT_CATEGORY_ID, DEFAULT_CATEGORY_NAME, SCHEMA_VERSION };
+module.exports = {
+  KbStore,
+  DEFAULT_CATEGORY_ID,
+  // Localized at access time: the seeded name follows the interface language.
+  get DEFAULT_CATEGORY_NAME() {
+    return uiText.t('main.kb.defaultCategoryName');
+  },
+  SCHEMA_VERSION,
+};

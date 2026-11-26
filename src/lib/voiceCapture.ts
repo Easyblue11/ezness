@@ -72,17 +72,24 @@ function toChunks(samples: Float32Array, onChunk: (chunk: Float32Array) => void)
   }
 }
 
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
 export interface VoiceCaptureOptions {
   deviceId: string;
   onChunk: (samples: Float32Array) => void;
+  /** Translator from the calling component; English copy is used without one. */
+  t?: Translate;
 }
 
 export async function startVoiceCapture({
   deviceId,
   onChunk,
+  t,
 }: VoiceCaptureOptions): Promise<VoiceCaptureHandle> {
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error('当前环境不支持麦克风采集');
+    throw new Error(
+      t ? t('app.voice.micUnsupported') : 'Microphone capture is not supported in this environment',
+    );
   }
 
   const { stream } = await openStream(deviceId);
@@ -126,7 +133,11 @@ export async function startVoiceCapture({
   if (context.sampleRate !== SAMPLE_RATE) {
     await context.close().catch(() => undefined);
     stream.getTracks().forEach((track) => track.stop());
-    throw new Error(`音频设备不支持 16 kHz 采集（实际 ${context.sampleRate} Hz）`);
+    throw new Error(
+      t
+        ? t('app.voice.sampleRateUnsupported', { rate: context.sampleRate })
+        : `This audio device does not support 16 kHz capture (reported ${context.sampleRate} Hz)`,
+    );
   }
 
   return {

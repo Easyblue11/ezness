@@ -14,6 +14,8 @@ import type {
   WorkspaceFileResult,
   WorkspaceTreeEntry,
 } from '../types';
+import { useI18n } from '../i18n';
+import type { Translate } from './AskLevelSlider';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ChevronDownIcon, CloseIcon, FolderIcon, PlusIcon, RefreshIcon } from './Icons';
 import { MaterialFileIcon } from './MaterialFileIcon';
@@ -60,9 +62,9 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function formatTime(value?: number): string {
+function formatTime(value: number | undefined, locale: string): string {
   if (!value) return '—';
-  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+  return new Date(value).toLocaleString(locale, { hour12: false });
 }
 
 function parentOf(relativePath: string): string {
@@ -74,10 +76,10 @@ function isSameOrInside(path: string, ancestor: string): boolean {
   return path === ancestor || path.startsWith(`${ancestor}/`);
 }
 
-function fileType(name: string): string {
+function fileType(name: string, t: Translate): string {
   const dot = name.lastIndexOf('.');
-  if (dot <= 0 || dot === name.length - 1) return '文件';
-  return `${name.slice(dot + 1).toUpperCase()} 文件`;
+  if (dot <= 0 || dot === name.length - 1) return t('workspace.files.type.file');
+  return t('workspace.files.type.ext', { ext: name.slice(dot + 1).toUpperCase() });
 }
 
 /**
@@ -91,6 +93,9 @@ function fileType(name: string): string {
  * can follow the host, so the open folders are re-read on a slow timer.
  */
 export function WorkspaceFiles({ workspace }: Props) {
+  const { t, locale } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
   const workspaceId = workspace?.id ?? '';
   const isRemote = workspace?.kind === 'remote';
   const [entries, setEntries] = useState<Record<string, WorkspaceTreeEntry[]>>({});
@@ -142,7 +147,7 @@ export function WorkspaceFiles({ workspace }: Props) {
       if (!workspaceId) return;
       const api = window.ezness;
       if (!api?.workspaceTree) {
-        setError('文件树只在桌面端可用。');
+        setError(tRef.current('workspace.files.error.desktopTree'));
         return;
       }
       const gen = generation.current;
@@ -160,7 +165,7 @@ export function WorkspaceFiles({ workspace }: Props) {
             invalidate(dir);
             return;
           }
-          setError(result?.error || '读取目录失败。');
+          setError(result?.error || tRef.current('workspace.files.error.readDir'));
           return;
         }
         setRoot(result.root ?? '');
@@ -342,7 +347,7 @@ export function WorkspaceFiles({ workspace }: Props) {
   async function openFile(entry: WorkspaceTreeEntry) {
     const api = window.ezness;
     if (!api?.workspaceReadFile) {
-      setError('文件预览只在桌面端可用。');
+      setError(t('workspace.files.error.desktopPreview'));
       return;
     }
     setOpenError('');
@@ -366,7 +371,9 @@ export function WorkspaceFiles({ workspace }: Props) {
     setActionError('');
     try {
       const result = await window.ezness?.workspaceOpenFile?.({ workspaceId, path: target });
-      if (result && !result.ok) setActionError(result.error || '系统程序没能打开这个文件。');
+      if (result && !result.ok) {
+        setActionError(result.error || t('workspace.files.error.openExternal'));
+      }
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     }
@@ -380,7 +387,9 @@ export function WorkspaceFiles({ workspace }: Props) {
         workspaceId,
         path: preview.path,
       });
-      if (result && !result.ok) setOpenError(result.error || '系统程序没能打开这个文件。');
+      if (result && !result.ok) {
+        setOpenError(result.error || t('workspace.files.error.openExternal'));
+      }
     } catch (err) {
       setOpenError(err instanceof Error ? err.message : String(err));
     }
@@ -403,7 +412,9 @@ export function WorkspaceFiles({ workspace }: Props) {
     setActionError('');
     try {
       const result = await window.ezness?.workspaceReveal?.({ workspaceId, path });
-      if (result && !result.ok) setActionError(result.error || '打不开这个位置。');
+      if (result && !result.ok) {
+        setActionError(result.error || t('workspace.files.error.reveal'));
+      }
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     }
@@ -449,17 +460,17 @@ export function WorkspaceFiles({ workspace }: Props) {
     if (!prompt || busy) return;
     const name = prompt.value.trim();
     if (!name) {
-      setPromptError('名称不能为空。');
+      setPromptError(t('workspace.files.error.emptyName'));
       return;
     }
     if (/[\\/]/.test(name)) {
-      setPromptError('名称里不能包含斜杠。');
+      setPromptError(t('workspace.files.error.slash'));
       return;
     }
 
     const api = window.ezness;
     if (!api?.workspaceCreateFolder || !api.workspaceRename) {
-      setPromptError('文件操作只在桌面端可用。');
+      setPromptError(t('workspace.files.error.desktopOps'));
       return;
     }
 
@@ -473,7 +484,7 @@ export function WorkspaceFiles({ workspace }: Props) {
           ? await api.workspaceCreateFolder({ workspaceId, parent, name })
           : await api.workspaceRename({ workspaceId, path: entryPath ?? '', name });
       if (!result?.ok) {
-        setPromptError(result?.error || '操作失败。');
+        setPromptError(result?.error || t('workspace.files.error.failed'));
         return;
       }
       setPrompt(null);
@@ -495,7 +506,7 @@ export function WorkspaceFiles({ workspace }: Props) {
     if (!target || busy) return;
     const api = window.ezness;
     if (!api?.workspaceDelete) {
-      setActionError('文件操作只在桌面端可用。');
+      setActionError(t('workspace.files.error.desktopOps'));
       return;
     }
     setBusy(true);
@@ -504,7 +515,7 @@ export function WorkspaceFiles({ workspace }: Props) {
       const result = await api.workspaceDelete({ workspaceId, path: target.path });
       setDeleteTarget(null);
       if (!result?.ok) {
-        setActionError(result?.error || '删除失败。');
+        setActionError(result?.error || t('workspace.files.error.delete'));
         return;
       }
       if (preview && isSameOrInside(preview.path, target.path)) setPreview(null);
@@ -529,7 +540,7 @@ export function WorkspaceFiles({ workspace }: Props) {
         path,
         name,
         loading: false,
-        result: result ?? { ok: false, error: '文件属性只在桌面端可用。' },
+        result: result ?? { ok: false, error: t('workspace.files.error.desktopProps') },
       });
     } catch (err) {
       setProperties({
@@ -552,13 +563,13 @@ export function WorkspaceFiles({ workspace }: Props) {
     if (!from || !canDrop(from, toDir)) return;
     const api = window.ezness;
     if (!api?.workspaceMove) {
-      setActionError('文件操作只在桌面端可用。');
+      setActionError(t('workspace.files.error.desktopOps'));
       return;
     }
     setActionError('');
     const result = await api.workspaceMove({ workspaceId, from, toDir });
     if (!result?.ok) {
-      setActionError(result?.error || '移动失败。');
+      setActionError(result?.error || t('workspace.files.error.move'));
       return;
     }
     if (preview && isSameOrInside(preview.path, from)) setPreview(null);
@@ -574,14 +585,14 @@ export function WorkspaceFiles({ workspace }: Props) {
     if (!list) {
       return loading.has(dir) ? (
         <div className="filetree__hint" style={{ paddingLeft: 12 + depth * 14 }}>
-          读取中…
+          {t('workspace.files.loading')}
         </div>
       ) : null;
     }
     if (list.length === 0 && depth > 0) {
       return (
         <div className="filetree__hint" style={{ paddingLeft: 12 + depth * 14 }}>
-          空文件夹
+          {t('workspace.files.emptyFolder')}
         </div>
       );
     }
@@ -663,7 +674,7 @@ export function WorkspaceFiles({ workspace }: Props) {
         })}
         {truncated[dir] && (
           <div className="filetree__hint" style={{ paddingLeft: 12 + depth * 14 }}>
-            条目太多，只显示前 500 项。
+            {t('workspace.files.truncated')}
           </div>
         )}
       </>
@@ -672,13 +683,13 @@ export function WorkspaceFiles({ workspace }: Props) {
 
   const workspaceLabel = workspace
     ? workspace.kind === 'tool-editor'
-      ? '功能编辑临时目录'
+      ? t('workspace.files.label.toolEditor')
       : workspace.kind === 'agent-editor'
-        ? 'Agent 编辑临时目录'
+        ? t('workspace.files.label.agentEditor')
         : isRemote
           ? root || workspace.remote?.root || workspace.name
           : root || workspace.name
-    : '未选择工作空间';
+    : t('workspace.files.label.none');
   const rootTitle =
     isRemote && workspace?.remote
       ? `${workspace.remote.username}@${workspace.remote.host}:${root || workspace.remote.root}`
@@ -689,12 +700,12 @@ export function WorkspaceFiles({ workspace }: Props) {
   return (
     <>
       <div className="ws__head">
-        <span className="ws__heading">文件</span>
+        <span className="ws__heading">{t('workspace.files.heading')}</span>
         <div className="ws__head-actions">
           <button
             className="ws__icon-btn"
-            title="新建文件夹"
-            aria-label="新建文件夹"
+            title={t('workspace.files.newFolder')}
+            aria-label={t('workspace.files.newFolder')}
             disabled={!workspaceId}
             onClick={() => startCreate('')}
           >
@@ -702,8 +713,8 @@ export function WorkspaceFiles({ workspace }: Props) {
           </button>
           <button
             className="ws__icon-btn"
-            title="刷新"
-            aria-label="刷新文件树"
+            title={t('workspace.files.refresh')}
+            aria-label={t('workspace.files.refreshTree')}
             disabled={!workspaceId}
             onClick={refresh}
           >
@@ -726,7 +737,7 @@ export function WorkspaceFiles({ workspace }: Props) {
       <div
         className={`filetree ${dropTarget === '' ? 'is-drop-target' : ''}`}
         role="tree"
-        aria-label="工作空间文件"
+        aria-label={t('workspace.files.treeAria')}
         onContextMenu={(event) => {
           if (event.target !== event.currentTarget) return;
           openMenu(event, null);
@@ -749,14 +760,16 @@ export function WorkspaceFiles({ workspace }: Props) {
           void moveInto(from, '');
         }}
       >
-        {!workspace && <div className="ws-hint">先在「工作空间」里选择一个工作空间。</div>}
+        {!workspace && (
+          <div className="ws-hint">{t('workspace.files.emptyHint')}</div>
+        )}
         {workspace && error && <div className="filetree__error">{error}</div>}
         {workspace && actionError && <div className="filetree__error">{actionError}</div>}
         {workspace && loading.has('') && !entries[''] && (
-          <div className="ws-hint">读取中…</div>
+          <div className="ws-hint">{t('workspace.files.loading')}</div>
         )}
         {workspace && entries[''] && entries[''].length === 0 && (
-          <div className="ws-hint">这个文件夹是空的。右键可以新建文件夹。</div>
+          <div className="ws-hint">{t('workspace.files.rootEmpty')}</div>
         )}
         {workspace && entries[''] && entries[''].length > 0 && renderDir('', 0)}
       </div>
@@ -787,14 +800,16 @@ export function WorkspaceFiles({ workspace }: Props) {
                       else void openFile(menuEntry);
                     }}
                   >
-                    {menuEntry.isDir ? '打开' : '在应用里预览'}
+                    {menuEntry.isDir
+                      ? t('workspace.files.menu.open')
+                      : t('workspace.files.menu.preview')}
                   </button>
                   {!menuEntry.isDir && !isRemote && (
                     <button
                       className="menu__item"
                       onClick={() => void openPathExternal(menuEntry.path)}
                     >
-                      用系统程序打开当前文件
+                      {t('workspace.files.menu.openExternal')}
                     </button>
                   )}
                   {!isRemote && (
@@ -802,7 +817,9 @@ export function WorkspaceFiles({ workspace }: Props) {
                       className="menu__item"
                       onClick={() => void reveal(menuEntry.path)}
                     >
-                      {menuEntry.isDir ? '打开当前文件夹' : '打开所在文件夹'}
+                      {menuEntry.isDir
+                        ? t('workspace.files.menu.openFolderHere')
+                        : t('workspace.files.menu.openContaining')}
                     </button>
                   )}
                   {menuEntry.isDir && (
@@ -810,11 +827,11 @@ export function WorkspaceFiles({ workspace }: Props) {
                       className="menu__item"
                       onClick={() => startCreate(menuEntry.path)}
                     >
-                      新建文件夹
+                      {t('workspace.files.newFolder')}
                     </button>
                   )}
                   <button className="menu__item" onClick={() => startRename(menuEntry)}>
-                    重命名
+                    {t('workspace.files.menu.rename')}
                   </button>
                   <div className="file-menu__sep" />
                   <button
@@ -824,23 +841,23 @@ export function WorkspaceFiles({ workspace }: Props) {
                       setDeleteTarget(menuEntry);
                     }}
                   >
-                    删除
+                    {t('workspace.files.menu.delete')}
                   </button>
                   <button
                     className="menu__item"
                     onClick={() => void openProperties(menuEntry)}
                   >
-                    查看属性
+                    {t('workspace.files.menu.properties')}
                   </button>
                 </>
               ) : (
                 <>
                   <button className="menu__item" onClick={() => startCreate('')}>
-                    新建文件夹
+                    {t('workspace.files.newFolder')}
                   </button>
                   {!isRemote && (
                     <button className="menu__item" onClick={() => void reveal('')}>
-                      打开当前文件夹
+                      {t('workspace.files.menu.openFolderHere')}
                     </button>
                   )}
                   <button
@@ -850,10 +867,10 @@ export function WorkspaceFiles({ workspace }: Props) {
                       refresh();
                     }}
                   >
-                    刷新
+                    {t('workspace.files.menu.refresh')}
                   </button>
                   <button className="menu__item" onClick={() => void openProperties(null)}>
-                    查看属性
+                    {t('workspace.files.menu.properties')}
                   </button>
                 </>
               )}
@@ -875,18 +892,26 @@ export function WorkspaceFiles({ workspace }: Props) {
           >
             <div className="modal__panel file-dialog" role="dialog" aria-modal="true">
               <h2 className="modal__title">
-                {prompt.mode === 'create' ? '新建文件夹' : '重命名'}
+                {prompt.mode === 'create'
+                  ? t('workspace.files.dialog.createTitle')
+                  : t('workspace.files.dialog.renameTitle')}
               </h2>
               <p className="modal__message">
                 {prompt.mode === 'create'
-                  ? `在${prompt.parent ? `“${prompt.parent}”` : '工作空间根目录'}里新建文件夹。`
-                  : `修改“${prompt.entry?.name ?? ''}”的名称。`}
+                  ? prompt.parent
+                    ? t('workspace.files.dialog.createParent', { parent: prompt.parent })
+                    : t('workspace.files.dialog.createRoot', {
+                        root: t('workspace.files.dialog.rootName'),
+                      })
+                  : t('workspace.files.dialog.renameMessage', {
+                      name: prompt.entry?.name ?? '',
+                    })}
               </p>
               <input
                 className="input file-dialog__input"
                 autoFocus
                 value={prompt.value}
-                placeholder="输入名称"
+                placeholder={t('workspace.files.dialog.placeholder')}
                 spellCheck={false}
                 onChange={(event) => {
                   setPrompt({ ...prompt, value: event.target.value });
@@ -914,14 +939,18 @@ export function WorkspaceFiles({ workspace }: Props) {
                     setPromptError('');
                   }}
                 >
-                  取消
+                  {t('workspace.files.dialog.cancel')}
                 </button>
                 <button
                   className="btn btn--primary"
                   disabled={busy}
                   onClick={() => void submitPrompt()}
                 >
-                  {busy ? '处理中…' : prompt.mode === 'create' ? '创建' : '保存'}
+                  {busy
+                    ? t('workspace.files.dialog.processing')
+                    : prompt.mode === 'create'
+                      ? t('workspace.files.dialog.create')
+                      : t('workspace.files.dialog.save')}
                 </button>
               </div>
             </div>
@@ -938,56 +967,60 @@ export function WorkspaceFiles({ workspace }: Props) {
             }}
           >
             <div className="modal__panel file-props" role="dialog" aria-modal="true">
-              <h2 className="modal__title">属性</h2>
-              {properties.loading && <p className="modal__message">读取中…</p>}
+              <h2 className="modal__title">{t('workspace.files.props.title')}</h2>
+              {properties.loading && (
+                <p className="modal__message">{t('workspace.files.props.loading')}</p>
+              )}
               {!properties.loading && propertyResult && !propertyResult.ok && (
                 <div className="notice notice--warn file-dialog__error">
-                  {propertyResult.error || '读取属性失败。'}
+                  {propertyResult.error || t('workspace.files.props.failed')}
                 </div>
               )}
               {!properties.loading && propertyResult?.ok && (
                 <dl className="file-props__list">
                   <div>
-                    <dt>名称</dt>
+                    <dt>{t('workspace.files.props.name')}</dt>
                     <dd>{propertyResult.name}</dd>
                   </div>
                   <div>
-                    <dt>类型</dt>
+                    <dt>{t('workspace.files.props.type')}</dt>
                     <dd>
                       {propertyResult.kind === 'folder'
-                        ? '文件夹'
-                        : fileType(propertyResult.name ?? '')}
+                        ? t('workspace.files.props.folder')
+                        : fileType(propertyResult.name ?? '', t)}
                     </dd>
                   </div>
                   <div>
-                    <dt>位置</dt>
+                    <dt>{t('workspace.files.props.location')}</dt>
                     <dd className="file-props__path" title={propertyResult.absolutePath}>
                       {propertyResult.absolutePath}
                     </dd>
                   </div>
                   <div>
-                    <dt>相对路径</dt>
-                    <dd>{propertyResult.path || '（根目录）'}</dd>
+                    <dt>{t('workspace.files.props.relative')}</dt>
+                    <dd>{propertyResult.path || t('workspace.files.props.rootDir')}</dd>
                   </div>
                   {propertyResult.kind === 'file' && (
                     <div>
-                      <dt>大小</dt>
+                      <dt>{t('workspace.files.props.size')}</dt>
                       <dd>{formatBytes(propertyResult.size ?? 0)}</dd>
                     </div>
                   )}
                   <div>
-                    <dt>修改时间</dt>
-                    <dd>{formatTime(propertyResult.mtime)}</dd>
+                    <dt>{t('workspace.files.props.modified')}</dt>
+                    <dd>{formatTime(propertyResult.mtime, locale)}</dd>
                   </div>
                   <div>
-                    <dt>创建时间</dt>
-                    <dd>{formatTime(propertyResult.birthtime ?? propertyResult.ctime)}</dd>
+                    <dt>{t('workspace.files.props.created')}</dt>
+                    <dd>
+                      {formatTime(propertyResult.birthtime ?? propertyResult.ctime, locale)}
+                    </dd>
                   </div>
                 </dl>
               )}
               <div className="modal__actions">
                 <button className="btn btn--ghost" onClick={() => setProperties(null)}>
-                  关闭
+                  {t('workspace.files.props.close')}
                 </button>
               </div>
             </div>
@@ -997,13 +1030,13 @@ export function WorkspaceFiles({ workspace }: Props) {
 
       {deleteTarget && (
         <ConfirmDialog
-          title="删除这个项目？"
+          title={t('workspace.files.delete.title')}
           message={
             isRemote
-              ? `“${deleteTarget.name}”会从远程主机上直接删除，不经过回收站，也无法从这个应用里恢复。`
-              : `“${deleteTarget.name}”会被移到系统回收站，之后仍可以从回收站恢复。`
+              ? t('workspace.files.delete.remote', { name: deleteTarget.name })
+              : t('workspace.files.delete.local', { name: deleteTarget.name })
           }
-          confirmLabel="删除"
+          confirmLabel={t('workspace.files.delete.confirm')}
           danger
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => void confirmDelete()}
@@ -1022,7 +1055,7 @@ export function WorkspaceFiles({ workspace }: Props) {
               className="modal__panel file-preview"
               role="dialog"
               aria-modal="true"
-              aria-label="文件预览"
+              aria-label={t('workspace.files.preview.aria')}
             >
               <div className="file-preview__head">
                 <div className="file-preview__title">
@@ -1033,7 +1066,9 @@ export function WorkspaceFiles({ workspace }: Props) {
                     {preview.result?.size !== undefined
                       ? formatBytes(preview.result.size)
                       : ''}
-                    {preview.result?.truncated ? ' · 已截断' : ''}
+                    {preview.result?.truncated
+                      ? ` · ${t('workspace.files.preview.truncated')}`
+                      : ''}
                     {previewHighlight
                       ? ` · ${languageDisplayName(previewHighlight.language)}`
                       : ''}
@@ -1041,8 +1076,8 @@ export function WorkspaceFiles({ workspace }: Props) {
                 </div>
                 <button
                   className="file-preview__close"
-                  title="关闭"
-                  aria-label="关闭预览"
+                  title={t('workspace.files.preview.closeTitle')}
+                  aria-label={t('workspace.files.preview.closeAria')}
                   onClick={() => setPreview(null)}
                 >
                   <CloseIcon size={15} />
@@ -1050,7 +1085,9 @@ export function WorkspaceFiles({ workspace }: Props) {
               </div>
 
               <div className="file-preview__body">
-                {preview.loading && <div className="file-preview__empty">读取中…</div>}
+                {preview.loading && (
+                  <div className="file-preview__empty">{t('workspace.files.preview.loading')}</div>
+                )}
                 {!preview.loading && preview.result && !preview.result.ok && (
                   <div className="file-preview__error">{preview.result.error}</div>
                 )}
@@ -1078,8 +1115,8 @@ export function WorkspaceFiles({ workspace }: Props) {
                   preview.result.kind === 'binary' && (
                     <div className="file-preview__empty">
                       {isRemote
-                        ? '这是一个二进制文件，无法在应用内预览。'
-                        : '这是一个二进制文件，无法在应用内预览。可以用系统程序打开。'}
+                        ? t('workspace.files.preview.binaryRemote')
+                        : t('workspace.files.preview.binaryLocal')}
                     </div>
                   )}
               </div>
@@ -1091,11 +1128,11 @@ export function WorkspaceFiles({ workspace }: Props) {
                 <div className="file-preview__actions">
                   {openError && <span className="file-preview__error-text">{openError}</span>}
                   <button className="btn btn--ghost" onClick={() => setPreview(null)}>
-                    关闭
+                    {t('workspace.files.preview.close')}
                   </button>
                   {!isRemote && (
                     <button className="btn btn--primary" onClick={() => void openExternal()}>
-                      用系统程序打开
+                      {t('workspace.files.preview.openExternal')}
                     </button>
                   )}
                 </div>

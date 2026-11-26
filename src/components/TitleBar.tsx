@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '../i18n';
 import { CloseIcon, MinusIcon, SquareIcon } from './Icons';
 
 export function TitleBar() {
+  const { t } = useI18n();
   const api = window.ezness;
   const [maximized, setMaximized] = useState(false);
 
@@ -23,13 +25,17 @@ export function TitleBar() {
 
       {api && (
         <div className="titlebar__controls">
-          <button className="winbtn" title="最小化" onClick={() => api.minimize()}>
+          <button className="winbtn" title={t('titlebar.minimize')} onClick={() => api.minimize()}>
             <MinusIcon size={14} />
           </button>
-          <button className="winbtn" title={maximized ? '还原' : '最大化'} onClick={() => api.toggleMaximize()}>
+          <button
+            className="winbtn"
+            title={maximized ? t('titlebar.restore') : t('titlebar.maximize')}
+            onClick={() => api.toggleMaximize()}
+          >
             <SquareIcon size={12} />
           </button>
-          <button className="winbtn winbtn--close" title="关闭" onClick={() => api.close()}>
+          <button className="winbtn winbtn--close" title={t('titlebar.close')} onClick={() => api.close()}>
             <CloseIcon size={14} />
           </button>
         </div>

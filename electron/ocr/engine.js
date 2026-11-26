@@ -9,6 +9,7 @@
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const models = require('./models');
+const uiText = require('../ui-text');
 
 const DICT_LENGTH = 18_384;
 const MIN_SCORE = 0.2;
@@ -30,7 +31,9 @@ function normalizeDictionary(raw) {
 
   if (entries.length === DICT_LENGTH - 1) entries.push(' ');
   if (entries.length !== DICT_LENGTH) {
-    throw new Error(`PP-OCRv5 字典长度异常（${entries.length}，应为 ${DICT_LENGTH}）`);
+    throw new Error(
+      uiText.t('main.ocr.error.dictLength', { actual: entries.length, expected: DICT_LENGTH }),
+    );
   }
   return entries;
 }
@@ -155,7 +158,7 @@ async function recognizeRgb(service, image) {
 }
 
 async function recognizeImage(filePath) {
-  if (!isReady()) throw new Error('PP-OCRv5 模型不完整，请重新安装应用依赖');
+  if (!isReady()) throw new Error(uiText.t('main.ocr.error.modelIncomplete'));
   const sharp = require('sharp');
 
   const { data, info } = await sharp(filePath, { failOn: 'none' })
@@ -165,7 +168,7 @@ async function recognizeImage(filePath) {
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  if (!info.width || !info.height) throw new Error('图片尺寸无效');
+  if (!info.width || !info.height) throw new Error(uiText.t('main.ocr.error.invalidImage'));
   const service = await loadService();
   return recognizeRgb(service, { data, width: info.width, height: info.height });
 }
@@ -202,7 +205,7 @@ async function renderPage(doc, pageNumber) {
  * `maxPages === -1` (the default) means every page.
  */
 async function recognizePdf(filePath, options = {}) {
-  if (!isReady()) throw new Error('PP-OCRv5 模型不完整，请重新安装应用依赖');
+  if (!isReady()) throw new Error(uiText.t('main.ocr.error.modelIncomplete'));
   const requested = Math.round(Number(options.maxPages));
   const maxPages =
     !Number.isFinite(requested) || requested <= 0 ? Infinity : Math.min(200, requested);

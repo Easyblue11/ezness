@@ -5,6 +5,7 @@ import type {
   KbDocument,
   KbSnapshot,
 } from '../types';
+import { useI18n } from '../i18n';
 
 /**
  * The Agent's view of the shared knowledge base.
@@ -16,10 +17,10 @@ import type {
  * come along.
  */
 
-const REVIEW_LABEL: Record<string, string> = {
-  confirmed: '已确认',
-  candidate: '待审核',
-  rejected: '不采用',
+const REVIEW_LABEL_KEYS: Record<string, string> = {
+  confirmed: 'agent.reviewState.confirmed',
+  candidate: 'agent.reviewState.candidate',
+  rejected: 'agent.reviewState.rejected',
 };
 
 function TriCheckbox({
@@ -67,6 +68,7 @@ export function AgentKnowledgeTree({
   selection,
   onChange,
 }: Props) {
+  const { t } = useI18n();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
 
@@ -271,11 +273,11 @@ export function AgentKnowledgeTree({
             aria-label={
               isGroup
                 ? open
-                  ? '收起分组'
-                  : '展开分组'
+                  ? t('agent.tree.collapseGroup')
+                  : t('agent.tree.expandGroup')
                 : open
-                  ? '收起文档'
-                  : '展开文档'
+                  ? t('agent.tree.collapseDocs')
+                  : t('agent.tree.expandDocs')
             }
             onClick={() => toggle(isGroup ? setOpenGroups : setOpenCategories, category.id)}
             disabled={isGroup ? members.length === 0 : docs.length === 0}
@@ -285,12 +287,18 @@ export function AgentKnowledgeTree({
           <TriCheckbox
             checked={state.checked}
             mixed={state.mixed}
-            label={`${isGroup ? '选择组合分类' : '选择分类'} ${category.name}`}
+            label={
+              isGroup
+                ? t('agent.tree.selectGroup', { name: category.name })
+                : t('agent.tree.selectCategory', { name: category.name })
+            }
             onChange={() => (isGroup ? toggleGroup(category) : toggleCategory(category))}
           />
           <span className="agent-kb-tree__name">{category.name}</span>
           <span className="agent-kb-tree__meta">
-            {isGroup ? `组合分类 · ${members.length} 个分类` : `${docs.length} 篇`}
+            {isGroup
+              ? t('agent.tree.groupMeta', { count: members.length })
+              : t('agent.tree.docsMeta', { count: docs.length })}
           </span>
         </div>
         {open && docs.length > 0 && (
@@ -304,7 +312,7 @@ export function AgentKnowledgeTree({
                 <TriCheckbox
                   checked={docChecked(doc)}
                   disabled={!docAllowed(doc)}
-                  label={`选择文档 ${doc.name}`}
+                  label={t('agent.tree.selectDoc', { name: doc.name })}
                   onChange={() => toggleDocument(doc)}
                 />
                 <span
@@ -314,10 +322,10 @@ export function AgentKnowledgeTree({
                   {doc.name}
                 </span>
                 <span className={`agent-kb-tree__review is-${doc.reviewState}`}>
-                  {REVIEW_LABEL[doc.reviewState] ?? doc.reviewState}
+                  {t(REVIEW_LABEL_KEYS[doc.reviewState] ?? doc.reviewState)}
                 </span>
                 {!docAllowed(doc) && (
-                  <span className="agent-kb-tree__meta">处理中/不可用</span>
+                  <span className="agent-kb-tree__meta">{t('agent.tree.unavailable')}</span>
                 )}
               </li>
             ))}
@@ -335,16 +343,14 @@ export function AgentKnowledgeTree({
   }
 
   if (loading && !snapshot) {
-    return <div className="agent-kb-tree__empty">正在读取知识库…</div>;
+    return <div className="agent-kb-tree__empty">{t('agent.tree.loading')}</div>;
   }
   if (error) {
     return <div className="agent-kb-tree__empty is-error">{error}</div>;
   }
   if (documents.length === 0) {
     return (
-      <div className="agent-kb-tree__empty">
-        知识库还是空的。先到左侧「知识库」页添加资料，再回来勾选这个 Agent 能读的部分。
-      </div>
+      <div className="agent-kb-tree__empty">{t('agent.tree.empty')}</div>
     );
   }
 
@@ -354,18 +360,16 @@ export function AgentKnowledgeTree({
   return (
     <div className="agent-kb-tree">
       <div className="agent-kb-tree__bar">
-        <div>
-          知识库由你在「知识库」页统一维护。这里只决定这个 Agent 能读哪些资料；
-          勾选分类会连带勾选分类下的所有文档，也可以单独勾选或取消某篇文档。
-        </div>
+        <div>{t('agent.tree.intro')}</div>
         <div className="agent-kb-tree__stats">
-          {selectedCount} 个分类 · {selectedDocCount} 篇文档
+          {t('agent.tree.stats', {
+            categories: selectedCount,
+            docs: selectedDocCount,
+          })}
         </div>
       </div>
       {selectedCount === 0 && selectedDocCount === 0 && (
-        <div className="agent-kb-tree__hint">
-          还没有勾选任何资料。未勾选时，这个 Agent 不会拿到知识库工具。
-        </div>
+        <div className="agent-kb-tree__hint">{t('agent.tree.noSelection')}</div>
       )}
       <ul className="agent-kb-tree__list">
         {roots.map((category) => categoryNode(category, 0, new Set()))}

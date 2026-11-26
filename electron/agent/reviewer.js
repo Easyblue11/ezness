@@ -10,6 +10,7 @@
  */
 
 const { streamChat } = require('../chat');
+const uiText = require('../ui-text');
 
 const REVIEW_TIMEOUT_MS = 45000;
 
@@ -40,7 +41,7 @@ function parseVerdict(text) {
     const parsed = JSON.parse(raw.slice(start, end + 1));
     if (typeof parsed?.safe !== 'boolean') return null;
     const reason = String(parsed.reason ?? '').trim().slice(0, 400);
-    return { safe: parsed.safe, reason: reason || '评估没有给出理由。' };
+    return { safe: parsed.safe, reason: reason || uiText.t('main.review.noReason') };
   } catch {
     return null;
   }
@@ -75,7 +76,7 @@ async function reviewCommand({ provider, command, root, cwd, mode, task = '', si
 
   const verdict = parseVerdict(text) ?? {
     safe: false,
-    reason: '安全评估没有给出可解析的结论，按不安全处理。',
+    reason: uiText.t('main.review.unparsable'),
   };
   // Carried out of band: the loop logs this request in the usage ledger too.
   return { ...verdict, usage };

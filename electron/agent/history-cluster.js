@@ -12,6 +12,8 @@
  * 当前段落，不单独决定话题边界。
  */
 
+const uiText = require('../ui-text');
+
 const MIN_TOKENS = 4;
 const MIN_TOKENS_LEXICAL = 12;
 const LEXICAL_THRESHOLD = 0.12;
@@ -202,7 +204,7 @@ function titleForCluster(cluster) {
     .filter(Boolean);
   const fallback = cluster?.find((message) => message?.role === 'user') ?? cluster?.[0];
   const source = asks.length > 0 ? asks : [messageText(fallback).replace(/\s+/g, ' ').trim()];
-  if (!source[0]) return '总监对话';
+  if (!source[0]) return uiText.t('main.work.archive.defaultTitle');
   let title = source[0];
   for (const extra of source.slice(1)) {
     if (title.length >= 54) break;
@@ -229,11 +231,21 @@ function summaryForCluster(cluster) {
   const parts = [];
   if (asks.length > 0) {
     const list = asks.slice(0, 6).map((ask) => (ask.length > 120 ? `${ask.slice(0, 120)}…` : ask));
-    parts.push(`用户在这段时间问了：${list.join('；')}`);
+    parts.push(
+      uiText.t('main.work.archive.questions', {
+        list: list.join(uiText.t('main.work.list.semicolon')),
+      }),
+    );
   }
   if (last) {
     const text = messageText(last).replace(/\s+/g, ' ').trim();
-    if (text) parts.push(`总监最后的回复：${text.length > 240 ? `${text.slice(0, 240)}…` : text}`);
+    if (text) {
+      parts.push(
+        uiText.t('main.work.archive.lastReply', {
+          text: text.length > 240 ? `${text.slice(0, 240)}…` : text,
+        }),
+      );
+    }
   }
   const summary = parts.join('\n');
   return summary.length > 720 ? `${summary.slice(0, 720)}…` : summary;

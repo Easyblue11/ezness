@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { KbConfig, KbConfigPatch, KbSnapshot } from '../../types';
+import { useI18n } from '../../i18n';
 import { RefreshIcon } from '../Icons';
 
 const clamp = (value: number, min: number, max: number, fallback: number) =>
   Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback;
 
 export function KbSection() {
+  const { t } = useI18n();
   const api = window.ezness;
   const [snapshot, setSnapshot] = useState<KbSnapshot | null>(null);
 
@@ -29,9 +31,9 @@ export function KbSection() {
     return (
       <div className="section">
         <div className="section__head">
-          <h2>知识仓库</h2>
+          <h2>{t('settings.kb.title')}</h2>
         </div>
-        <div className="notice">正在读取知识仓库配置…</div>
+        <div className="notice">{t('settings.kb.reading')}</div>
       </div>
     );
   }
@@ -40,37 +42,35 @@ export function KbSection() {
     <div className="section">
       <div className="section__head">
         <div>
-          <h2>知识仓库</h2>
-          <p>
-            切片和混合检索参数，改完立即生效。存储位置统一在「设置 → 系统设置」里管理，
-            知识仓库放在数据目录的 ezrag 文件夹。
-          </p>
+          <h2>{t('settings.kb.title')}</h2>
+          <p>{t('settings.kb.desc')}</p>
         </div>
         <button className="btn btn--ghost" onClick={() => void refresh()}>
           <RefreshIcon size={14} />
-          刷新
+          {t('system.refresh')}
         </button>
       </div>
 
       <section className="kb-card">
-        <div className="kb-card__title">向量模型</div>
+        <div className="kb-card__title">{t('settings.kb.embedding.title')}</div>
         <p className="kb-card__desc">
-          取自「设置 → 默认模型 → Embedding 模型」。当前使用：<code>{config.embedding.model || '未选择'}</code>
+          {t('settings.kb.embedding.desc')}{' '}
+          <code>{config.embedding.model || t('settings.defaults.unselected')}</code>
         </p>
         <div className="kb-card__row">
           <input className="input" readOnly value={config.embedding.baseUrl} />
         </div>
         {!config.embedding.model && (
-          <div className="notice notice--warn">还没有选 Embedding 模型，上传的文件会解析成功但无法向量检索。</div>
+          <div className="notice notice--warn">{t('settings.kb.embedding.missing')}</div>
         )}
       </section>
 
       <section className="kb-card">
-        <div className="kb-card__title">切片</div>
-        <p className="kb-card__desc">按段落和标题切分，单块接近目标长度时断开，块之间保留少量重叠。</p>
+        <div className="kb-card__title">{t('settings.kb.chunk.title')}</div>
+        <p className="kb-card__desc">{t('settings.kb.chunk.desc')}</p>
         <div className="kb-card__fields">
           <label className="field">
-            <span className="field__label">目标长度（字）</span>
+            <span className="field__label">{t('settings.kb.chunk.target')}</span>
             <input
               key={`target-${config.chunk.target}`}
               className="input"
@@ -82,7 +82,7 @@ export function KbSection() {
             />
           </label>
           <label className="field">
-            <span className="field__label">重叠（字）</span>
+            <span className="field__label">{t('settings.kb.chunk.overlap')}</span>
             <input
               key={`overlap-${config.chunk.overlap}`}
               className="input"
@@ -92,17 +92,15 @@ export function KbSection() {
             />
           </label>
         </div>
-        <div className="kb-card__meta">修改切片参数后，已入库的文件不会自动重切。</div>
+        <div className="kb-card__meta">{t('settings.kb.chunk.note')}</div>
       </section>
 
       <section className="kb-card">
-        <div className="kb-card__title">检索</div>
-        <p className="kb-card__desc">
-          BM25 关键词与向量召回各取候选，用 RRF 融合后再重排。默认的「快速重排」在本地计算，不占模型。
-        </p>
+        <div className="kb-card__title">{t('settings.kb.retrieval.title')}</div>
+        <p className="kb-card__desc">{t('settings.kb.retrieval.desc')}</p>
         <div className="kb-card__fields">
           <label className="field">
-            <span className="field__label">返回条数</span>
+            <span className="field__label">{t('settings.kb.retrieval.topK')}</span>
             <input
               key={`topk-${config.retrieval.topK}`}
               className="input"
@@ -114,7 +112,7 @@ export function KbSection() {
             />
           </label>
           <label className="field">
-            <span className="field__label">候选数</span>
+            <span className="field__label">{t('settings.kb.retrieval.candidates')}</span>
             <input
               key={`cand-${config.retrieval.candidates}`}
               className="input"
@@ -126,7 +124,7 @@ export function KbSection() {
             />
           </label>
           <label className="field">
-            <span className="field__label">重排方式</span>
+            <span className="field__label">{t('settings.kb.retrieval.rerank')}</span>
             <select
               className="select"
               value={config.retrieval.rerank}
@@ -134,8 +132,8 @@ export function KbSection() {
                 void update({ retrieval: { rerank: event.target.value as KbConfig['retrieval']['rerank'] } })
               }
             >
-              <option value="fast">快速重排（本地，零开销）</option>
-              <option value="llm">模型重排（本地 LLM，更准更慢）</option>
+              <option value="fast">{t('settings.kb.retrieval.rerank.fast')}</option>
+              <option value="llm">{t('settings.kb.retrieval.rerank.llm')}</option>
             </select>
           </label>
         </div>
@@ -143,7 +141,7 @@ export function KbSection() {
         {config.retrieval.rerank === 'llm' && (
           <div className="kb-card__fields">
             <label className="field field--wide">
-              <span className="field__label">重排模型（Ollama 模型名）</span>
+              <span className="field__label">{t('settings.kb.rerank.model')}</span>
               <input
                 key={`rerank-${config.rerank.model}`}
                 className="input"

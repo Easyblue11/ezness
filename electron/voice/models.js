@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { appFetch } = require('../app-net');
+const uiText = require('../ui-text');
 
 const MIRROR = 'https://hf-mirror.com';
 const SENSE_VOICE_REPO = 'csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17';
@@ -18,14 +19,14 @@ const SENSE_VOICE_REPO = 'csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-202
 const FILES = [
   {
     key: 'sileroVad',
-    label: 'Silero VAD',
+    labelKey: 'main.voice.model.sileroVad',
     url: `${MIRROR}/deepghs/silero-vad-onnx/resolve/main/silero_vad.onnx`,
     target: 'silero_vad.onnx',
     size: 2327524,
   },
   {
     key: 'senseVoiceModel',
-    label: 'SenseVoiceSmall INT8',
+    labelKey: 'main.voice.model.senseVoice',
     url: `${MIRROR}/${SENSE_VOICE_REPO}/resolve/main/model.int8.onnx`,
     target: path.join('sensevoice', 'model.int8.onnx'),
     // Model files may grow slightly across uploads; anything this large is the
@@ -35,7 +36,7 @@ const FILES = [
   },
   {
     key: 'senseVoiceTokens',
-    label: 'SenseVoice 词表',
+    labelKey: 'main.voice.model.tokens',
     url: `${MIRROR}/${SENSE_VOICE_REPO}/resolve/main/tokens.txt`,
     target: path.join('sensevoice', 'tokens.txt'),
     minSize: 100 * 1024,
@@ -45,6 +46,10 @@ const FILES = [
 
 function modelDir(root) {
   return path.join(root, 'voice-models');
+}
+
+function labelOf(entry) {
+  return uiText.t(entry.labelKey);
 }
 
 function fileSize(file) {
@@ -69,7 +74,7 @@ function status(root) {
     const size = fileSize(target);
     return {
       key: entry.key,
-      label: entry.label,
+      label: labelOf(entry),
       path: target,
       size,
       expected: entry.size,
@@ -92,10 +97,11 @@ async function downloadOne(entry, dir, options) {
   // A previous attempt may have left a complete-but-unrenamed file.
   if (fileReady(entry, dir)) return;
 
-  log?.(`[voice] 下载 ${entry.label} → ${target}`);
+  const label = labelOf(entry);
+  log?.(`[voice] 下载 ${label} → ${target}`);
   const response = await appFetch(entry.url, { signal, redirect: 'follow' });
   if (!response.ok || !response.body) {
-    throw new Error(`${entry.label} 下载失败：HTTP ${response.status}`);
+    throw new Error(uiText.t('main.voice.error.downloadFailed', { label, status: response.status }));
   }
 
   const total = Number(response.headers.get('content-length')) || entry.size;
@@ -110,16 +116,16 @@ async function downloadOne(entry, dir, options) {
       const now = Date.now();
       if (now - lastReport > 300) {
         lastReport = now;
-        onProgress?.({ file: entry.key, label: entry.label, received, total });
+        onProgress?.({ file: entry.key, label, received, total });
       }
     }
   } finally {
     await handle.close();
   }
 
-  if (received === 0) throw new Error(`${entry.label} 下载为空`);
+  if (received === 0) throw new Error(uiText.t('main.voice.error.downloadEmpty', { label }));
   await fsp.rename(temp, target);
-  onProgress?.({ file: entry.key, label: entry.label, received, total, done: true });
+  onProgress?.({ file: entry.key, label, received, total, done: true });
 }
 
 /**
@@ -134,7 +140,7 @@ async function downloadMissing(root, options = {}) {
     if (fileReady(entry, dir)) {
       options.onProgress?.({
         file: entry.key,
-        label: entry.label,
+        label: labelOf(entry),
         received: entry.size,
         total: entry.size,
         done: true,

@@ -1,6 +1,6 @@
 {
   "name": "ezness",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "EZNess — a local-first Windows AI workbench with local and SSH workspaces",
   "main": "electron/main.js",
   "author": "EasyBlue",

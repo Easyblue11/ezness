@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useI18n } from '../i18n';
 import type { UsageRecord } from '../types';
 import {
   FEATURE_LABELS,
@@ -23,9 +24,9 @@ interface Props {
 }
 
 const RANGES = [
-  { days: 7, label: '近 7 天' },
-  { days: 30, label: '近 30 天' },
-  { days: 90, label: '近 90 天' },
+  { days: 7, labelKey: 'billing.range7' },
+  { days: 30, labelKey: 'billing.range30' },
+  { days: 90, labelKey: 'billing.range90' },
 ];
 
 function niceMax(value: number): number {
@@ -64,6 +65,7 @@ function axisLabelEvery(days: number): number {
 }
 
 function TokenChart({ points }: { points: DayPoint[] }) {
+  const { t } = useI18n();
   const [hover, setHover] = useState<number | null>(null);
   const max = niceMax(Math.max(...points.map((point) => point.inputTokens + point.outputTokens), 0));
   const band = points.length > 0 ? PLOT_W / points.length : PLOT_W;
@@ -72,7 +74,7 @@ function TokenChart({ points }: { points: DayPoint[] }) {
   const ticks = [0, 1, 2, 3, 4];
 
   if (points.every((point) => point.inputTokens + point.outputTokens === 0)) {
-    return <div className="billing-chart__empty">这段时间还没有用量。</div>;
+    return <div className="billing-chart__empty">{t('billing.chart.emptyTokens')}</div>;
   }
 
   const active = hover !== null ? points[hover] : null;
@@ -81,11 +83,11 @@ function TokenChart({ points }: { points: DayPoint[] }) {
   return (
     <div className="billing-chart">
       <div className="billing-chart__legend">
-        <span><i className="swatch swatch--input" />输入</span>
-        <span><i className="swatch swatch--output" />输出</span>
+        <span><i className="swatch swatch--input" />{t('billing.chart.input')}</span>
+        <span><i className="swatch swatch--output" />{t('billing.chart.output')}</span>
       </div>
       <div className="billing-chart__plot">
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="每日 Token 消耗，按输入与输出堆叠">
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('billing.chart.tokensAria')}>
           {ticks.map((tick) => {
             const y = PAD.top + PLOT_H - (PLOT_H * tick) / 4;
             return (
@@ -168,10 +170,10 @@ function TokenChart({ points }: { points: DayPoint[] }) {
             role="status"
           >
             <div className="billing-tip__date">{active.label}</div>
-            <div className="billing-tip__row"><span>输入</span><b>{formatTokens(active.inputTokens)}</b></div>
-            <div className="billing-tip__row"><span>输出</span><b>{formatTokens(active.outputTokens)}</b></div>
-            <div className="billing-tip__row"><span>请求</span><b>{active.requests}</b></div>
-            <div className="billing-tip__row"><span>费用</span><b>{formatCost(active.cost)}</b></div>
+            <div className="billing-tip__row"><span>{t('billing.chart.input')}</span><b>{formatTokens(active.inputTokens)}</b></div>
+            <div className="billing-tip__row"><span>{t('billing.chart.output')}</span><b>{formatTokens(active.outputTokens)}</b></div>
+            <div className="billing-tip__row"><span>{t('billing.chart.requests')}</span><b>{active.requests}</b></div>
+            <div className="billing-tip__row"><span>{t('billing.chart.cost')}</span><b>{formatCost(active.cost)}</b></div>
           </div>
         )}
       </div>
@@ -180,6 +182,7 @@ function TokenChart({ points }: { points: DayPoint[] }) {
 }
 
 function CostChart({ points }: { points: DayPoint[] }) {
+  const { t } = useI18n();
   const [hover, setHover] = useState<number | null>(null);
   const max = niceMax(Math.max(...points.map((point) => point.cost), 0));
   const band = points.length > 0 ? PLOT_W / points.length : PLOT_W;
@@ -196,13 +199,13 @@ function CostChart({ points }: { points: DayPoint[] }) {
   const last = points[points.length - 1];
 
   if (points.every((point) => point.cost === 0)) {
-    return <div className="billing-chart__empty">这段时间还没有可计价的费用。</div>;
+    return <div className="billing-chart__empty">{t('billing.chart.emptyCost')}</div>;
   }
 
   return (
     <div className="billing-chart">
       <div className="billing-chart__plot">
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="每日费用折线图">
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('billing.chart.costAria')}>
           {[0, 1, 2, 3, 4].map((tick) => {
             const y = PAD.top + PLOT_H - (PLOT_H * tick) / 4;
             return (
@@ -281,10 +284,12 @@ function CostChart({ points }: { points: DayPoint[] }) {
         {hover !== null && active && (
           <div className="billing-tip" style={{ left: `${(xOf(hover) / W) * 100}%` }} role="status">
             <div className="billing-tip__date">{active.label}</div>
-            <div className="billing-tip__row"><span>费用</span><b>{formatCost(active.cost)}</b></div>
-            <div className="billing-tip__row"><span>请求</span><b>{active.requests}</b></div>
+            <div className="billing-tip__row"><span>{t('billing.chart.cost')}</span><b>{formatCost(active.cost)}</b></div>
+            <div className="billing-tip__row"><span>{t('billing.chart.requests')}</span><b>{active.requests}</b></div>
             {active.unpriced > 0 && (
-              <div className="billing-tip__note">{active.unpriced} 次未定价</div>
+              <div className="billing-tip__note">
+                {t('billing.chart.unpriced', { count: active.unpriced })}
+              </div>
             )}
           </div>
         )}
@@ -329,6 +334,7 @@ function Breakdown({
   groups: UsageGroup[];
   empty: string;
 }) {
+  const { t } = useI18n();
   if (groups.length === 0) {
     return (
       <section className="billing-card billing-breakdown">
@@ -368,11 +374,11 @@ function Breakdown({
               </div>
               <div className="billing-row__meta">
                 <span>{formatTokens(tokens)} tokens</span>
-                <span>{group.summary.requests} 次</span>
+                <span>{t('billing.breakdown.requests', { count: group.summary.requests })}</span>
                 <span>
                   {group.summary.unpricedRequests === group.summary.requests
-                    ? '未计入费用'
-                    : `${costShare.toFixed(1)}% 费用`}
+                    ? t('billing.breakdown.notCounted')
+                    : t('billing.breakdown.costShare', { percent: costShare.toFixed(1) })}
                 </span>
               </div>
             </div>
@@ -384,6 +390,7 @@ function Breakdown({
 }
 
 export function BillingPage({ records, onClear, fxRate }: Props) {
+  const { t } = useI18n();
   const [days, setDays] = useState(30);
   const [confirmClear, setConfirmClear] = useState(false);
   const [exportNote, setExportNote] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
@@ -401,14 +408,19 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
     () => groupRecords(period, (record) => record.model, (record) => record.model),
     [period],
   );
+  const featureLabel = (feature: string) => {
+    const key = FEATURE_LABELS[feature];
+    return key ? t(key) : feature;
+  };
   const byFeature = useMemo(
     () =>
       groupRecords(
         period,
         (record) => record.feature,
-        (record) => FEATURE_LABELS[record.feature] ?? record.feature,
+        (record) => featureLabel(record.feature),
       ),
-    [period],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [period, t],
   );
   const byProvider = useMemo(
     () =>
@@ -426,22 +438,22 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
   async function exportCsv() {
     setExportNote(null);
     const header = [
-      '时间',
-      '功能',
-      '供应商',
-      '模型',
-      '输入 tokens',
-      '输出 tokens',
-      '费用 (CNY)',
-      '折算汇率',
-      '计价来源',
-      '是否估算',
+      t('billing.csv.time'),
+      t('billing.csv.feature'),
+      t('billing.csv.provider'),
+      t('billing.csv.model'),
+      t('billing.csv.inputTokens'),
+      t('billing.csv.outputTokens'),
+      t('billing.csv.cost'),
+      t('billing.csv.fxRate'),
+      t('billing.csv.priceSource'),
+      t('billing.csv.estimated'),
     ];
     const rows = [...records]
       .sort((a, b) => a.at - b.at)
       .map((record) => [
         new Date(record.at).toISOString(),
-        FEATURE_LABELS[record.feature] ?? record.feature,
+        featureLabel(record.feature),
         record.providerName,
         record.model,
         record.inputTokens,
@@ -449,7 +461,7 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
         record.cost === null ? '' : record.cost.toFixed(6),
         record.fxRate.toFixed(2),
         record.priceSource,
-        record.reported ? '否' : '是',
+        record.reported ? t('billing.csv.no') : t('billing.csv.yes'),
       ]);
     const csv = [header, ...rows]
       .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
@@ -462,14 +474,19 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
     });
 
     if (!result) {
-      setExportNote({ tone: 'err', text: '导出不可用：当前版本的预加载脚本缺少导出接口，请重启应用。' });
+      setExportNote({ tone: 'err', text: t('billing.export.unavailable') });
       return;
     }
     if (result.canceled) return;
     if (result.ok) {
-      setExportNote({ tone: 'ok', text: `已导出：${result.path ?? ''}` });
+      setExportNote({ tone: 'ok', text: t('billing.export.saved', { path: result.path ?? '' }) });
     } else {
-      setExportNote({ tone: 'err', text: `导出失败：${result.error ?? '未知错误'}` });
+      setExportNote({
+        tone: 'err',
+        text: t('billing.export.failed', {
+          error: result.error ?? t('billing.export.unknownError'),
+        }),
+      });
     }
   }
 
@@ -487,26 +504,23 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
       <div className="billing__body">
         <header className="billing__head">
           <div>
-            <h1>计费统计</h1>
-            <p>
-              每次模型请求都记一条：优先使用供应商返回的精确用量，没有返回时按字符估算。金额按人民币显示，
-              模型原价按 1:{fxRate.toFixed(2)} 的汇率折算。
-            </p>
+            <h1>{t('billing.title')}</h1>
+            <p>{t('billing.subtitle', { fxRate: fxRate.toFixed(2) })}</p>
           </div>
           <div className="billing__actions">
-            <div className="billing__range" role="group" aria-label="统计范围">
+            <div className="billing__range" role="group" aria-label={t('billing.rangeAria')}>
               {RANGES.map((range) => (
                 <button
                   key={range.days}
                   className={days === range.days ? 'is-on' : ''}
                   onClick={() => setDays(range.days)}
                 >
-                  {range.label}
+                  {t(range.labelKey)}
                 </button>
               ))}
             </div>
             <button className="btn btn--ghost billing__export" onClick={exportCsv} disabled={records.length === 0}>
-              导出 CSV
+              {t('billing.exportCsv')}
             </button>
             <button
               className={`btn btn--ghost billing__clear ${confirmClear ? 'is-confirm' : ''}`}
@@ -514,7 +528,7 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
               disabled={records.length === 0}
               onBlur={() => setConfirmClear(false)}
             >
-              {confirmClear ? '确认清空？' : '清空统计'}
+              {confirmClear ? t('billing.confirmClear') : t('billing.clear')}
             </button>
           </div>
         </header>
@@ -531,63 +545,79 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
 
         <section className="billing__stats">
           <StatCard
-            label="今日费用"
+            label={t('billing.stat.today')}
             value={costValue(today)}
-            hint={`${formatTokens(today.inputTokens + today.outputTokens)} tokens · ${today.requests} 次请求`}
+            hint={t('billing.stat.hintRequests', {
+              tokens: formatTokens(today.inputTokens + today.outputTokens),
+              requests: today.requests,
+            })}
             hero
           />
           <StatCard
-            label="本月费用"
+            label={t('billing.stat.month')}
             value={costValue(month)}
-            hint={`${formatTokens(month.inputTokens + month.outputTokens)} tokens · ${month.requests} 次`}
+            hint={t('billing.stat.hint', {
+              tokens: formatTokens(month.inputTokens + month.outputTokens),
+              requests: month.requests,
+            })}
           />
           <StatCard
-            label="累计费用"
+            label={t('billing.stat.all')}
             value={costValue(all)}
-            hint={`${formatTokens(all.inputTokens + all.outputTokens)} tokens · ${all.requests} 次`}
+            hint={t('billing.stat.hint', {
+              tokens: formatTokens(all.inputTokens + all.outputTokens),
+              requests: all.requests,
+            })}
           />
           <StatCard
-            label="估算记录"
-            value={`${estimatedCount} 条`}
-            hint={records.length > 0 ? `共 ${records.length} 条记录，${all.unpricedRequests} 条未定价` : '还没有记录'}
+            label={t('billing.stat.estimated')}
+            value={t('billing.stat.estimatedValue', { count: estimatedCount })}
+            hint={
+              records.length > 0
+                ? t('billing.stat.estimatedHint', {
+                    total: records.length,
+                    unpriced: all.unpricedRequests,
+                  })
+                : t('billing.stat.noRecords')
+            }
           />
         </section>
 
         {records.length === 0 ? (
           <section className="billing-card billing__empty">
-            <h2>还没有用量记录</h2>
-            <p>发起一次对话、压缩一次上下文，或在工作空间里跑一个任务，这里就会出现对应的 token 与费用。</p>
+            <h2>{t('billing.empty.title')}</h2>
+            <p>{t('billing.empty.body')}</p>
           </section>
         ) : (
           <>
             <section className="billing__charts">
               <div className="billing-card">
                 <div className="billing-card__head">
-                  <h2>每日 Token</h2>
-                  <span>近 {days} 天 · 堆叠显示输入与输出</span>
+                  <h2>{t('billing.chart.tokensTitle')}</h2>
+                  <span>{t('billing.chart.tokensSubtitle', { days })}</span>
                 </div>
                 <TokenChart points={points} />
               </div>
               <div className="billing-card">
                 <div className="billing-card__head">
-                  <h2>每日费用</h2>
-                  <span>近 {days} 天 · 未定价请求不计入</span>
+                  <h2>{t('billing.chart.costTitle')}</h2>
+                  <span>{t('billing.chart.costSubtitle', { days })}</span>
                 </div>
                 <CostChart points={points} />
               </div>
             </section>
 
             <details className="billing__table-view">
-              <summary>查看每日数据表</summary>
+              <summary>{t('billing.table.summary')}</summary>
               <div className="billing-table__scroll">
                 <table className="billing-table">
                   <thead>
                     <tr>
-                      <th>日期</th>
-                      <th className="num">输入</th>
-                      <th className="num">输出</th>
-                      <th className="num">请求</th>
-                      <th className="num">费用</th>
+                      <th>{t('billing.table.date')}</th>
+                      <th className="num">{t('billing.table.input')}</th>
+                      <th className="num">{t('billing.table.output')}</th>
+                      <th className="num">{t('billing.table.requests')}</th>
+                      <th className="num">{t('billing.table.cost')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -606,26 +636,38 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
             </details>
 
             <section className="billing__breakdowns">
-              <Breakdown title="按模型" groups={byModel} empty="这段时间没有按模型的数据。" />
-              <Breakdown title="按功能" groups={byFeature} empty="这段时间没有按功能的数据。" />
-              <Breakdown title="按供应商" groups={byProvider} empty="这段时间没有按供应商的数据。" />
+              <Breakdown
+                title={t('billing.breakdown.models')}
+                groups={byModel}
+                empty={t('billing.breakdown.emptyModels')}
+              />
+              <Breakdown
+                title={t('billing.breakdown.features')}
+                groups={byFeature}
+                empty={t('billing.breakdown.emptyFeatures')}
+              />
+              <Breakdown
+                title={t('billing.breakdown.providers')}
+                groups={byProvider}
+                empty={t('billing.breakdown.emptyProviders')}
+              />
             </section>
 
             <section className="billing-card billing__records">
               <div className="billing-card__head">
-                <h2>最近请求</h2>
-                <span>最近 {recent.length} 条 · 悬停金额可查看精确值</span>
+                <h2>{t('billing.records.title')}</h2>
+                <span>{t('billing.records.subtitle', { count: recent.length })}</span>
               </div>
               <div className="billing-table__scroll">
                 <table className="billing-table billing-table--records">
                   <thead>
                     <tr>
-                      <th>时间</th>
-                      <th>功能</th>
-                      <th>模型</th>
-                      <th className="num">输入</th>
-                      <th className="num">输出</th>
-                      <th className="num">费用</th>
+                      <th>{t('billing.records.time')}</th>
+                      <th>{t('billing.records.feature')}</th>
+                      <th>{t('billing.records.model')}</th>
+                      <th className="num">{t('billing.table.input')}</th>
+                      <th className="num">{t('billing.table.output')}</th>
+                      <th className="num">{t('billing.table.cost')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -634,7 +676,7 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
                         <td className="billing-table__time">{formatDateTime(record.at)}</td>
                         <td>
                           <span className={`billing-chip billing-chip--${record.feature}`}>
-                            {FEATURE_LABELS[record.feature] ?? record.feature}
+                            {featureLabel(record.feature)}
                           </span>
                         </td>
                         <td>
@@ -649,10 +691,17 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
                           {record.priced ? (
                             <span className="billing-table__cost" title={formatCostExact(record.cost)}>
                               {formatCost(record.cost)}
-                              {!record.reported && <i className="billing-est">估</i>}
+                              {!record.reported && (
+                                <i className="billing-est">{t('billing.records.estimatedBadge')}</i>
+                              )}
                             </span>
                           ) : (
-                            <span className="billing-unknown" title="没有这个模型的价格">未定价</span>
+                            <span
+                              className="billing-unknown"
+                              title={t('billing.records.unpricedTitle')}
+                            >
+                              {t('billing.records.unpriced')}
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -661,8 +710,13 @@ export function BillingPage({ records, onClear, fxRate }: Props) {
                 </table>
               </div>
               <p className="billing__footnote">
-                带「估」的记录表示供应商没有返回 usage，token 数由字符估算；出现未定价时，费用合计会偏低。
-                {estimatedCount > 0 ? ` 当前共 ${records.length} 条记录，其中 ${estimatedCount} 条为估算。` : ''}
+                {t('billing.footnote')}
+                {estimatedCount > 0
+                  ? t('billing.footnote.counts', {
+                      total: records.length,
+                      estimated: estimatedCount,
+                    })
+                  : ''}
               </p>
             </section>
           </>

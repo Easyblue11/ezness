@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { OLLAMA_DOWNLOAD_URL, PROVIDER_PRESETS, presetForProvider } from '../../data/providers';
+import { useI18n } from '../../i18n';
 import type { ApiType, ProviderConfig, ProviderPreset } from '../../types';
 import {
   CheckIcon,
@@ -13,10 +14,10 @@ import {
 
 type Status = { state: 'idle' | 'loading' | 'ok' | 'error'; text?: string };
 
-const API_TYPE_LABEL: Record<ApiType, string> = {
-  openai: 'OpenAI 兼容',
-  anthropic: 'Anthropic Messages',
-  ollama: 'Ollama 原生',
+const API_TYPE_KEY: Record<ApiType, string> = {
+  openai: 'settings.providers.api.openai',
+  anthropic: 'settings.providers.api.anthropic',
+  ollama: 'settings.providers.api.ollama',
 };
 
 interface Props {
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export function ProvidersSection({ providers, onChange, onRemove }: Props) {
+  const { t } = useI18n();
   const [activeId, setActiveId] = useState('');
   const [status, setStatus] = useState<Status>({ state: 'idle' });
   const [showKey, setShowKey] = useState(false);
@@ -54,7 +56,7 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
     while (providers[`custom-${index}`]) index += 1;
     const id = `custom-${index}`;
     onChange(id, {
-      name: `自定义接入 ${index}`,
+      name: t('settings.providers.customName', { index }),
       apiType: 'openai',
       baseUrl: '',
       apiKey: '',
@@ -77,8 +79,10 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
     }
 
     const taken = new Set(entries.map((item) => item.name));
-    let name = preset.name;
-    for (let index = 2; taken.has(name); index += 1) name = `${preset.name} ${index}`;
+    const presetName =
+      preset.id === 'custom' ? t('settings.providers.customPresetName') : preset.name;
+    let name = presetName;
+    for (let index = 2; taken.has(name); index += 1) name = `${presetName} ${index}`;
 
     let id = preset.id;
     for (let index = 2; providers[id]; index += 1) id = `${preset.id}-${index}`;
@@ -95,7 +99,7 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
 
   function removeProvider() {
     if (!config) return;
-    if (!window.confirm(`删除「${config.name}」？这个接入的地址、密钥和模型都会一起移除。`)) return;
+    if (!window.confirm(t('settings.providers.removeConfirm', { name: config.name }))) return;
     onRemove(config.id);
     selectProvider('');
   }
@@ -103,15 +107,15 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
   async function handleFetchModels() {
     if (!config) return;
     if (!config.baseUrl.trim()) {
-      setStatus({ state: 'error', text: '请先填写 API 地址' });
+      setStatus({ state: 'error', text: t('settings.providers.error.baseUrl') });
       return;
     }
     if (!window.ezness) {
-      setStatus({ state: 'error', text: '获取模型只在桌面端可用' });
+      setStatus({ state: 'error', text: t('settings.providers.error.desktopOnly') });
       return;
     }
 
-    setStatus({ state: 'loading', text: '正在请求模型列表…' });
+    setStatus({ state: 'loading', text: t('settings.providers.status.loading') });
     const result = await window.ezness.fetchModels({
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
@@ -122,10 +126,12 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
       onChange(config.id, { models: result.models });
       setStatus({
         state: 'ok',
-        text: result.models.length ? `已获取 ${result.models.length} 个模型` : '连接成功，但接口没有返回模型',
+        text: result.models.length
+          ? t('settings.providers.status.count', { count: result.models.length })
+          : t('settings.providers.status.empty'),
       });
     } else {
-      setStatus({ state: 'error', text: result.error ?? '获取失败' });
+      setStatus({ state: 'error', text: result.error ?? t('settings.providers.error.fetch') });
     }
   }
 
@@ -176,10 +182,10 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
             setStatus({ state: 'idle' });
             setPicking(true);
           }}
-          title="新增一个模型接入"
+          title={t('settings.providers.add.title')}
         >
           <span className="provider-badge">＋</span>
-          <span className="provider-item__name">新增接入</span>
+          <span className="provider-item__name">{t('settings.providers.add.label')}</span>
         </button>
       </aside>
 
@@ -187,13 +193,11 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
         <section className="config">
           <header className="config__head">
             <div>
-              <div className="config__title">选择厂家</div>
-              <div className="config__desc">
-                地址和接口类型已经按厂家填好，你只要补上密钥、再获取模型。都不合适就选「自定义接入」。
-              </div>
+              <div className="config__title">{t('settings.providers.pick.title')}</div>
+              <div className="config__desc">{t('settings.providers.pick.desc')}</div>
             </div>
             <button type="button" className="btn btn--sm btn--ghost" onClick={() => setPicking(false)}>
-              取消
+              {t('settings.providers.cancel')}
             </button>
           </header>
           <div className="preset-grid">
@@ -211,11 +215,17 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
                   <span className="provider-badge">{preset.initials}</span>
                   <span className="preset-card__body">
                     <span className="preset-card__name">
-                      {preset.name}
-                      {added && <span className="preset-card__tag">已添加</span>}
+                      {preset.id === 'custom'
+                        ? t('settings.providers.customPresetName')
+                        : preset.name}
+                      {added && (
+                        <span className="preset-card__tag">{t('settings.providers.added')}</span>
+                      )}
                     </span>
-                    <span className="preset-card__url">{preset.baseUrl || '自己填地址'}</span>
-                    <span className="preset-card__desc">{preset.description}</span>
+                    <span className="preset-card__url">
+                      {preset.baseUrl || t('settings.providers.customUrl')}
+                    </span>
+                    <span className="preset-card__desc">{t(preset.description)}</span>
                   </span>
                 </button>
               );
@@ -228,16 +238,13 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
         <section className="config">
           <header className="config__head">
             <div>
-              <div className="config__title">还没有模型接入</div>
-              <div className="config__desc">
-                点左边的「新增接入」，从厂家列表里挑一个——地址已经填好，补上密钥和模型就能用；
-                也可以选「自定义接入」，地址、密钥全自己填。这里不预置任何密钥或模型。
-              </div>
+              <div className="config__title">{t('settings.providers.empty.title')}</div>
+              <div className="config__desc">{t('settings.providers.empty.desc')}</div>
             </div>
           </header>
           <div className="config__download">
             <span>
-              想在本机跑模型？先装 Ollama：
+              {t('settings.providers.ollama.intro')}
               <a className="config__download-link" href={OLLAMA_DOWNLOAD_URL} target="_blank" rel="noreferrer">
                 {OLLAMA_DOWNLOAD_URL}
               </a>
@@ -245,8 +252,10 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
             <button
               type="button"
               className={`iconbtn iconbtn--bordered ${linkCopied ? 'is-copied' : ''}`}
-              title={linkCopied ? '已复制' : '复制下载链接'}
-              aria-label="复制 Ollama 下载链接"
+              title={
+                linkCopied ? t('settings.providers.copied') : t('settings.providers.copyLink')
+              }
+              aria-label={t('settings.providers.copyAria')}
               onClick={copyDownloadLink}
             >
               {linkCopied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
@@ -261,21 +270,25 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
           <div>
             <div className="config__title">{config.name}</div>
             <div className="config__desc">
-              {configPreset?.description ??
-                (config.apiType === 'ollama' ? '本机运行的模型，不用密钥' : '自定义接入，自己填地址、密钥和模型')}
+              {configPreset?.description
+                ? t(configPreset.description)
+                : config.apiType === 'ollama'
+                  ? t('settings.providers.fallback.ollama')
+                  : t('settings.providers.fallback.custom')}
             </div>
           </div>
           <div className="config__head-actions">
             {config.models.length > 0 && (
               <span className="pill">
-                <CheckIcon size={12} /> {config.models.length} 个模型
+                <CheckIcon size={12} />{' '}
+                {t('settings.providers.modelCount', { count: config.models.length })}
               </span>
             )}
             <button
               type="button"
               className="iconbtn"
-              title="删除这个接入"
-              aria-label="删除这个接入"
+              title={t('settings.providers.remove.title')}
+              aria-label={t('settings.providers.remove.title')}
               onClick={removeProvider}
             >
               <TrashIcon size={15} />
@@ -286,7 +299,7 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
         {config.apiType === 'ollama' && (
           <div className="config__download">
             <span>
-              还没装 Ollama？先装上它，模型都在本机跑：
+              {t('settings.providers.ollama.configIntro')}
               <a className="config__download-link" href={OLLAMA_DOWNLOAD_URL} target="_blank" rel="noreferrer">
                 {OLLAMA_DOWNLOAD_URL}
               </a>
@@ -294,8 +307,10 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
             <button
               type="button"
               className={`iconbtn iconbtn--bordered ${linkCopied ? 'is-copied' : ''}`}
-              title={linkCopied ? '已复制' : '复制下载链接'}
-              aria-label="复制 Ollama 下载链接"
+              title={
+                linkCopied ? t('settings.providers.copied') : t('settings.providers.copyLink')
+              }
+              aria-label={t('settings.providers.copyAria')}
               onClick={copyDownloadLink}
             >
               {linkCopied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
@@ -305,24 +320,24 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
 
         <div className="field-grid">
           <label className="field">
-            <span className="field__label">名称</span>
+            <span className="field__label">{t('settings.providers.field.name')}</span>
             <input
               className="input"
               value={config.name}
-              placeholder="给这个接入起个名字"
+              placeholder={t('settings.providers.field.namePlaceholder')}
               onChange={(event) => onChange(config.id, { name: event.target.value })}
             />
           </label>
           <label className="field">
-            <span className="field__label">接口类型</span>
+            <span className="field__label">{t('settings.providers.field.apiType')}</span>
             <select
               className="select"
               value={config.apiType}
               onChange={(event) => onChange(config.id, { apiType: event.target.value as ApiType })}
             >
-              {(Object.keys(API_TYPE_LABEL) as ApiType[]).map((type) => (
+              {(Object.keys(API_TYPE_KEY) as ApiType[]).map((type) => (
                 <option key={type} value={type}>
-                  {API_TYPE_LABEL[type]}
+                  {t(API_TYPE_KEY[type])}
                 </option>
               ))}
             </select>
@@ -330,7 +345,7 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
         </div>
 
         <label className="field">
-          <span className="field__label">API 地址</span>
+          <span className="field__label">{t('settings.providers.field.baseUrl')}</span>
           <input
             className="input"
             value={config.baseUrl}
@@ -342,8 +357,10 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
 
         <label className="field">
           <span className="field__label">
-            密钥
-            {keyOptional && <span className="field__hint">可选 · 本地模型通常不需要</span>}
+            {t('settings.providers.field.key')}
+            {keyOptional && (
+              <span className="field__hint">{t('settings.providers.field.keyOptional')}</span>
+            )}
           </span>
           <div className="input-row">
             <input
@@ -351,10 +368,18 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
               type={showKey ? 'text' : 'password'}
               value={config.apiKey}
               spellCheck={false}
-              placeholder={keyOptional ? '留空即可' : 'sk-...'}
+              placeholder={
+                keyOptional
+                  ? t('settings.providers.field.keyPlaceholderOptional')
+                  : 'sk-...'
+              }
               onChange={(event) => onChange(config.id, { apiKey: event.target.value })}
             />
-            <button className="iconbtn iconbtn--bordered" title={showKey ? '隐藏' : '显示'} onClick={() => setShowKey((v) => !v)}>
+            <button
+              className="iconbtn iconbtn--bordered"
+              title={showKey ? t('settings.providers.hide') : t('settings.providers.show')}
+              onClick={() => setShowKey((v) => !v)}
+            >
               {showKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
             </button>
           </div>
@@ -362,16 +387,21 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
 
         <div className="field">
           <span className="field__label">
-            模型
-            <span className="field__hint">可以自动获取，也可以手动添加</span>
+            {t('settings.providers.field.models')}
+            <span className="field__hint">{t('settings.providers.field.modelsHint')}</span>
           </span>
 
           <div className="chips">
-            {config.models.length === 0 && <span className="chips__empty">还没有模型</span>}
+            {config.models.length === 0 && (
+              <span className="chips__empty">{t('settings.providers.models.empty')}</span>
+            )}
             {config.models.map((model) => (
               <span key={model} className="model-chip">
                 {model}
-                <button title="移除" onClick={() => removeModel(model)}>
+                <button
+                  title={t('settings.providers.models.remove')}
+                  onClick={() => removeModel(model)}
+                >
                   <TrashIcon size={12} />
                 </button>
               </span>
@@ -383,7 +413,7 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
               className="input"
               value={draftModel}
               spellCheck={false}
-              placeholder="手动输入模型名，回车添加"
+              placeholder={t('settings.providers.models.addPlaceholder')}
               onChange={(event) => setDraftModel(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
@@ -393,7 +423,7 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
               }}
             />
             <button className="btn" onClick={addModel} disabled={!draftModel.trim()}>
-              添加
+              {t('settings.providers.add')}
             </button>
           </div>
         </div>
@@ -402,10 +432,12 @@ export function ProvidersSection({ providers, onChange, onRemove }: Props) {
           <div className="config__actions">
             <button className="btn btn--primary" onClick={handleFetchModels} disabled={status.state === 'loading'}>
               <RefreshIcon size={14} />
-              {status.state === 'loading' ? '获取中…' : '获取模型'}
+              {status.state === 'loading'
+                ? t('settings.providers.fetch.loading')
+                : t('settings.providers.fetch.button')}
             </button>
             <button className="btn btn--ghost" onClick={() => setStatus({ state: 'idle' })}>
-              清除状态
+              {t('settings.providers.clearStatus')}
             </button>
           </div>
 

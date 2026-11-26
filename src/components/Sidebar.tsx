@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useI18n } from '../i18n';
+import { sessionTitle } from '../lib/sessionTitle';
 import type { Message, Session } from '../types';
 import { findSnippet, textByConversation } from '../lib/search';
 import { ActivityDot, type ActivityStatus } from './ActivityDot';
@@ -7,27 +9,32 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { CheckIcon, MoreIcon, PinIcon, PlusIcon, SearchIcon } from './Icons';
 
 const DAY = 86_400_000;
-const GROUP_ORDER = ['今天', '昨天', '本周', '更早'] as const;
+const GROUP_KEYS = [
+  'sidebar.group.today',
+  'sidebar.group.yesterday',
+  'sidebar.group.thisWeek',
+  'sidebar.group.earlier',
+] as const;
 
 /** Stable empty index for the no-search case. */
 const NO_TEXTS: Map<string, string[]> = new Map();
 
-function groupOf(timestamp: number): (typeof GROUP_ORDER)[number] {
+function groupOf(timestamp: number): (typeof GROUP_KEYS)[number] {
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  if (timestamp >= startOfToday) return '今天';
-  if (timestamp >= startOfToday - DAY) return '昨天';
-  if (timestamp >= startOfToday - 7 * DAY) return '本周';
-  return '更早';
+  if (timestamp >= startOfToday) return 'sidebar.group.today';
+  if (timestamp >= startOfToday - DAY) return 'sidebar.group.yesterday';
+  if (timestamp >= startOfToday - 7 * DAY) return 'sidebar.group.thisWeek';
+  return 'sidebar.group.earlier';
 }
 
-function formatTime(timestamp: number): string {
+function formatTime(timestamp: number, locale: string): string {
   const date = new Date(timestamp);
   const startOfToday = new Date().setHours(0, 0, 0, 0);
   if (timestamp >= startOfToday) {
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
   }
-  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+  return date.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' });
 }
 
 interface Props {
@@ -72,6 +79,7 @@ export function Sidebar({
   onPin,
   activity,
 }: Props) {
+  const { t, locale } = useI18n();
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -93,14 +101,16 @@ export function Sidebar({
     const map = new Map<string, string>();
     if (!keyword) return map;
     for (const session of sessions) {
-      if (session.title.toLowerCase().includes(keyword)) continue;
+      if (sessionTitle(session.title, t).toLowerCase().includes(keyword)) continue;
       const snippet = findSnippet(messageTexts.get(session.id), keyword);
       if (snippet) map.set(session.id, snippet);
     }
     return map;
-  }, [sessions, keyword, messageTexts]);
+  }, [sessions, keyword, messageTexts, t]);
   const visible = keyword
-    ? sessions.filter((s) => s.title.toLowerCase().includes(keyword) || snippets.has(s.id))
+    ? sessions.filter(
+        (s) => sessionTitle(s.title, t).toLowerCase().includes(keyword) || snippets.has(s.id),
+      )
     : sessions;
 
   // Pinned sessions get their own group on top. Inside each group the most
@@ -113,10 +123,10 @@ export function Sidebar({
   );
   const pinned = ordered.filter((s) => s.pinned);
   const grouped: { label: string; items: Session[] }[] = [
-    ...(pinned.length > 0 ? [{ label: '置顶', items: pinned }] : []),
-    ...GROUP_ORDER.map((label) => ({
-      label: label as string,
-      items: ordered.filter((s) => !s.pinned && groupOf(s.updatedAt) === label),
+    ...(pinned.length > 0 ? [{ label: t('sidebar.group.pinned'), items: pinned }] : []),
+    ...GROUP_KEYS.map((key) => ({
+      label: t(key),
+      items: ordered.filter((s) => !s.pinned && groupOf(s.updatedAt) === key),
     })).filter((group) => group.items.length > 0),
   ];
 
@@ -181,7 +191,7 @@ export function Sidebar({
           <input
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            placeholder="搜索会话或内容"
+            placeholder={t('sidebar.searchPlaceholder')}
             spellCheck={false}
           />
         </div>
@@ -189,7 +199,7 @@ export function Sidebar({
           <button
             type="button"
             className={`sidebar__select ${selecting ? 'is-active' : ''}`}
-            title={selecting ? '退出多选' : '多选会话'}
+            title={selecting ? t('sidebar.selectExit') : t('sidebar.selectEnter')}
             aria-pressed={selecting}
             onClick={() => {
               setMenu(null);
@@ -197,10 +207,10 @@ export function Sidebar({
               setSelecting((value) => !value);
             }}
           >
-            {selecting ? '完成' : '多选'}
+            {selecting ? t('sidebar.selectDone') : t('sidebar.select')}
           </button>
         )}
-        <button className="newchat" title="新建对话" onClick={onNew}>
+        <button className="newchat" title={t('sidebar.newChat')} onClick={onNew}>
           <PlusIcon size={17} />
         </button>
       </div>
@@ -255,7 +265,7 @@ export function Sidebar({
                   />
                 ) : (
                   <span className="session-item__text">
-                    <span className="session-item__title">{session.title}</span>
+                    <span className="session-item__title">{sessionTitle(session.title, t)}</span>
                     {snippets.has(session.id) && (
                       <span className="session-item__snippet">{snippets.get(session.id)}</span>
                     )}
@@ -272,14 +282,14 @@ export function Sidebar({
                 ) : (
                   <>
                     {session.pinned && (
-                      <span className="session-item__pin" title="已置顶">
+                      <span className="session-item__pin" title={t('sidebar.pinnedBadge')}>
                         <PinIcon size={12} />
                       </span>
                     )}
-                    <span className="session-item__time">{formatTime(session.updatedAt)}</span>
+                    <span className="session-item__time">{formatTime(session.updatedAt, locale)}</span>
                     <button
                       className="session-item__more"
-                      title="更多"
+                      title={t('sidebar.more')}
                       onClick={(event) => openMenu(event, session.id)}
                     >
                       <MoreIcon size={15} />
@@ -291,7 +301,9 @@ export function Sidebar({
           </section>
         ))}
 
-        {grouped.length === 0 && <div className="session-empty">没有匹配的会话</div>}
+        {grouped.length === 0 && (
+          <div className="session-empty">{t('sidebar.noMatch')}</div>
+        )}
       </div>
 
       {selecting && (
@@ -313,25 +325,25 @@ export function Sidebar({
                 });
               }}
             />
-            全选
+            {t('sidebar.selectAll')}
           </label>
-          <span className="ws__selectcount">已选 {selected.size} 项</span>
+          <span className="ws__selectcount">{t('sidebar.selectedCount', { count: selected.size })}</span>
           <button
             type="button"
             className="btn btn--danger btn--sm"
             disabled={selected.size === 0}
             onClick={() => setConfirming(true)}
           >
-            删除
+            {t('sidebar.delete')}
           </button>
         </div>
       )}
 
       {confirming && (
         <ConfirmDialog
-          title="批量删除会话"
-          message={`删除选中的 ${selected.size} 个会话？此操作不可撤销。`}
-          confirmLabel={`删除 ${selected.size} 项`}
+          title={t('sidebar.batchDeleteTitle')}
+          message={t('sidebar.batchDeleteMessage', { count: selected.size })}
+          confirmLabel={t('sidebar.batchDeleteConfirm', { count: selected.size })}
           danger
           onConfirm={() => {
             const ids = [...selected];
@@ -346,7 +358,7 @@ export function Sidebar({
 
       <footer className="sidebar__foot">
         <span className="dot" />
-        <span>当前激活 · {modelLabel || '未连接模型'}</span>
+        <span>{t('sidebar.active', { model: modelLabel || t('sidebar.noModel') })}</span>
       </footer>
 
       {menu &&
@@ -363,7 +375,9 @@ export function Sidebar({
                 }}
               >
                 <span className="menu__label">
-                  {sessions.find((item) => item.id === menu.id)?.pinned ? '取消置顶' : '置顶会话'}
+                  {sessions.find((item) => item.id === menu.id)?.pinned
+                    ? t('sidebar.unpin')
+                    : t('sidebar.pin')}
                 </span>
               </button>
               <button
@@ -373,7 +387,7 @@ export function Sidebar({
                   setMenu(null);
                 }}
               >
-                <span className="menu__label">重命名</span>
+                <span className="menu__label">{t('sidebar.rename')}</span>
               </button>
               <button
                 className="menu__item"
@@ -382,7 +396,7 @@ export function Sidebar({
                   setMenu(null);
                 }}
               >
-                <span className="menu__label">导出为 Markdown</span>
+                <span className="menu__label">{t('sidebar.export')}</span>
               </button>
               <button
                 className="menu__item menu__item--danger"
@@ -391,7 +405,7 @@ export function Sidebar({
                   setMenu(null);
                 }}
               >
-                <span className="menu__label">删除会话</span>
+                <span className="menu__label">{t('sidebar.deleteSession')}</span>
               </button>
             </div>
           </>,

@@ -17,6 +17,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { normalizeSelection } = require('./knowledge-scope');
+const uiText = require('../ui-text');
 
 const FILE_NAME = 'agents.json';
 const MAX_AGENTS = 50;
@@ -95,18 +96,18 @@ function normalizeAgent(input, options = {}) {
   );
 
   if (!input || typeof input !== 'object') {
-    return { ok: false, errors: ['内容格式不对。'] };
+    return { ok: false, errors: [uiText.t('main.agent.errFormat')] };
   }
 
   const name = text(input.name, MAX_NAME);
-  if (!name) return { ok: false, errors: ['名字不能为空。'] };
+  if (!name) return { ok: false, errors: [uiText.t('main.agent.errNameEmpty')] };
   if (others.some((item) => String(item.name ?? '').toLowerCase() === name.toLowerCase())) {
-    return { ok: false, errors: [`已经有叫「${name}」的 Agent 了。`] };
+    return { ok: false, errors: [uiText.t('main.agent.errNameTaken', { name })] };
   }
 
   const requestedId = String(input.id ?? '').trim();
   if (requestedId && !ID_RE.test(requestedId)) {
-    return { ok: false, errors: ['Agent 的 id 不合法。'] };
+    return { ok: false, errors: [uiText.t('main.agent.errIdInvalid')] };
   }
   const id = requestedId || newId();
 

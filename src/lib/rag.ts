@@ -1,5 +1,7 @@
 import type { CitationLink, KbChatMode, KbSearchHit, WebSearchItem } from '../types';
 
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
 export interface RagContext {
   hits: KbSearchHit[];
   mode: KbChatMode;
@@ -136,11 +138,19 @@ export function prettyUrl(url: string): string {
 export function collectCitations(
   hits: KbSearchHit[],
   web: RagContext['web'],
+  t?: Translate,
 ): CitationLink[] {
   const links: CitationLink[] = [];
 
   hits.forEach((hit, index) => {
-    const detail = hit.page != null ? `第 ${hit.page} 页` : (hit.section ?? '');
+    // The label stays the marker the model was given; only the human-readable
+    // detail is translated.
+    const detail =
+      hit.page != null
+        ? t
+          ? t('app.citation.page', { page: hit.page })
+          : `Page ${hit.page}`
+        : (hit.section ?? '');
     links.push({ label: `资料${index + 1}`, kind: 'kb', title: hit.docName, detail });
   });
 

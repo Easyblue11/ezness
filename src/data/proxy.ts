@@ -27,17 +27,33 @@ export const DEFAULT_PROXY: ProxySettings = {
 };
 
 export const PROXY_MODES: { mode: ProxyMode; label: string; desc: string }[] = [
-  { mode: 'direct', label: '直接连接', desc: '所有请求直连，不使用任何代理。' },
-  { mode: 'system', label: '系统代理', desc: '跟随 Windows / macOS 的系统代理设置。' },
-  { mode: 'fixed', label: '固定代理', desc: '所有请求都走下面这一台代理服务器。' },
-  { mode: 'auto', label: '自动切换', desc: '按域名规则分流，未命中时用默认动作。' },
+  { mode: 'direct', label: 'settings.proxy.mode.direct', desc: 'settings.proxy.modes.directDesc' },
+  { mode: 'system', label: 'settings.proxy.mode.system', desc: 'settings.proxy.modes.systemDesc' },
+  { mode: 'fixed', label: 'settings.proxy.mode.fixed', desc: 'settings.proxy.modes.fixedDesc' },
+  { mode: 'auto', label: 'settings.proxy.mode.auto', desc: 'settings.proxy.modes.autoDesc' },
 ];
 
 export const PROXY_SCHEMES: { scheme: ProxyScheme; label: string; desc: string }[] = [
-  { scheme: 'http', label: 'HTTP 代理', desc: '最常见的代理；HTTPS 网站也通过 CONNECT 走它。' },
-  { scheme: 'https', label: 'HTTPS 代理', desc: '与代理服务器之间使用 TLS 加密，不是「用来访问 HTTPS 网站」。' },
-  { scheme: 'socks5', label: 'SOCKS5 代理', desc: '支持域名转发，适合本地代理客户端。' },
-  { scheme: 'ssh', label: 'SSH 代理', desc: '通过 SSH 登录远程主机建立本地 SOCKS5 隧道。' },
+  {
+    scheme: 'http',
+    label: 'settings.proxy.schemes.http.label',
+    desc: 'settings.proxy.schemes.http.desc',
+  },
+  {
+    scheme: 'https',
+    label: 'settings.proxy.schemes.https.label',
+    desc: 'settings.proxy.schemes.https.desc',
+  },
+  {
+    scheme: 'socks5',
+    label: 'settings.proxy.schemes.socks5.label',
+    desc: 'settings.proxy.schemes.socks5.desc',
+  },
+  {
+    scheme: 'ssh',
+    label: 'settings.proxy.schemes.ssh.label',
+    desc: 'settings.proxy.schemes.ssh.desc',
+  },
 ];
 
 export function proxyRuleId(): string {
@@ -98,46 +114,46 @@ export function normalizeProxy(saved?: Partial<ProxySettings> | null): ProxySett
   };
 }
 
+/** A user-facing validation problem: an i18n key plus its interpolation values. */
+export interface ProxyProblem {
+  key: string;
+  vars?: Record<string, string | number>;
+}
+
 /**
  * What would stop this configuration from being applied. Returns null when it
  * is usable. Hosts are also validated against a character allow-list because
  * they end up inside Chromium proxy rules and the generated PAC script.
  */
-export function proxyProblem(settings: ProxySettings): string | null {
+export function proxyProblem(settings: ProxySettings): ProxyProblem | null {
   const { mode, server } = settings;
   if (!settings.enabled || mode === 'direct' || mode === 'system') return null;
 
-  if (!server.host) return '请填写代理服务器地址。';
+  if (!server.host) return { key: 'settings.proxy.problem.hostRequired' };
   if (!/^[A-Za-z0-9._\-:[\]]+$/.test(server.host)) {
-    return '代理服务器地址只能包含域名或 IP，不要带协议前缀和路径。';
+    return { key: 'settings.proxy.problem.hostInvalid' };
   }
   if (!Number.isInteger(server.port) || server.port < 1 || server.port > 65535) {
-    return '端口需要在 1–65535 之间。';
+    return { key: 'settings.proxy.problem.portRange' };
   }
 
   if (server.scheme === 'ssh') {
-    if (!server.username) return '请填写 SSH 登录用户名。';
-    if (server.sshAuth === 'password' && !server.password) return '请填写 SSH 密码。';
-    if (server.sshAuth === 'key' && !server.privateKeyPath) return '请选择私钥文件。';
+    if (!server.username) return { key: 'settings.proxy.problem.sshUserRequired' };
+    if (server.sshAuth === 'password' && !server.password) {
+      return { key: 'settings.proxy.problem.sshPasswordRequired' };
+    }
+    if (server.sshAuth === 'key' && !server.privateKeyPath) {
+      return { key: 'settings.proxy.problem.sshKeyRequired' };
+    }
   }
 
   if (mode === 'auto') {
     const broken = settings.rules.find(
       (rule) => rule.pattern && !/^[A-Za-z0-9.*_\-[\]]+$/.test(rule.pattern),
     );
-    if (broken) return `规则「${broken.pattern}」不合法，只支持域名、IP 和 * 通配符。`;
+    if (broken) {
+      return { key: 'settings.proxy.problem.ruleInvalid', vars: { pattern: broken.pattern } };
+    }
   }
   return null;
-}
-
-/** Short human label used by the status pill. */
-export function proxySummary(settings: ProxySettings): string {
-  const { mode, server } = settings;
-  if (!settings.enabled) return '已关闭';
-  if (mode === 'direct') return '直接连接';
-  if (mode === 'system') return '系统代理';
-  const scheme =
-    PROXY_SCHEMES.find((item) => item.scheme === server.scheme)?.label.replace(' 代理', '') ?? 'HTTP';
-  const address = `${server.host}:${server.port}`;
-  return mode === 'auto' ? `自动切换 · ${settings.rules.length} 条规则` : `固定代理 · ${scheme} ${address}`;
 }

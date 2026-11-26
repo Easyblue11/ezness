@@ -11,6 +11,8 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { AgentMemoryPanel } from './AgentMemoryPanel';
 import { AgentKnowledgeTree } from './AgentKnowledgeTree';
 import { AgentReviewPanel } from './AgentReviewPanel';
+import { useI18n } from '../i18n';
+import { categoryName } from '../lib/categoryName';
 import { useAgentReview } from '../lib/useAgentReview';
 import {
   AgentIcon,
@@ -121,6 +123,7 @@ interface Props {
 }
 
 export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = null }: Props) {
+  const { t, locale } = useI18n();
   const api = window.ezness;
 
   const [agents, setAgents] = useState<AgentDefinition[] | null>(null);
@@ -159,7 +162,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
 
   useEffect(() => {
     if (!api) {
-      setLoadError('桌面接口不可用，请从 Ezness 应用里打开这个页面。');
+      setLoadError(t('agent.error.desktopOnly'));
       return;
     }
     let alive = true;
@@ -280,14 +283,14 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
   function applyMemorySettings(settings: AgentMemorySettings, nextAgents: AgentDefinition[]) {
     setAgents(nextAgents);
     setDraft((current) => (current ? { ...current, memory: settings } : current));
-    setNotice('已保存记忆设置');
+    setNotice(t('agent.notice.memorySaved'));
     setSaveError('');
   }
 
   async function save() {
     if (!api || !draft) return;
     if (!draft.name.trim()) {
-      setSaveError('先给 Agent 起个名字。');
+      setSaveError(t('agent.error.nameRequired'));
       return;
     }
     setSaving(true);
@@ -296,13 +299,13 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
     try {
       const result = await api.agentsSave(draft);
       if (!result.ok || !result.agent) {
-        setSaveError(result.error || '保存失败');
+        setSaveError(result.error || t('agent.error.saveFailed'));
         return;
       }
       setAgents(result.agents ?? agents);
       setDraft(cloneAgent(result.agent));
       setSelectedId(result.agent.id);
-      setNotice('已保存');
+      setNotice(t('agent.notice.saved'));
     } catch (error) {
       setSaveError(messageOf(error));
     } finally {
@@ -314,7 +317,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
 
   async function exportAgent(agent: AgentDefinition) {
     if (!api?.agentsExport) {
-      setPkgNotice({ kind: 'bad', text: '导出只在桌面端可用。' });
+      setPkgNotice({ kind: 'bad', text: t('agent.export.desktopOnly') });
       return;
     }
     setPkgNotice(null);
@@ -322,11 +325,15 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
       const result = await api.agentsExport(agent.id);
       if (result.canceled) return;
       if (!result.ok) {
-        setPkgNotice({ kind: 'bad', text: result.error || '导出失败' });
+        setPkgNotice({ kind: 'bad', text: result.error || t('agent.export.failed') });
         return;
       }
       const warnings = result.warnings ?? [];
-      const summary = `已导出「${agent.name}」：${result.categories ?? 0} 个能力分类、${result.memory ?? 0} 条长期记忆。`;
+      const summary = t('agent.export.success', {
+        name: agent.name,
+        categories: result.categories ?? 0,
+        memory: result.memory ?? 0,
+      });
       setPkgNotice({
         kind: warnings.length > 0 ? 'warn' : 'ok',
         text: warnings.length > 0 ? `${summary}\n${warnings.join('\n')}` : summary,
@@ -338,7 +345,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
 
   async function importAgentPackage() {
     if (!api?.agentsImport) {
-      setPkgNotice({ kind: 'bad', text: '导入只在桌面端可用。' });
+      setPkgNotice({ kind: 'bad', text: t('agent.import.desktopOnly') });
       return;
     }
     setPkgNotice(null);
@@ -347,15 +354,17 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
       const result = await api.agentsImport();
       if (result.canceled) return;
       if (!result.ok) {
-        setPkgNotice({ kind: 'bad', text: result.error || '导入失败' });
+        setPkgNotice({ kind: 'bad', text: result.error || t('agent.import.failed') });
         return;
       }
       if (result.agents) setAgents(result.agents);
       if (result.categories) setToolCategories(result.categories);
       const warnings = result.warnings ?? [];
-      const summary = `已导入 Agent「${result.agent?.name ?? ''}」，带了 ${
-        result.importedCategories ?? 0
-      } 个能力分类、${result.memory ?? 0} 条长期记忆。`;
+      const summary = t('agent.import.success', {
+        name: result.agent?.name ?? '',
+        categories: result.importedCategories ?? 0,
+        memory: result.memory ?? 0,
+      });
       setPkgNotice({
         kind: warnings.length > 0 ? 'warn' : 'ok',
         text: warnings.length > 0 ? `${summary}\n${warnings.join('\n')}` : summary,
@@ -371,10 +380,10 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
   function draftName(): string {
     const taken = new Set((agents ?? []).map((agent) => agent.name.toLowerCase()));
     for (let attempt = 0; attempt < 50; attempt += 1) {
-      const name = `新 Agent ${Math.random().toString(36).slice(2, 6)}`;
+      const name = t('agent.draftName', { suffix: Math.random().toString(36).slice(2, 6) });
       if (!taken.has(name.toLowerCase())) return name;
     }
-    return `新 Agent ${Date.now().toString(36).slice(-4)}`;
+    return t('agent.draftName', { suffix: Date.now().toString(36).slice(-4) });
   }
 
   /**
@@ -393,7 +402,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
         enabled: false,
       });
       if (!result.ok || !result.agent) {
-        setSaveError(result.error || '创建失败');
+        setSaveError(result.error || t('agent.error.createFailed'));
         return;
       }
       setAgents(result.agents ?? agents);
@@ -414,7 +423,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
   async function editWithAI() {
     if (!api || !draft || !draft.id || !onOpenAgentEditor) return;
     if (!draft.name.trim()) {
-      setSaveError('先给 Agent 起个名字。');
+      setSaveError(t('agent.error.nameRequired'));
       return;
     }
     setSaving(true);
@@ -424,7 +433,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
       if (dirty) {
         const result = await api.agentsSave(draft);
         if (!result.ok || !result.agent) {
-          setSaveError(result.error || '保存失败');
+          setSaveError(result.error || t('agent.error.saveFailed'));
           return;
         }
         setAgents(result.agents ?? agents);
@@ -455,7 +464,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
     try {
       const result = await api.agentsDelete(selectedId);
       if (!result.ok) {
-        setSaveError(result.error || '删除失败');
+        setSaveError(result.error || t('agent.error.deleteFailed'));
         return;
       }
       setAgents(result.agents ?? []);
@@ -550,16 +559,20 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
     : 0;
   const totalCategories = builtinCategories.length + toolCategories.length;
   function scopeLabel(agent: AgentDefinition): string {
-    if (agent.capabilities.mode === 'all') return '全部能力';
+    if (agent.capabilities.mode === 'all') return t('agent.scope.all');
     const count = agent.capabilities.builtin.length + agent.capabilities.custom.length;
-    return `${count} 个能力分类`;
+    return t('agent.scope.count', { count });
   }
   function knowledgeLabel(agent: AgentDefinition): string {
     const categories = agent.knowledge?.categoryIds.length ?? 0;
     const docs = agent.knowledge?.documentIds.length ?? 0;
-    if (categories === 0 && docs === 0) return '未选知识库';
-    if (categories > 0 && docs > 0) return `知识库 ${categories} 类 · ${docs} 篇`;
-    return categories > 0 ? `知识库 ${categories} 个分类` : `知识库 ${docs} 篇文档`;
+    if (categories === 0 && docs === 0) return t('agent.knowledge.none');
+    if (categories > 0 && docs > 0) {
+      return t('agent.knowledge.both', { categories, docs });
+    }
+    return categories > 0
+      ? t('agent.knowledge.categories', { categories })
+      : t('agent.knowledge.docs', { docs });
   }
 
   /* ---------------- render ---------------- */
@@ -569,13 +582,13 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
       <div className="agent">
         <header className="agent__head">
           <div className="agent__title">
-            Agent <span>独立提示词 · 能力范围 · 共享知识库</span>
+            Agent <span>{t('agent.page.subtitle')}</span>
           </div>
         </header>
         <div className="agent__body">
           <div className="agent-empty">
             <AgentIcon size={30} />
-            <h2>加载失败</h2>
+            <h2>{t('agent.load.failed')}</h2>
             <p>{loadError}</p>
           </div>
         </div>
@@ -588,11 +601,13 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
       <div className="agent">
         <header className="agent__head">
           <div className="agent__title">
-            <button className="agent__back" onClick={requestClose} title="返回列表">
+            <button className="agent__back" onClick={requestClose} title={t('agent.action.back')}>
               ←
             </button>
-            {draft.id ? draft.name || '未命名 Agent' : '新建 Agent'}
-            <span>{draft.enabled ? '已启用' : '已停用'}</span>
+            {draft.id ? draft.name || t('agent.untitled') : t('agent.page.newTitle')}
+            <span>
+              {draft.enabled ? t('agent.state.enabled') : t('agent.state.disabled')}
+            </span>
           </div>
           <div className="agent__actions">
             {draft.id && onOpenAgentEditor && (
@@ -600,10 +615,10 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                 className="btn btn--ghost"
                 onClick={() => void editWithAI()}
                 disabled={saving}
-                title="在对话里让 AI 修改这个 Agent"
+                title={t('agent.action.editWithAI')}
               >
                 <SparkleIcon size={14} />
-                AI 编辑
+                {t('agent.action.aiEdit')}
               </button>
             )}
             <button
@@ -611,36 +626,36 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
               onClick={save}
               disabled={saving || !dirty}
             >
-              {saving ? '保存中…' : '保存'}
+              {saving ? t('agent.save.saving') : t('agent.save.save')}
             </button>
           </div>
         </header>
 
         <div className="agent-detail">
-          <nav className="agent-tabs" aria-label="Agent 设置">
+          <nav className="agent-tabs" aria-label={t('agent.tabs.aria')}>
             <button
               className={`agent-tab ${tab === 'profile' ? 'is-on' : ''}`}
               onClick={() => setTab('profile')}
             >
-              定义
+              {t('agent.tabs.profile')}
             </button>
             <button
               className={`agent-tab ${tab === 'capabilities' ? 'is-on' : ''}`}
               onClick={() => setTab('capabilities')}
             >
-              能力范围
+              {t('agent.tabs.capabilities')}
             </button>
             <button
               className={`agent-tab ${tab === 'knowledge' ? 'is-on' : ''}`}
               onClick={() => setTab('knowledge')}
             >
-              知识库
+              {t('agent.tabs.knowledge')}
             </button>
             <button
               className={`agent-tab ${tab === 'memory' ? 'is-on' : ''}`}
               onClick={() => setTab('memory')}
             >
-              长期记忆
+              {t('agent.tabs.memory')}
             </button>
           </nav>
 
@@ -649,12 +664,12 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
               <div className="agent-form">
                 <div className="agent-form__row">
                   <label className="field">
-                    <span className="field__label">名字</span>
+                    <span className="field__label">{t('agent.field.name')}</span>
                     <input
                       className="input"
                       value={draft.name}
                       maxLength={32}
-                      placeholder="例如：资料研究员"
+                      placeholder={t('agent.field.namePlaceholder')}
                       onChange={(event) => patchDraft({ name: event.target.value })}
                     />
                   </label>
@@ -664,36 +679,36 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                       checked={draft.enabled}
                       onChange={(event) => patchDraft({ enabled: event.target.checked })}
                     />
-                    <span>启用这个 Agent</span>
+                    <span>{t('agent.field.enabled')}</span>
                   </label>
                 </div>
 
                 <label className="field">
                   <span className="field__label">
-                    角色定义
-                    <span className="field__hint">它是什么、负责什么</span>
+                    {t('agent.field.role')}
+                    <span className="field__hint">{t('agent.field.roleHint')}</span>
                   </span>
                   <textarea
                     className="input agent-form__textarea"
                     rows={4}
                     value={draft.role}
                     maxLength={2000}
-                    placeholder="例如：你是一名严谨的资料研究员，负责收集、核对并整理某个主题的材料。"
+                    placeholder={t('agent.field.rolePlaceholder')}
                     onChange={(event) => patchDraft({ role: event.target.value })}
                   />
                 </label>
 
                 <label className="field">
                   <span className="field__label">
-                    性格偏好
-                    <span className="field__hint">说话方式与做事习惯</span>
+                    {t('agent.field.personality')}
+                    <span className="field__hint">{t('agent.field.personalityHint')}</span>
                   </span>
                   <textarea
                     className="input agent-form__textarea"
                     rows={3}
                     value={draft.personality}
                     maxLength={2000}
-                    placeholder="例如：直接、谨慎，先给结论再列依据；不确定的地方明确说不确定。"
+                    placeholder={t('agent.field.personalityPlaceholder')}
                     onChange={(event) => patchDraft({ personality: event.target.value })}
                   />
                 </label>
@@ -701,29 +716,29 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                 <div className="agent-form__grid">
                   <label className="field">
                     <span className="field__label">
-                      输入约定
-                      <span className="field__hint">用户会给它什么</span>
+                      {t('agent.field.input')}
+                      <span className="field__hint">{t('agent.field.inputHint')}</span>
                     </span>
                     <textarea
                       className="input agent-form__textarea"
                       rows={4}
                       value={draft.inputSpec}
                       maxLength={2000}
-                      placeholder="例如：一段研究主题，或需要核对的资料来源。"
+                      placeholder={t('agent.field.inputPlaceholder')}
                       onChange={(event) => patchDraft({ inputSpec: event.target.value })}
                     />
                   </label>
                   <label className="field">
                     <span className="field__label">
-                      输出约定
-                      <span className="field__hint">它交付什么格式</span>
+                      {t('agent.field.output')}
+                      <span className="field__hint">{t('agent.field.outputHint')}</span>
                     </span>
                     <textarea
                       className="input agent-form__textarea"
                       rows={4}
                       value={draft.outputSpec}
                       maxLength={2000}
-                      placeholder="例如：先给一段结论，再列来源与不确定项；资料按主题分组。"
+                      placeholder={t('agent.field.outputPlaceholder')}
                       onChange={(event) => patchDraft({ outputSpec: event.target.value })}
                     />
                   </label>
@@ -731,15 +746,15 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
 
                 <label className="field">
                   <span className="field__label">
-                    专属提示词
-                    <span className="field__hint">它会作为这个 Agent 的系统提示词</span>
+                    {t('agent.field.prompt')}
+                    <span className="field__hint">{t('agent.field.promptHint')}</span>
                   </span>
                   <textarea
                     className="input agent-form__textarea agent-form__prompt"
                     rows={10}
                     value={draft.prompt}
                     maxLength={20000}
-                    placeholder="写下你希望它始终遵守的要求。这些内容只对这个 Agent 生效。"
+                    placeholder={t('agent.field.promptPlaceholder')}
                     onChange={(event) => patchDraft({ prompt: event.target.value })}
                   />
                 </label>
@@ -748,12 +763,12 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
 
             {tab === 'capabilities' && (
               <div className="agent-form">
-                <div className="agent-seg" role="group" aria-label="能力范围">
+                <div className="agent-seg" role="group" aria-label={t('agent.tabs.capabilities')}>
                   <button
                     className={`agent-seg__item ${draft.capabilities.mode === 'all' ? 'is-on' : ''}`}
                     onClick={() => patchCapabilities({ mode: 'all' })}
                   >
-                    全部能力
+                    {t('agent.scope.all')}
                   </button>
                   <button
                     className={`agent-seg__item ${draft.capabilities.mode === 'selected' ? 'is-on' : ''}`}
@@ -768,21 +783,30 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                       });
                     }}
                   >
-                    指定分类
+                    {t('agent.scope.selected')}
                   </button>
                 </div>
 
                 <p className="agent-hint">
                   {draft.capabilities.mode === 'all'
-                    ? `这个 Agent 可以使用全部 ${totalCategories} 个能力分类（其中内置 ${builtinToolCount} 个功能），包括以后新增的分类。`
-                    : `只勾选需要的分类；当前已选 ${selectedCount} / ${totalCategories} 个。勾选一个分类即包含它下面的全部功能。`}
+                    ? t('agent.capabilities.allHint', {
+                        categories: totalCategories,
+                        tools: builtinToolCount,
+                      })
+                    : t('agent.capabilities.selectedHint', {
+                        selected: selectedCount,
+                        total: totalCategories,
+                      })}
                 </p>
 
                 <section className="agent-cap-group">
                   <h3>
-                    内置能力
+                    {t('agent.capabilities.builtinTitle')}
                     <span className="agent-cap-group__meta">
-                      {builtinCategories.length} 个分类 · {builtinToolCount} 个功能
+                      {t('agent.capabilities.builtinMeta', {
+                        categories: builtinCategories.length,
+                        tools: builtinToolCount,
+                      })}
                     </span>
                   </h3>
                   <div className="agent-checks">
@@ -795,7 +819,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                         <label
                           key={name}
                           className="agent-check"
-                          title={tools.length > 0 ? tools.join('、') : name}
+                          title={tools.length > 0 ? tools.join(t('agent.capabilities.toolsSeparator')) : name}
                         >
                           <input
                             type="checkbox"
@@ -808,25 +832,27 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                               patchCapabilities({ builtin: next });
                             }}
                           />
-                          <span>{name}</span>
+                          <span>{categoryName(name, t)}</span>
                           <em className="agent-check__count">{tools.length}</em>
                         </label>
                       );
                     })}
                     {builtinCategories.length === 0 && (
-                      <p className="agent-hint">还没有读取到内置能力分类。</p>
+                      <p className="agent-hint">{t('agent.capabilities.builtinEmpty')}</p>
                     )}
                   </div>
                 </section>
 
                 <section className="agent-cap-group">
                   <h3>
-                    自定义功能分类
-                    <span className="agent-cap-group__meta">{toolCategories.length} 个分类</span>
+                    {t('agent.capabilities.customTitle')}
+                    <span className="agent-cap-group__meta">
+                      {t('agent.capabilities.customMeta', { count: toolCategories.length })}
+                    </span>
                   </h3>
                   {toolCategories.length === 0 ? (
                     <p className="agent-hint">
-                      还没有自定义功能分类。可以先去「AI能力」里创建分类和功能。
+                      {t('agent.capabilities.customEmpty')}
                     </p>
                   ) : (
                     <div className="agent-checks">
@@ -888,7 +914,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                   disabled={saving}
                 >
                   <TrashIcon size={14} />
-                  删除 Agent
+                  {t('agent.action.delete')}
                 </button>
               )}
             </div>
@@ -901,7 +927,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                 </span>
               )}
               <button className="btn btn--primary" onClick={save} disabled={saving || !dirty}>
-                {saving ? '保存中…' : '保存'}
+                {saving ? t('agent.save.saving') : t('agent.save.save')}
               </button>
             </div>
           </footer>
@@ -909,9 +935,11 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
 
         {confirm?.kind === 'delete' && (
           <ConfirmDialog
-            title="删除这个 Agent？"
-            message={`「${draft.name || '未命名 Agent'}」的定义和长期记忆会被删除，且不能恢复。知识库是共享的，资料不会受影响。`}
-            confirmLabel="删除"
+            title={t('agent.delete.title')}
+            message={t('agent.delete.message', {
+              name: draft.name || t('agent.untitled'),
+            })}
+            confirmLabel={t('agent.action.deleteConfirm')}
             danger
             onConfirm={deleteAgent}
             onCancel={() => setConfirm(null)}
@@ -919,9 +947,9 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
         )}
         {confirm?.kind === 'discard' && (
           <ConfirmDialog
-            title="放弃未保存的修改？"
-            message="返回列表后，这次改动不会保留。"
-            confirmLabel="放弃修改"
+            title={t('agent.discard.title')}
+            message={t('agent.discard.message')}
+            confirmLabel={t('agent.discard.confirm')}
             danger
             onConfirm={closeDetail}
             onCancel={() => setConfirm(null)}
@@ -937,7 +965,9 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
         <div className="agent__title">
           Agent
           <span>
-            {agents === null ? '正在读取…' : `${agents.length} 个 · 独立提示词与可见资料`}
+            {agents === null
+              ? t('agent.page.loading')
+              : t('agent.page.count', { count: agents.length })}
           </span>
         </div>
         <div className="agent__actions">
@@ -945,10 +975,10 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
             className="btn btn--ghost"
             onClick={() => setReviewOpen(true)}
             disabled={!agents || agents.length === 0}
-            title="检查每个 Agent 的能力范围和知识库是否与它的定义匹配"
+            title={t('agent.review.title')}
           >
             <ScanIcon size={14} />
-            {review.phase === 'running' ? '审查中…' : 'Agent审查'}
+            {review.phase === 'running' ? t('agent.review.running') : t('agent.review.label')}
             {review.phase === 'ready' && review.pending.length > 0 && (
               <span className="agent-review__badge">{review.pending.length}</span>
             )}
@@ -958,24 +988,24 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
               className="btn btn--ghost"
               onClick={() => void createWithAI()}
               disabled={aiCreating}
-              title="创建一个草稿 Agent，并在对话里让 AI 帮你设计"
+              title={t('agent.action.aiCreateTitle')}
             >
               <SparkleIcon size={14} />
-              {aiCreating ? '创建中…' : 'AI 新增'}
+              {aiCreating ? t('agent.action.creating') : t('agent.action.aiCreate')}
             </button>
           )}
           <button
             className="btn btn--ghost"
             onClick={() => void importAgentPackage()}
             disabled={pkgBusy}
-            title="导入 Agent 包：定义、能力范围、勾选的能力分类和长期记忆会一起进来"
+            title={t('agent.import.title')}
           >
             <UploadIcon size={14} />
-            {pkgBusy ? '导入中…' : '导入'}
+            {pkgBusy ? t('agent.import.busy') : t('agent.import.label')}
           </button>
           <button className="btn btn--primary" onClick={startNew}>
             <PlusIcon size={14} />
-            新建 Agent
+            {t('agent.action.new')}
           </button>
         </div>
       </header>
@@ -995,17 +1025,15 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
           </p>
         )}
         {agents === null ? (
-          <p className="agent-hint">正在读取 Agent…</p>
+          <p className="agent-hint">{t('agent.page.loadingAgents')}</p>
         ) : agents.length === 0 ? (
           <div className="agent-empty">
             <AgentIcon size={32} />
-            <h2>还没有 Agent</h2>
-            <p>
-              每个 Agent 有独立的提示词和能力范围，并可以从共享知识库里勾选它能读的资料。先创建一个。
-            </p>
+            <h2>{t('agent.empty.title')}</h2>
+            <p>{t('agent.empty.desc')}</p>
             <button className="btn btn--primary" onClick={startNew}>
               <PlusIcon size={14} />
-              新建第一个 Agent
+              {t('agent.empty.create')}
             </button>
           </div>
         ) : (
@@ -1028,9 +1056,9 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                     {agent.name.trim().slice(0, 1) || 'A'}
                   </span>
                   <div className="agent-card__id">
-                    <h2>{agent.name || '未命名 Agent'}</h2>
+                    <h2>{agent.name || t('agent.untitled')}</h2>
                     <span className={`agent-card__state ${agent.enabled ? 'is-on' : ''}`}>
-                      {agent.enabled ? '已启用' : '已停用'}
+                      {agent.enabled ? t('agent.state.enabled') : t('agent.state.disabled')}
                     </span>
                   </div>
                   <button
@@ -1039,8 +1067,8 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                       event.stopPropagation();
                       void exportAgent(agent);
                     }}
-                    title="导出这个 Agent"
-                    aria-label={`导出 ${agent.name}`}
+                    title={t('agent.export.title')}
+                    aria-label={t('agent.export.aria', { name: agent.name })}
                   >
                     <DownloadIcon size={13} />
                   </button>
@@ -1050,18 +1078,20 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                       event.stopPropagation();
                       toggleEnabled(agent);
                     }}
-                    title={agent.enabled ? '停用' : '启用'}
+                    title={agent.enabled ? t('agent.action.disable') : t('agent.action.enable')}
                   >
-                    {agent.enabled ? '停用' : '启用'}
+                    {agent.enabled ? t('agent.action.disable') : t('agent.action.enable')}
                   </button>
                 </div>
 
                 <p className="agent-card__role">
-                  {agent.role.trim() || '还没有填写角色定义。'}
+                  {agent.role.trim() || t('agent.card.noRole')}
                 </p>
 
                 {agent.personality.trim() && (
-                  <p className="agent-card__personality">性格：{agent.personality}</p>
+                  <p className="agent-card__personality">
+                    {t('agent.card.personality', { value: agent.personality })}
+                  </p>
                 )}
 
                 <div className="agent-card__foot">
@@ -1069,7 +1099,7 @@ export function AgentPage({ active = true, onOpenAgentEditor, reviewTarget = nul
                   <span className="agent-card__tag">{knowledgeLabel(agent)}</span>
                   <span className="agent-card__time">
                     {agent.updatedAt
-                      ? new Date(agent.updatedAt).toLocaleDateString('zh-CN')
+                      ? new Date(agent.updatedAt).toLocaleDateString(locale)
                       : ''}
                   </span>
                 </div>

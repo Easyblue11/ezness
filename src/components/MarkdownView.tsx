@@ -9,6 +9,7 @@ import {
 } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useI18n } from '../i18n';
 import { highlightBlock } from '../lib/highlight';
 import { prettyUrl } from '../lib/rag';
 import type { CitationLink } from '../types';
@@ -90,11 +91,16 @@ function textOf(node: ReactNode): string {
 }
 
 function CodeBlock({ code, language }: { code: string; language: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const block = useMemo(() => highlightBlock(code, language), [code, language]);
   // A fence without a tag still gets coloured by detection; say so in the bar
   // instead of leaving it blank.
-  const label = language || (block ? `${block.language}（自动识别）` : '纯文本');
+  const label =
+    language ||
+    (block
+      ? t('chat.md.autoDetected', { language: block.language })
+      : t('chat.md.plainText'));
 
   async function copy() {
     try {
@@ -113,8 +119,8 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
         <span className="md-code__lang">{label}</span>
         <button
           className={`md-code__copy ${copied ? 'is-copied' : ''}`}
-          title={copied ? '已复制' : '复制代码'}
-          aria-label="复制代码"
+          title={copied ? t('chat.md.copied') : t('chat.md.copyCode')}
+          aria-label={t('chat.md.copyCode')}
           onClick={copy}
         >
           {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
@@ -145,6 +151,7 @@ function cellText(cell: HTMLTableCellElement): string {
  * Markdown (same shape as the message copy button).
  */
 function TableBlock({ children }: { children?: ReactNode }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const tableRef = useRef<HTMLTableElement>(null);
 
@@ -173,11 +180,11 @@ function TableBlock({ children }: { children?: ReactNode }) {
   return (
     <div className="md-table">
       <div className="md-table__bar">
-        <span className="md-table__label">表格</span>
+        <span className="md-table__label">{t('chat.md.table')}</span>
         <button
           className={`md-table__copy ${copied ? 'is-copied' : ''}`}
-          title={copied ? '已复制' : '复制表格（Markdown）'}
-          aria-label="复制表格"
+          title={copied ? t('chat.md.copied') : t('chat.md.copyTable')}
+          aria-label={t('chat.md.copyTableAria')}
           onClick={copy}
         >
           {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
@@ -215,18 +222,24 @@ function linkCitations(text: string, known: Map<string, CitationLink>): string {
  * no page to open).
  */
 function CitationChip({ cite }: { cite: CitationLink }) {
+  const { t } = useI18n();
   const openable = cite.kind === 'web' && Boolean(cite.url && /^https?:/i.test(cite.url));
   const open = () => {
     if (openable && cite.url) window.open(cite.url, '_blank');
   };
-  const summary = `${cite.label}：${cite.title}${cite.detail ? `，${cite.detail}` : ''}`;
+  const summary = cite.detail
+    ? t('chat.cite.summaryDetail', {
+        summary: t('chat.cite.summary', { label: cite.label, title: cite.title }),
+        detail: cite.detail,
+      })
+    : t('chat.cite.summary', { label: cite.label, title: cite.title });
 
   return (
     <span
       className={`cite cite--${cite.kind}${openable ? ' is-openable' : ''}`}
       role={openable ? 'link' : undefined}
       tabIndex={0}
-      aria-label={openable ? `${summary}（点击打开网页）` : summary}
+      aria-label={openable ? t('chat.cite.openAria', { summary }) : summary}
       title={openable && cite.url ? prettyUrl(cite.url) : undefined}
       onClick={(event) => {
         event.preventDefault();
@@ -248,7 +261,9 @@ function CitationChip({ cite }: { cite: CitationLink }) {
         ) : cite.detail ? (
           <span className="cite__tip-detail">{cite.detail}</span>
         ) : null}
-        {openable ? <span className="cite__tip-hint">点击打开网页</span> : null}
+        {openable ? (
+          <span className="cite__tip-hint">{t('chat.cite.openHint')}</span>
+        ) : null}
       </span>
     </span>
   );

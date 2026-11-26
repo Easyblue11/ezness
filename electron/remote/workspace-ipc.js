@@ -6,6 +6,7 @@
  */
 
 const posix = require('node:path').posix;
+const uiText = require('../ui-text');
 
 const TREE_LIMIT = 500;
 const TEXT_PREVIEW_LIMIT = 2 * 1024 * 1024;
@@ -30,19 +31,21 @@ function formatBytes(bytes) {
 
 function describe(error) {
   const code = error?.code ?? '';
-  if (code === 'ENOENT') return '路径不存在，或已经被移动。';
-  if (code === 'EISDIR') return '这是一个文件夹。';
+  if (code === 'ENOENT') return uiText.t('main.remote.error.pathMissing');
+  if (code === 'EISDIR') return uiText.t('main.remote.error.isFolder');
   if (code === 'path_escape') return error.message;
-  return error?.message ? String(error.message) : '远程操作失败。';
+  return error?.message ? String(error.message) : uiText.t('main.remote.error.failed');
 }
 
 /** POSIX is stricter than Windows here; the name must stay one segment. */
 function validateName(value) {
   const name = typeof value === 'string' ? value.trim() : '';
-  if (!name) return { error: '名称不能为空。' };
-  if (name === '.' || name === '..') return { error: '这个名称不能用。' };
-  if (/[/\u0000-\u001F]/.test(name)) return { error: '名称里不能包含斜杠或控制字符。' };
-  if (name.length > 255) return { error: '名称太长。' };
+  if (!name) return { error: uiText.t('main.remote.error.nameEmpty') };
+  if (name === '.' || name === '..') return { error: uiText.t('main.remote.error.nameReserved') };
+  if (/[/\u0000-\u001F]/.test(name)) {
+    return { error: uiText.t('main.remote.error.nameInvalidChars') };
+  }
+  if (name.length > 255) return { error: uiText.t('main.remote.error.nameTooLong') };
   return { name };
 }
 
@@ -79,7 +82,7 @@ async function tree(fs, request = {}) {
 async function readFile(fs, request = {}) {
   const target = await fs.resolve(request.path ?? '');
   const stat = await fs.stat(target);
-  if (stat.isDirectory) return { ok: false, error: '这是一个文件夹，不能预览。' };
+  if (stat.isDirectory) return { ok: false, error: uiText.t('main.remote.error.previewFolder') };
 
   const name = posix.basename(target);
   const relativePath = relOf(fs, target);
@@ -87,7 +90,10 @@ async function readFile(fs, request = {}) {
   const mime = IMAGE_MIME[ext];
   if (mime) {
     if (stat.size > IMAGE_PREVIEW_LIMIT) {
-      return { ok: false, error: `图片太大（${formatBytes(stat.size)}），无法在应用内预览。` };
+      return {
+        ok: false,
+        error: uiText.t('main.remote.error.imageTooLarge', { size: formatBytes(stat.size) }),
+      };
     }
     const data = await fs.readBuffer(target);
     return {
@@ -125,22 +131,22 @@ async function createFolder(fs, request = {}) {
   if (checked.error) return { ok: false, error: checked.error };
   const parent = await fs.resolve(request.parent ?? '');
   const stat = await fs.stat(parent);
-  if (!stat.isDirectory) return { ok: false, error: '只能在文件夹里新建文件夹。' };
+  if (!stat.isDirectory) return { ok: false, error: uiText.t('main.remote.error.createInFolder') };
   const target = fs.join(parent, checked.name);
-  if (await fs.exists(target)) return { ok: false, error: '已经有同名文件或文件夹。' };
+  if (await fs.exists(target)) return { ok: false, error: uiText.t('main.remote.error.nameExists') };
   await fs.mkdir(target, { recursive: false });
   return { ok: true, path: relOf(fs, target) };
 }
 
 async function move(fs, request = {}) {
   const fromRequest = String(request.from ?? '').trim();
-  if (!fromRequest) return { ok: false, error: '没有选中要移动的项目。' };
+  if (!fromRequest) return { ok: false, error: uiText.t('main.remote.error.nothingToMove') };
   const from = await fs.resolve(fromRequest);
-  if (from === fs.root) return { ok: false, error: '不能移动工作空间的根目录。' };
+  if (from === fs.root) return { ok: false, error: uiText.t('main.remote.error.moveRoot') };
 
   const toDir = await fs.resolve(request.toDir ?? '');
   const dirStat = await fs.stat(toDir);
-  if (!dirStat.isDirectory) return { ok: false, error: '只能移动到文件夹里。' };
+  if (!dirStat.isDirectory) return { ok: false, error: uiText.t('main.remote.error.moveToFolder') };
   if (posix.dirname(from) === toDir) return { ok: true, path: relOf(fs, from) };
 
   const fromStat = await fs.stat(from);
@@ -150,34 +156,34 @@ async function move(fs, request = {}) {
       relativeToSource === '' ||
       (!relativeToSource.startsWith('..') && !posix.isAbsolute(relativeToSource))
     ) {
-      return { ok: false, error: '不能把文件夹移动到它自己或它的子文件夹里。' };
+      return { ok: false, error: uiText.t('main.remote.error.moveIntoSelf') };
     }
   }
 
   const target = fs.join(toDir, posix.basename(from));
   if (target === from) return { ok: true, path: relOf(fs, from) };
-  if (await fs.exists(target)) return { ok: false, error: '目标文件夹里已经有同名项目。' };
+  if (await fs.exists(target)) return { ok: false, error: uiText.t('main.remote.error.targetExists') };
   await fs.rename(from, target);
   return { ok: true, path: relOf(fs, target) };
 }
 
 async function rename(fs, request = {}) {
   const from = await fs.resolve(request.path ?? '');
-  if (from === fs.root) return { ok: false, error: '不能重命名工作空间的根目录。' };
+  if (from === fs.root) return { ok: false, error: uiText.t('main.remote.error.renameRoot') };
   const checked = validateName(request.name);
   if (checked.error) return { ok: false, error: checked.error };
 
   const parent = posix.dirname(from);
   const target = fs.join(parent, checked.name);
   if (target === from) return { ok: true, path: relOf(fs, from) };
-  if (await fs.exists(target)) return { ok: false, error: '已经有同名文件或文件夹。' };
+  if (await fs.exists(target)) return { ok: false, error: uiText.t('main.remote.error.nameExists') };
   await fs.rename(from, target);
   return { ok: true, path: relOf(fs, target) };
 }
 
 async function remove(fs, request = {}) {
   const target = await fs.resolve(request.path ?? '');
-  if (target === fs.root) return { ok: false, error: '不能删除工作空间的根目录。' };
+  if (target === fs.root) return { ok: false, error: uiText.t('main.remote.error.deleteRoot') };
   await fs.stat(target);
   await fs.remove(target, { recursive: true });
   return { ok: true };

@@ -10,6 +10,7 @@
  */
 
 const { streamChat } = require('./chat');
+const uiText = require('./ui-text');
 
 const TIMEOUT_MS = 90000;
 const MAX_TOKENS = 6000;
@@ -121,6 +122,19 @@ const SYSTEM = [
   '  {"type":"pie","title":"…","source":"…","size":"md","items":[{"label":"…","value":1}]}',
   ']}',
 ].join('\n');
+
+/**
+ * The dashboard produced here is read by the user, so when the interface is in
+ * English the model must write its titles, summaries and labels in English too.
+ * The rules above stay Chinese (they are tuned), and the data itself is never
+ * translated — a country name in a table stays as it is.
+ */
+const ENGLISH_HINT =
+  '\n\nInterface language: English. Write the dashboard title, summary, highlights, stat labels and notes, chart titles, subtitles, axis labels, series names and source strings in English. Keep values copied from the data (names, places, text in files) exactly as they appear.';
+
+function systemPrompt() {
+  return uiText.getLanguage() === 'en' ? `${SYSTEM}${ENGLISH_HINT}` : SYSTEM;
+}
 
 function clip(value, max) {
   const text = String(value ?? '')
@@ -319,7 +333,9 @@ function seriesPointsOf(raw) {
 }
 
 function sanitizeSeries(raw, scatter) {
-  const name = clip(raw?.name, 30) || (scatter ? '数据' : '数值');
+  const name =
+    clip(raw?.name, 30) ||
+    uiText.t(scatter ? 'main.viz.seriesData' : 'main.viz.seriesValue');
   const input = seriesPointsOf(raw);
   const cap = scatter ? MAX_SCATTER_POINTS : MAX_POINTS;
   const points = [];
@@ -368,12 +384,13 @@ function sanitizePieItems(raw) {
   }
   if (positive.length <= MAX_PIE_ITEMS) return positive;
 
-  // Fold the tail into 其他 so the fixed palette is never cycled.
+  // Fold the tail into "Other" so the fixed palette is never cycled.
+  const otherLabel = uiText.t('main.viz.other');
   const head = positive.slice(0, MAX_PIE_ITEMS - 1);
   const rest = positive.slice(MAX_PIE_ITEMS - 1).reduce((sum, item) => sum + item.value, 0);
-  const other = head.find((item) => item.label === '其他');
+  const other = head.find((item) => item.label === otherLabel);
   if (other) other.value = round(other.value + rest);
-  else head.push({ label: '其他', value: round(rest) });
+  else head.push({ label: otherLabel, value: round(rest) });
   return head;
 }
 
@@ -412,7 +429,7 @@ function sanitizeChart(raw, index) {
 
   const chart = {
     type,
-    title: clip(raw?.title, 60) || `图表 ${index + 1}`,
+    title: clip(raw?.title, 60) || uiText.t('main.viz.chartTitle', { index: index + 1 }),
     size: raw?.size === 'lg' ? 'lg' : raw?.size === 'sm' ? 'sm' : 'md',
   };
   const subtitle = clip(raw?.subtitle, 90);
@@ -447,7 +464,9 @@ function sanitizeChart(raw, index) {
     if (seriesRaw.length === 0) {
       const points = Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?.data) ? raw.data : [];
       if (points.length > 0) {
-        seriesRaw = [{ name: clip(raw?.yLabel, 30) || '数值', points }];
+        seriesRaw = [
+          { name: clip(raw?.yLabel, 30) || uiText.t('main.viz.seriesValue'), points },
+        ];
       }
     }
     const series = seriesRaw
@@ -535,7 +554,7 @@ function sanitizeVisualization(parsed) {
     if (chart) charts.push(chart);
   }
   return {
-    title: clip(parsed?.title, 48) || '数据看板',
+    title: clip(parsed?.title, 48) || uiText.t('main.viz.defaultTitle'),
     summary,
     highlights,
     stats,
@@ -589,7 +608,7 @@ function fallbackVisualization(context) {
   }
   if (charts.length === 0) return null;
   return {
-    title: '数据汇总',
+    title: uiText.t('main.viz.summaryTitle'),
     summary: '',
     highlights: [],
     stats: [],
@@ -600,7 +619,7 @@ function fallbackVisualization(context) {
 /** Keep the prompt bounded no matter what the renderer sends. */
 function normalizeContext(input) {
   const workspace = {
-    name: clip(input?.workspace?.name, 80) || '未命名工作空间',
+    name: clip(input?.workspace?.name, 80) || uiText.t('main.viz.unknownWorkspace'),
     path: clip(input?.workspace?.path, 200),
     kind: clip(input?.workspace?.kind, 20) || 'folder',
   };
@@ -653,7 +672,7 @@ function normalizeContext(input) {
         );
       return {
         id: clip(table?.id, 16) || `t${index + 1}`,
-        title: clip(table?.title, 60) || `表格 ${index + 1}`,
+        title: clip(table?.title, 60) || uiText.t('main.viz.tableTitle', { index: index + 1 }),
         source: clip(table?.source, 60),
         columns,
         rows,
@@ -681,17 +700,17 @@ function normalizeContext(input) {
 }
 
 function day(at) {
-  if (!at) return '未知';
+  if (!at) return uiText.t('main.viz.unknown');
   const date = new Date(at);
-  if (Number.isNaN(date.getTime())) return '未知';
+  if (Number.isNaN(date.getTime())) return uiText.t('main.viz.unknown');
   const pad = (value) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function stamp(at) {
-  if (!at) return '未知';
+  if (!at) return uiText.t('main.viz.unknown');
   const date = new Date(at);
-  if (Number.isNaN(date.getTime())) return '未知';
+  if (Number.isNaN(date.getTime())) return uiText.t('main.viz.unknown');
   const pad = (value) => String(value).padStart(2, '0');
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(
     date.getMinutes(),
@@ -730,7 +749,7 @@ function buildUserMessage(context, topic) {
   const header =
     scope === 'task'
       ? [
-          `范围：当前任务「${safe.focus.task || safe.tasks[0]?.title || '未命名任务'}」`,
+          `范围：当前任务「${safe.focus.task || safe.tasks[0]?.title || uiText.t('main.viz.unknownTask')}」`,
           `工作空间：${safe.workspace.name}`,
           // No token/message/cost totals here on purpose: with a task in scope
           // they are background noise the model used to chart by mistake.
@@ -785,7 +804,7 @@ async function visualizeWorkspace({ provider, topic, context, signal }) {
     const { text, usage } = await streamChat(
       provider,
       [
-        { role: 'system', content: SYSTEM },
+        { role: 'system', content: systemPrompt() },
         { role: 'user', content: buildUserMessage(context, topic) },
       ],
       { signal: merged, onDelta: () => {}, maxTokens: MAX_TOKENS },
@@ -798,23 +817,27 @@ async function visualizeWorkspace({ provider, topic, context, signal }) {
       const fallback = fallbackVisualization(context);
       if (fallback) {
         const clean = sanitizeVisualization(fallback);
-        clean.summary = '模型这次没有返回可解析的结果，下面的图表直接按表格里的数字生成。';
+        clean.summary = uiText.t('main.viz.fallbackSummary');
         return { ok: true, ...clean, usage };
       }
-      return { ok: false, error: '可视化结果无法解析，请再试一次。', usage };
+      return { ok: false, error: uiText.t('main.viz.unparsable'), usage };
     }
     const clean = sanitizeVisualization(parsed);
     if (!clean.summary && clean.charts.length === 0) {
-      return { ok: false, error: '这次没有生成内容，请再试一次。', usage };
+      return { ok: false, error: uiText.t('main.viz.empty'), usage };
     }
     return { ok: true, ...clean, usage };
   } catch (error) {
     if (signal?.aborted) throw error;
     const message =
       error?.name === 'TimeoutError'
-        ? '生成超时了，请缩小关注点后再试。'
+        ? uiText.t('main.viz.timeout')
         : error?.message || String(error);
-    return { ok: false, error: `生成失败：${message}`, usage: error?.usage ?? null };
+    return {
+      ok: false,
+      error: uiText.t('main.viz.failed', { error: message }),
+      usage: error?.usage ?? null,
+    };
   }
 }
 

@@ -12,6 +12,7 @@ import type {
   WebMode,
   WorkspaceDataAccess,
 } from '../types';
+import { useI18n } from '../i18n';
 import { formatDateTime } from '../lib/time';
 import { startVoiceCapture, toInt16, type VoiceCaptureHandle } from '../lib/voiceCapture';
 import { parseWarehouseRef } from '../lib/warehouseRef';
@@ -29,7 +30,7 @@ import {
   WarehouseIcon,
 } from './Icons';
 import { ContextRing, type CompressionUi } from './ContextRing';
-import { WebModeSlider, webModeName } from './WebModeSlider';
+import { WebModeSlider } from './WebModeSlider';
 
 type VoiceState = 'idle' | 'starting' | 'listening' | 'stopping';
 
@@ -72,41 +73,47 @@ interface Props {
   onTyping?: (active: boolean) => void;
 }
 
-const MODES: { key: KbChatMode; title: string; desc: string }[] = [
-  { key: 'strict', title: '完全基于知识库', desc: '只用库里的内容，不补充外部知识' },
-  { key: 'balanced', title: '知识库为主，适当补充', desc: '资料不足时用模型自己的知识补全' },
-  { key: 'web', title: '知识库 + 联网补充', desc: '资料不足时先联网检索，再补充回答' },
+const MODES: { key: KbChatMode; titleKey: string; descKey: string }[] = [
+  { key: 'strict', titleKey: 'composer.mode.strict.title', descKey: 'composer.mode.strict.desc' },
+  { key: 'balanced', titleKey: 'composer.mode.balanced.title', descKey: 'composer.mode.balanced.desc' },
+  { key: 'web', titleKey: 'composer.mode.web.title', descKey: 'composer.mode.web.desc' },
 ];
 
 const MODE_LABEL: Record<KbChatMode, string> = {
-  strict: '完全基于知识库',
-  balanced: '知识库为主',
-  web: '知识库 + 联网',
+  strict: 'composer.modeLabel.strict',
+  balanced: 'composer.modeLabel.balanced',
+  web: 'composer.modeLabel.web',
 };
 
 /** Agent permission ceiling. The hovered row explains what it allows. */
-const PERM_MODES: { key: PermissionMode; label: string; desc: string }[] = [
+const PERM_MODES: { key: PermissionMode; labelKey: string; descKey: string }[] = [
   {
     key: 'read-only',
-    label: '只读',
-    desc: '只能查看和搜索，不能修改文件，也不能执行命令。',
+    labelKey: 'composer.perm.readOnly.label',
+    descKey: 'composer.perm.readOnly.desc',
   },
   {
     key: 'plan',
-    label: '计划',
-    desc: '只做只读调研并给出分步计划，不改动任何文件；确认计划后再切到「工作区写入」执行。',
+    labelKey: 'composer.perm.plan.label',
+    descKey: 'composer.perm.plan.desc',
   },
   {
     key: 'workspace-write',
-    label: '工作区写入',
-    desc: '可以修改工作空间内的文件；构建、测试等常规命令直接运行，破坏性、未知或越界的命令按「问询级别」处理。',
+    labelKey: 'composer.perm.workspaceWrite.label',
+    descKey: 'composer.perm.workspaceWrite.desc',
   },
   {
     key: 'danger-full-access',
-    label: '完全访问',
-    desc: '不再有任何限制：任意读写、任意命令，也不弹确认卡。只在你完全信任任务时使用。',
+    labelKey: 'composer.perm.fullAccess.label',
+    descKey: 'composer.perm.fullAccess.desc',
   },
 ];
+
+const WEB_MODE_KEYS: Record<WebMode, string> = {
+  off: 'composer.web.mode.off',
+  auto: 'composer.web.mode.auto',
+  always: 'composer.web.mode.always',
+};
 
 function formatSize(bytes: number): string {
   if (!bytes) return '0 B';
@@ -154,6 +161,7 @@ export function Composer({
   onConfigure,
   onTyping,
 }: Props) {
+  const { t } = useI18n();
   const [value, setValue] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [kbOpen, setKbOpen] = useState(false);
@@ -231,14 +239,14 @@ export function Composer({
     return groups;
   }, [models]);
   const categoryName = kb.categoryId
-    ? categories.find((item) => item.id === kb.categoryId)?.name ?? '已删除的分类'
-    : '全部';
+    ? categories.find((item) => item.id === kb.categoryId)?.name ?? t('composer.category.deleted')
+    : t('composer.category.all');
 
   const catKeyword = catQuery.trim().toLowerCase();
   const catMatches = categories.filter((category) =>
     category.name.toLowerCase().includes(catKeyword),
   );
-  const showsAll = '全部'.includes(catKeyword);
+  const showsAll = t('composer.category.all').includes(catKeyword);
 
   function chooseCategory(id: string | null) {
     onKbChange({ categoryId: id });
@@ -523,11 +531,11 @@ export function Composer({
           return /[\s\n]$/.test(prev) ? prev + text : `${prev} ${text}`;
         });
       } else if (event.type === 'error') {
-        setVoiceError(event.error ?? '语音识别失败');
+        setVoiceError(event.error ?? t('composer.voice.recognizeError'));
       }
     });
     return () => unsubscribe?.();
-  }, []);
+  }, [t]);
 
   // Leaving the composer entirely (app close) must release the microphone.
   useEffect(
@@ -543,7 +551,7 @@ export function Composer({
   async function startVoice() {
     const api = window.ezness;
     if (!api) {
-      window.alert('语音输入只在桌面端可用。');
+      window.alert(t('composer.voice.desktopOnly'));
       return;
     }
 
@@ -555,7 +563,7 @@ export function Composer({
       const started = await api.voiceStart();
       if (!started?.ok) {
         setVoiceState('idle');
-        window.alert(started?.error ?? '语音识别启动失败');
+        window.alert(started?.error ?? t('composer.voice.startError'));
         return;
       }
 
@@ -572,7 +580,11 @@ export function Composer({
       captureRef.current = null;
       setVoiceState('idle');
       void api.voiceCancel();
-      window.alert(`无法打开麦克风：${error instanceof Error ? error.message : String(error)}`);
+      window.alert(
+        t('composer.voice.micError', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   }
 
@@ -621,10 +633,16 @@ export function Composer({
         continue;
       }
       try {
-        blobs.push({ name: file.name || '粘贴的文件', data: await file.arrayBuffer() });
+        blobs.push({
+          name: file.name || t('composer.attach.pastedFile'),
+          data: await file.arrayBuffer(),
+        });
       } catch (error) {
         errors.push(
-          `读取「${file.name || '剪贴板文件'}」失败：${error instanceof Error ? error.message : String(error)}`,
+          t('composer.attach.readError', {
+            name: file.name || t('composer.attach.clipboardFile'),
+            error: error instanceof Error ? error.message : String(error),
+          }),
         );
       }
     }
@@ -660,7 +678,11 @@ export function Composer({
         if (result?.errors?.length) errors.push(...result.errors);
       }
     } catch (error) {
-      errors.push(`添加附件失败：${error instanceof Error ? error.message : String(error)}`);
+      errors.push(
+        t('composer.attach.addError', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     } finally {
       setAttaching(false);
     }
@@ -684,7 +706,7 @@ export function Composer({
     const snapshot = await api.warehouseSnapshot();
     const item = snapshot?.items.find((entry) => entry.id === id);
     if (!item) {
-      setAttachError('这条引用对应的文件已经不在仓库里了');
+      setAttachError(t('composer.attach.refMissing'));
       return;
     }
     reusedAttachments.current.add(item.id);
@@ -696,7 +718,7 @@ export function Composer({
 
   async function openAttachment(item: WarehouseItem) {
     const result = await window.ezness?.warehouseOpen(item.id);
-    if (result && !result.ok) setAttachError(result.error ?? '打不开这个文件');
+    if (result && !result.ok) setAttachError(result.error ?? t('composer.attach.openError'));
   }
 
   async function removeAttachment(item: WarehouseItem) {
@@ -725,20 +747,26 @@ export function Composer({
 
   const micTitle =
     voiceState === 'starting'
-      ? '正在加载语音模型…'
+      ? t('composer.voice.loadingModel')
       : voiceState === 'listening'
-        ? '正在聆听，点击结束并转写'
+        ? t('composer.voice.listening')
         : voiceState === 'stopping'
-          ? '正在转写…'
-          : '语音输入';
+          ? t('composer.voice.transcribing')
+          : t('composer.voice.title');
 
   const kbTitle = kb.enabled
-    ? `知识库已启用 · ${categoryName} · ${MODE_LABEL[kb.mode]}`
-    : '知识库未启用';
+    ? t('composer.kb.titleEnabled', {
+        category: categoryName,
+        mode: t(MODE_LABEL[kb.mode]),
+      })
+    : t('composer.kb.titleDisabled');
 
   const promptTitle = selectedPrompt
-    ? `已启用提示词「${selectedPrompt.name}」 · ${selectedPrompt.wrap ? '包装消息' : '系统指令'}`
-    : '提示词未启用 · 点击选择一个提示词';
+    ? t('composer.prompt.titleEnabled', {
+        name: selectedPrompt.name,
+        kind: t(selectedPrompt.wrap ? 'composer.prompt.wrap' : 'composer.prompt.system'),
+      })
+    : t('composer.prompt.titleDisabled');
 
   // 普通对话的仓库多选器。工作区把它换成开关，所以这里只有非紧凑模式
   // 和功能编辑工作空间会用到。
@@ -746,31 +774,35 @@ export function Composer({
     <div className="whmenu" ref={whRef}>
       <button
         className={`chip chip--warehouse ${whSelected.size > 0 ? 'is-on' : ''}`}
-        title="从仓库选择文件，可多选"
+        title={t('composer.warehouse.pickTitle')}
         onClick={() => setWhOpen((open) => !open)}
       >
         <WarehouseIcon size={14} />
-        仓库
+        {t('composer.warehouse.label')}
         {whSelected.size > 0 && (
           <span className="whmenu__badge">{whSelected.size}</span>
         )}
       </button>
 
       {whOpen && (
-        <div className="whmenu__panel" role="dialog" aria-label="从仓库选择文件">
+        <div
+          className="whmenu__panel"
+          role="dialog"
+          aria-label={t('composer.warehouse.pickLabel')}
+        >
           <div className="whmenu__head">
-            <span className="whmenu__title">从仓库选择文件</span>
+            <span className="whmenu__title">{t('composer.warehouse.pickLabel')}</span>
             <span className="whmenu__sub">
               {whSelected.size > 0
-                ? `已选 ${whSelected.size} 个`
-                : `${whItems.length} 个文件`}
+                ? t('composer.warehouse.selected', { count: whSelected.size })
+                : t('composer.warehouse.fileCount', { count: whItems.length })}
             </span>
           </div>
 
           <input
             className="input whmenu__search"
             value={whQuery}
-            placeholder="搜索文件名"
+            placeholder={t('composer.warehouse.search')}
             spellCheck={false}
             autoFocus
             onChange={(event) => setWhQuery(event.target.value)}
@@ -802,14 +834,16 @@ export function Composer({
 
             {whMatches.length === 0 && (
               <div className="pmenu__empty">
-                {whItems.length === 0 ? '仓库还是空的' : '没有匹配的文件'}
+                {whItems.length === 0
+                  ? t('composer.warehouse.empty')
+                  : t('composer.warehouse.noMatch')}
               </div>
             )}
           </div>
 
           <div className="whmenu__foot">
             <span className="whmenu__count">
-              筛选结果 {whMatches.length} 个
+              {t('composer.warehouse.filtered', { count: whMatches.length })}
             </span>
             <button
               className="btn btn--ghost"
@@ -819,14 +853,14 @@ export function Composer({
                 setWhOpen(false);
               }}
             >
-              取消
+              {t('composer.cancel')}
             </button>
             <button
               className="btn btn--primary"
               disabled={whSelected.size === 0}
               onClick={confirmWarehousePick}
             >
-              确认
+              {t('composer.confirm')}
             </button>
           </div>
         </div>
@@ -868,7 +902,10 @@ export function Composer({
               <div
                 className="attachcard"
                 key={item.id}
-                title={`${item.name} · ${formatSize(item.size)}（双击打开）`}
+                title={t('composer.attach.chipTitle', {
+                  name: item.name,
+                  size: formatSize(item.size),
+                })}
                 onDoubleClick={() => void openAttachment(item)}
               >
                 <span className={`attachcard__badge ${item.kind === 'image' ? 'is-image' : ''}`}>
@@ -877,13 +914,14 @@ export function Composer({
                 <span className="attachcard__main">
                   <span className="attachcard__name">{item.name}</span>
                   <span className="attachcard__meta">
-                    {item.ext ? item.ext.toUpperCase() : '文件'} · {formatSize(item.size)}
+                    {item.ext ? item.ext.toUpperCase() : t('composer.attach.fileLabel')} ·{' '}
+                    {formatSize(item.size)}
                   </span>
                 </span>
                 <button
                   className="attachcard__remove"
-                  title={`移除「${item.name}」`}
-                  aria-label={`移除附件 ${item.name}`}
+                  title={t('composer.attach.removeTitle', { name: item.name })}
+                  aria-label={t('composer.attach.removeAria', { name: item.name })}
                   onClick={() => void removeAttachment(item)}
                   onDoubleClick={(event) => event.stopPropagation()}
                 >
@@ -891,7 +929,9 @@ export function Composer({
                 </button>
               </div>
             ))}
-            {attaching && <span className="attachlist__busy">正在添加…</span>}
+            {attaching && (
+              <span className="attachlist__busy">{t('composer.attach.adding')}</span>
+            )}
           </div>
         )}
 
@@ -900,7 +940,7 @@ export function Composer({
         {dropActive && (
           <div className="composer__dropmask">
             <UploadIcon size={16} />
-            松开即可添加附件
+            {t('composer.attach.dropHint')}
           </div>
         )}
 
@@ -910,7 +950,9 @@ export function Composer({
           value={value}
           rows={1}
           placeholder={
-            voiceState === 'listening' ? '正在聆听，说完点击麦克风结束…' : '给 Ezness 发消息…'
+            voiceState === 'listening'
+              ? t('composer.placeholder.listening')
+              : t('composer.placeholder.default')
           }
           onChange={(event) => {
             setValue(event.target.value);
@@ -947,7 +989,7 @@ export function Composer({
             <div className="model-menu" ref={menuRef}>
               <button
                 className={`chip ${current ? '' : 'chip--warn'}`}
-                title={current ? current.hint : '还没有连接模型'}
+                title={current ? current.hint : t('composer.model.noModelHint')}
                 onClick={() => {
                   if (models.length === 0) {
                     onConfigure();
@@ -957,7 +999,7 @@ export function Composer({
                 }}
               >
                 <span className="chip__dot" />
-                {current?.label ?? '未连接模型'}
+                {current?.label ?? t('composer.model.notConnected')}
                 {models.length > 0 && <ChevronDownIcon size={13} />}
               </button>
               {menuOpen && (
@@ -996,22 +1038,26 @@ export function Composer({
                   disabled={streaming}
                   aria-haspopup="dialog"
                   aria-expanded={permOpen}
-                  title={`权限模式：${permInfo.label}`}
+                  title={t('composer.perm.menuTitle', { mode: t(permInfo.labelKey) })}
                   onClick={() => {
                     setPermHover(mode);
                     setPermOpen((open) => !open);
                   }}
                 >
-                  {permInfo.label}
+                  {t(permInfo.labelKey)}
                   <ChevronDownIcon size={13} />
                 </button>
                 {permOpen && (
-                  <div className="perm-menu__panel" role="dialog" aria-label="权限模式">
+                  <div
+                    className="perm-menu__panel"
+                    role="dialog"
+                    aria-label={t('composer.perm.menuAria')}
+                  >
                     <div className="perm-menu__head">
-                      <span>权限模式</span>
-                      <em>决定代理这次能做哪些事</em>
+                      <span>{t('composer.perm.menuAria')}</span>
+                      <em>{t('composer.perm.menuHint')}</em>
                     </div>
-                    <p className="perm-menu__desc">{hoverInfo.desc}</p>
+                    <p className="perm-menu__desc">{t(hoverInfo.descKey)}</p>
                     <div className="perm-menu__list">
                       {PERM_MODES.map((item) => (
                         <button
@@ -1026,7 +1072,7 @@ export function Composer({
                             setPermOpen(false);
                           }}
                         >
-                          <span className="perm-menu__name">{item.label}</span>
+                          <span className="perm-menu__name">{t(item.labelKey)}</span>
                           {item.key === mode && <CheckIcon size={13} />}
                         </button>
                       ))}
@@ -1048,10 +1094,10 @@ export function Composer({
                   aria-expanded={agentOpen}
                   title={
                     activeAgent
-                      ? `当前任务启用了 Agent：${activeAgent.name}。点击切换或关闭`
+                      ? t('composer.agent.activeTitle', { name: activeAgent.name })
                       : agentId
-                        ? '这个 Agent 已被删除。点击重新选择'
-                        : '选择一个 Agent，让这个任务按它的角色和能力工作'
+                        ? t('composer.agent.deletedTitle')
+                        : t('composer.agent.pickTitle')
                   }
                   onClick={() => {
                     const next = !agentOpen;
@@ -1060,14 +1106,22 @@ export function Composer({
                   }}
                 >
                   <SparkleIcon size={14} />
-                  {activeAgent ? activeAgent.name : agentId ? 'Agent 已删除' : 'Agent'}
+                  {activeAgent
+                    ? activeAgent.name
+                    : agentId
+                      ? t('composer.agent.deletedLabel')
+                      : 'Agent'}
                   <ChevronDownIcon size={13} />
                 </button>
                 {agentOpen && (
-                  <div className="agent-menu__panel" role="dialog" aria-label="选择 Agent">
+                  <div
+                    className="agent-menu__panel"
+                    role="dialog"
+                    aria-label={t('composer.agent.menuAria')}
+                  >
                     <div className="agent-menu__head">
-                      <span>选择 Agent</span>
-                      <em>选中后这个任务立即启用它：角色、提示词和能力范围都会生效。</em>
+                      <span>{t('composer.agent.menuTitle')}</span>
+                      <em>{t('composer.agent.menuHint')}</em>
                     </div>
                     <div className="agent-menu__list">
                       <button
@@ -1078,7 +1132,7 @@ export function Composer({
                           setAgentOpen(false);
                         }}
                       >
-                        <span className="agent-menu__name">不使用 Agent</span>
+                        <span className="agent-menu__name">{t('composer.agent.none')}</span>
                         {!agentId && <CheckIcon size={13} />}
                       </button>
                       {(agents ?? []).map((agent) => (
@@ -1096,7 +1150,11 @@ export function Composer({
                           <span className="agent-menu__body">
                             <span className="agent-menu__name">
                               {agent.name}
-                              {!agent.enabled && <em className="agent-menu__badge">未启用</em>}
+                              {!agent.enabled && (
+                                <em className="agent-menu__badge">
+                                  {t('composer.agent.disabled')}
+                                </em>
+                              )}
                             </span>
                             {agent.role && (
                               <span className="agent-menu__role">{agent.role}</span>
@@ -1107,9 +1165,7 @@ export function Composer({
                       ))}
                     </div>
                     {(agents ?? []).length === 0 && (
-                      <p className="agent-menu__empty">
-                        还没有 Agent。去 Agent 页面创建一个，或点「AI 新增」让 AI 帮你设计。
-                      </p>
+                      <p className="agent-menu__empty">{t('composer.agent.empty')}</p>
                     )}
                   </div>
                 )}
@@ -1125,14 +1181,14 @@ export function Composer({
                 className={`chip chip--warehouse ${dataAccess?.warehouse ? 'is-on' : ''}`}
                 title={
                   dataAccess?.warehouse
-                    ? '仓库访问已开启 · 代理只在对话需要时按文件名查找，读取前会询问'
-                    : '仓库访问已关闭 · 点击开启，让代理在需要时查找仓库文件'
+                    ? t('composer.data.warehouseOn')
+                    : t('composer.data.warehouseOff')
                 }
                 aria-pressed={Boolean(dataAccess?.warehouse)}
                 onClick={toggleDataWarehouse}
               >
                 <WarehouseIcon size={14} />
-                仓库
+                {t('composer.warehouse.label')}
                 <span className={`kbmenu__dot ${dataAccess?.warehouse ? 'is-on' : ''}`} />
               </button>
             ) : null}
@@ -1141,35 +1197,39 @@ export function Composer({
               <div className="datamenu" ref={dataRef}>
                 <button
                   className={`chip ${dataActive ? 'is-on' : ''}`}
-                  title="工作区可访问的知识库（默认关闭，只读）"
+                  title={t('composer.data.kbTitle')}
                   aria-expanded={dataOpen}
                   onClick={() => setDataOpen((open) => !open)}
                 >
                   <BookIcon size={14} />
-                  知识库
+                  {t('composer.kb.label')}
                   {dataBadge > 0 && <span className="whmenu__badge">{dataBadge}</span>}
                 </button>
 
                 {dataOpen && (
-                  <div className="datamenu__panel" role="dialog" aria-label="知识库访问">
+                  <div
+                    className="datamenu__panel"
+                    role="dialog"
+                    aria-label={t('composer.data.panelAria')}
+                  >
                     <div className="datamenu__head">
-                      <span className="datamenu__title">知识库访问</span>
-                      <span className="datamenu__sub">只读 · 默认不检索</span>
+                      <span className="datamenu__title">{t('composer.data.panelTitle')}</span>
+                      <span className="datamenu__sub">{t('composer.data.panelSub')}</span>
                     </div>
 
                     <div className="datamenu__section">
                       <div className="datamenu__row">
                         <div>
-                          <div className="datamenu__name">启用知识库检索</div>
+                          <div className="datamenu__name">{t('composer.data.enableTitle')}</div>
                           <div className="datamenu__hint">
-                            开启后选择分类；代理只在对话需要时生成查询去检索。
+                            {t('composer.data.enableHint')}
                           </div>
                         </div>
                         <button
                           className={`switch ${dataKbOn ? 'is-on' : ''}`}
                           role="switch"
                           aria-checked={dataKbOn}
-                          aria-label="开启知识库访问"
+                          aria-label={t('composer.data.toggleAria')}
                           onClick={toggleDataKb}
                         >
                           <span />
@@ -1193,24 +1253,22 @@ export function Composer({
                               </span>
                               <span className="datamenu__cat-name">{category.name}</span>
                               {category.kind === 'group' && (
-                                <span className="datamenu__tag">组合</span>
+                                <span className="datamenu__tag">{t('composer.data.groupTag')}</span>
                               )}
                             </button>
                           );
                         })}
                         {categories.length === 0 && (
-                          <div className="datamenu__empty">知识库里还没有分类</div>
+                          <div className="datamenu__empty">{t('composer.data.empty')}</div>
                         )}
                       </div>
 
                       {dataKbOn && dataKbIds.length === 0 && (
-                        <div className="datamenu__warn">至少选择一个分类，代理才能检索。</div>
+                        <div className="datamenu__warn">{t('composer.data.warn')}</div>
                       )}
                     </div>
 
-                    <p className="datamenu__foot">
-                      每次检索或读取都会先问你（问询级别为「自动」时除外）；内容会发送给当前模型。
-                    </p>
+                    <p className="datamenu__foot">{t('composer.data.foot')}</p>
                   </div>
                 )}
               </div>
@@ -1225,17 +1283,21 @@ export function Composer({
                 onClick={() => setPromptOpen((open) => !open)}
               >
                 <SparkleIcon size={14} />
-                提示词
+                {t('composer.prompt.label')}
                 {selectedPrompt && <span className="pmenu__name">{selectedPrompt.name}</span>}
                 <span className={`kbmenu__dot ${promptId ? 'is-on' : ''}`} />
               </button>
 
               {promptOpen && (
-                <div className="pmenu__panel" role="dialog" aria-label="选择提示词">
+                <div
+                  className="pmenu__panel"
+                  role="dialog"
+                  aria-label={t('composer.prompt.menuAria')}
+                >
                   <input
                     className="input pmenu__search"
                     value={promptQuery}
-                    placeholder="搜索提示词名称、描述或标签"
+                    placeholder={t('composer.prompt.search')}
                     spellCheck={false}
                     autoFocus
                     onChange={(event) => setPromptQuery(event.target.value)}
@@ -1253,8 +1315,10 @@ export function Composer({
                   {selectedPrompt && selectedPrompt.variables.length > 0 && (
                     <div className="pmenu__params">
                       <div className="pmenu__params-head">
-                        <span>参数 · {selectedPrompt.name}</span>
-                        <span className="pmenu__params-hint">仅当前对话</span>
+                        <span>
+                          {t('composer.prompt.paramsTitle', { name: selectedPrompt.name })}
+                        </span>
+                        <span className="pmenu__params-hint">{t('composer.prompt.paramsHint')}</span>
                       </div>
                       {selectedPrompt.variables.map((variable) => (
                         <label key={variable.name} className="pmenu__param">
@@ -1279,7 +1343,7 @@ export function Composer({
                       className={`pmenu__item ${promptId ? '' : 'is-active'}`}
                       onClick={() => choosePrompt(null)}
                     >
-                      <span className="pmenu__item-name">不使用提示词</span>
+                      <span className="pmenu__item-name">{t('composer.prompt.none')}</span>
                       {!promptId && <CheckIcon size={13} />}
                     </button>
 
@@ -1302,7 +1366,9 @@ export function Composer({
 
                     {promptMatches.length === 0 && (
                       <div className="pmenu__empty">
-                        {templates.length === 0 ? '提示词库还是空的' : '没有匹配的提示词'}
+                        {templates.length === 0
+                          ? t('composer.prompt.empty')
+                          : t('composer.prompt.noMatch')}
                       </div>
                     )}
                   </div>
@@ -1322,24 +1388,30 @@ export function Composer({
                 }}
               >
                 <BookIcon size={14} />
-                知识库
+                {t('composer.kb.label')}
                 <span className={`kbmenu__dot ${kb.enabled ? 'is-on' : ''}`} />
               </button>
 
               {kbOpen && (
-                <div className="kbmenu__panel" role="dialog" aria-label="知识库设置">
+                <div
+                  className="kbmenu__panel"
+                  role="dialog"
+                  aria-label={t('composer.kb.panelAria')}
+                >
                   <div className="kbmenu__head">
                     <div>
-                      <div className="kbmenu__title">使用知识库</div>
+                      <div className="kbmenu__title">{t('composer.kb.panelTitle')}</div>
                       <div className="kbmenu__sub">
-                        {kb.enabled ? '回答前会先检索资料' : '当前对话不检索知识库'}
+                        {kb.enabled
+                          ? t('composer.kb.subEnabled')
+                          : t('composer.kb.subDisabled')}
                       </div>
                     </div>
                     <button
                       className={`switch ${kb.enabled ? 'is-on' : ''}`}
                       role="switch"
                       aria-checked={kb.enabled}
-                      title={kb.enabled ? '关闭知识库' : '启用知识库'}
+                      title={kb.enabled ? t('composer.kb.disableTitle') : t('composer.kb.enableTitle')}
                       onClick={() => onKbChange({ enabled: !kb.enabled })}
                     >
                       <span />
@@ -1347,12 +1419,12 @@ export function Composer({
                   </div>
 
                   <div className="kbmenu__field">
-                    <span className="kbmenu__field-label">检索分类</span>
+                    <span className="kbmenu__field-label">{t('composer.kb.categoryLabel')}</span>
                     <div className="kbmenu__combo">
                       <input
                         className="input kbmenu__combo-input"
                         value={catOpen ? catQuery : categoryName}
-                        placeholder="输入筛选分类"
+                        placeholder={t('composer.kb.categoryPlaceholder')}
                         spellCheck={false}
                         disabled={!kb.enabled}
                         onFocus={() => {
@@ -1387,7 +1459,7 @@ export function Composer({
                               onMouseDown={(event) => event.preventDefault()}
                               onClick={() => chooseCategory(null)}
                             >
-                              全部
+                              {t('composer.category.all')}
                             </button>
                           )}
                           {catMatches.map((category) => (
@@ -1401,14 +1473,16 @@ export function Composer({
                             </button>
                           ))}
                           {!showsAll && catMatches.length === 0 && (
-                            <div className="kbmenu__combo-empty">没有匹配的分类</div>
+                            <div className="kbmenu__combo-empty">
+                              {t('composer.kb.categoryNoMatch')}
+                            </div>
                           )}
                         </div>
                       )}
                     </div>
                   </div>
 
-                  <div className="kbmenu__field-label">检索方式</div>
+                  <div className="kbmenu__field-label">{t('composer.kb.modeLabel')}</div>
                   <div className={`kbmenu__modes ${kb.enabled ? '' : 'is-disabled'}`}>
                     {MODES.map((mode) => (
                       <button
@@ -1418,8 +1492,8 @@ export function Composer({
                         onClick={() => onKbChange({ mode: mode.key })}
                       >
                         <span className="kbmenu__mode-text">
-                          <span className="kbmenu__mode-title">{mode.title}</span>
-                          <span className="kbmenu__mode-desc">{mode.desc}</span>
+                          <span className="kbmenu__mode-title">{t(mode.titleKey)}</span>
+                          <span className="kbmenu__mode-desc">{t(mode.descKey)}</span>
                         </span>
                         {kb.mode === mode.key && <CheckIcon size={14} />}
                       </button>
@@ -1427,7 +1501,7 @@ export function Composer({
                   </div>
 
                   {docCount === 0 && (
-                    <div className="kbmenu__empty">知识库里还没有文件，先去「知识库」页导入。</div>
+                    <div className="kbmenu__empty">{t('composer.kb.empty')}</div>
                   )}
                 </div>
               )}
@@ -1442,10 +1516,10 @@ export function Composer({
                 className={`chip chip--web ${kb.webMode !== 'off' ? 'is-on' : ''}`}
                 title={
                   kb.webMode === 'off'
-                    ? '联网已关闭 · 点击选择「自动」或「总是」'
+                    ? t('composer.web.offTitle')
                     : kb.webMode === 'auto'
-                      ? '联网：自动 · AI 判断这条消息是否需要检索网页'
-                      : '联网：总是 · 每次发送前都先检索网页'
+                      ? t('composer.web.autoTitle')
+                      : t('composer.web.alwaysTitle')
                 }
                 aria-pressed={kb.webMode !== 'off'}
                 aria-haspopup="dialog"
@@ -1455,19 +1529,21 @@ export function Composer({
                 }}
               >
                 <GlobeIcon size={14} />
-                联网
+                {t('composer.web.label')}
                 <span className={`kbmenu__dot ${kb.webMode === 'always' ? 'is-on' : kb.webMode === 'auto' ? 'is-auto' : ''}`} />
-                <span className="chip__state">{webModeName(kb.webMode)}</span>
+                <span className="chip__state">{t(WEB_MODE_KEYS[kb.webMode])}</span>
               </button>
 
               {webOpen && (
-                <div className="kbmenu__panel kbmenu__panel--web" role="dialog" aria-label="联网方式">
+                <div
+                  className="kbmenu__panel kbmenu__panel--web"
+                  role="dialog"
+                  aria-label={t('composer.web.panelAria')}
+                >
                   <div className="kbmenu__head">
                     <div>
-                      <div className="kbmenu__title">联网方式</div>
-                      <div className="kbmenu__sub">
-                        自动由 AI 判断是否需要最新信息；总是每次发送前都检索。
-                      </div>
+                      <div className="kbmenu__title">{t('composer.web.panelTitle')}</div>
+                      <div className="kbmenu__sub">{t('composer.web.panelSub')}</div>
                     </div>
                   </div>
                   <WebModeSlider
@@ -1501,7 +1577,7 @@ export function Composer({
 
             <button
               className={`send ${streaming ? 'send--stop' : ''}`}
-              title={streaming ? '停止生成' : '发送'}
+              title={streaming ? t('composer.action.stop') : t('composer.action.send')}
               onClick={streaming ? onStop : submit}
               disabled={!streaming && (attaching || (!value.trim() && attachments.length === 0))}
             >
@@ -1510,8 +1586,8 @@ export function Composer({
           </div>
         </div>
       </div>
-      <div className="composer__hint">Enter 发送 · Shift + Enter 换行</div>
-      <div className="composer__speed" title="按输出字符估算，每 2 秒刷新一次">
+      <div className="composer__hint">{t('composer.hint')}</div>
+      <div className="composer__speed" title={t('composer.speedTitle')}>
         {speed !== null && speed > 0 ? `${speed.toFixed(1)} tok/s` : ''}
       </div>
       {voiceError && <div className="composer__voice-error">{voiceError}</div>}

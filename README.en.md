@@ -371,6 +371,22 @@ back at it on another machine.
   double-click the tray icon to come back, or right-click it to quit. The prompt and the
   tray menu follow the interface language (Chinese / English).
 
+### 2026-11-26
+
+- Version is now 1.0.1, and Settings → About shows a changelog of everything solved since 1.0.0.
+- English now covers the whole interface. Previously only some pages were translated, so switching
+  to English still left a lot of Chinese in settings, the Work Director, task and tool records,
+  permission prompts, errors and system dialogs. The renderer and the main process now share the
+  same Chinese–English packs, and a language switch takes effect immediately without a restart.
+- Main-process text is included: tray menu, close prompt, audit event names, memory freshness
+  labels, and the status and error messages for the knowledge base, remote workspaces, voice and
+  Python. Audit records are re-labelled from their stable event code, so records written before the
+  switch turn into English too instead of staying half Chinese.
+- Prompts sent to the model stay untranslated; only model output that lands on screen (archive
+  names, chart titles and the like) is asked for in the interface language.
+- Dates, counts and file sizes in settings and the Work Director now follow the active language's
+  formatting rules instead of keeping Chinese date and counter styles.
+
 ### 2026-11-24
 
 - The workspace list now checks whether each workspace is still usable. A deleted local folder, a path

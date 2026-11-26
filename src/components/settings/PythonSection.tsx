@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PythonEnvStatus, PythonModule } from '../../types';
+import { useI18n } from '../../i18n';
 import { CheckIcon, DownloadIcon, RefreshIcon, StackIcon } from '../Icons';
 
 function errorText(error: unknown): string {
@@ -8,6 +9,7 @@ function errorText(error: unknown): string {
 }
 
 export function PythonSection() {
+  const { t } = useI18n();
   const api = window.ezness;
   const [status, setStatus] = useState<PythonEnvStatus | null>(null);
   const [modules, setModules] = useState<PythonModule[]>([]);
@@ -48,14 +50,19 @@ export function PythonSection() {
   async function ensureEnv() {
     if (!api || busy) return;
     setBusy('ensure');
-    setMessage({ kind: 'ok', text: '正在检查并补全 Python 环境，首次部署需要下载约 12 MB…' });
+    setMessage({ kind: 'ok', text: t('settings.python.checking') });
     try {
       const next = await api.pythonEnvEnsure();
       setStatus(next);
       setIndexDraft(next.indexUrl);
       setMessage({
         kind: 'ok',
-        text: `环境已就绪：${next.version || 'Python'}${next.pipVersion ? `，${next.pipVersion}` : ''}`,
+        text: next.pipVersion
+          ? t('settings.python.envReadyPip', {
+              version: next.version || 'Python',
+              pip: next.pipVersion,
+            })
+          : t('settings.python.envReady', { version: next.version || 'Python' }),
       });
       await loadModules();
     } catch (error) {
@@ -73,7 +80,7 @@ export function PythonSection() {
       const result = await api.pythonSetIndex(indexDraft);
       setIndexDraft(result.indexUrl);
       setStatus((prev) => (prev ? { ...prev, indexUrl: result.indexUrl } : prev));
-      setMessage({ kind: 'ok', text: '安装源已保存。' });
+      setMessage({ kind: 'ok', text: t('settings.python.index.saved') });
     } catch (error) {
       setMessage({ kind: 'warn', text: errorText(error) });
     } finally {
@@ -86,11 +93,14 @@ export function PythonSection() {
     const spec = installDraft.trim();
     if (!spec) return;
     setBusy('install');
-    setMessage({ kind: 'ok', text: `正在安装 ${spec}…` });
+    setMessage({ kind: 'ok', text: t('settings.python.install.running', { name: spec }) });
     try {
       const result = await api.pythonInstallModule(spec);
       setInstallDraft('');
-      setMessage({ kind: 'ok', text: `${result.spec} 已安装。` });
+      setMessage({
+        kind: 'ok',
+        text: t('settings.python.install.done', { name: result.spec }),
+      });
       await loadModules();
     } catch (error) {
       setMessage({ kind: 'warn', text: errorText(error) });
@@ -115,57 +125,61 @@ export function PythonSection() {
     <div className="section">
       <div className="section__head">
         <div>
-          <h2>程序环境</h2>
-          <p>
-            给自定义功能用的独立 Python，装在数据目录里，跟着储存地址一起迁移；换电脑时不用重新找
-            Python。
-          </p>
+          <h2>{t('settings.python.title')}</h2>
+          <p>{t('settings.python.desc')}</p>
         </div>
         <button className="btn btn--ghost" onClick={() => void refreshModules()} disabled={Boolean(busy)}>
           <RefreshIcon size={14} />
-          刷新
+          {t('system.refresh')}
         </button>
       </div>
 
       <section className="kb-card">
         <div className="kb-card__title">
           <StackIcon size={15} />
-          独立 Python 环境
+          {t('settings.python.env.title')}
         </div>
         <p className="kb-card__desc">
-          「检查并补全环境」会把 Python {status?.targetVersion ?? ''} 和 pip 部署到下面的目录。
-          AI能力里的 Python 脚本会优先使用它，系统里装的 Python 不会参与。
+          {t('settings.python.env.desc', { version: status?.targetVersion ?? '' })}
         </p>
         <div className="kb-card__row">
-          <input className="input" readOnly value={status?.dir ?? '正在读取…'} />
+          <input
+            className="input"
+            readOnly
+            value={status?.dir ?? t('settings.python.reading')}
+          />
           <button className="btn btn--primary" onClick={() => void ensureEnv()} disabled={Boolean(busy)}>
             <DownloadIcon size={14} />
-            {busy === 'ensure' ? '正在部署…' : '检查并补全环境'}
+            {busy === 'ensure'
+              ? t('settings.python.deploying')
+              : t('settings.python.ensure')}
           </button>
         </div>
         {status && (
           <div className="kb-card__meta">
             {status.installed ? (
-              <>
-                已就绪 · {status.version || '版本未知'} · pip{' '}
-                {status.pip ? status.pipVersion || '已安装' : '缺失（点上面的按钮补全）'} ·{' '}
-                {modules.length} 个模块
-              </>
+              t('settings.python.status.ready', {
+                version: status.version || t('settings.python.versionUnknown'),
+                pip: status.pip
+                  ? status.pipVersion || t('settings.python.pipInstalled')
+                  : t('settings.python.pipMissing'),
+                count: modules.length,
+              })
             ) : (
-              <>尚未部署 · 目标 Python {status.targetVersion} · 部署后占用约 30 MB</>
+              t('settings.python.status.notDeployed', {
+                version: status.targetVersion,
+              })
             )}
           </div>
         )}
         {status?.installed && status.pip === false && (
-          <div className="notice notice--warn">环境里缺 pip，点「检查并补全环境」补上即可，不会覆盖已有模块。</div>
+          <div className="notice notice--warn">{t('settings.python.pipWarning')}</div>
         )}
       </section>
 
       <section className="kb-card">
-        <div className="kb-card__title">安装源</div>
-        <p className="kb-card__desc">
-          安装模块用的索引地址，默认清华源。部署 Python 时会从华为云镜像取安装包，失败再回落到官方地址。
-        </p>
+        <div className="kb-card__title">{t('settings.python.index.title')}</div>
+        <p className="kb-card__desc">{t('settings.python.index.desc')}</p>
         <div className="kb-card__row">
           <input
             className="input py-index-input"
@@ -175,19 +189,21 @@ export function PythonSection() {
             spellCheck={false}
           />
           <button className="btn" onClick={() => void saveIndex()} disabled={Boolean(busy)}>
-            保存
+            {t('settings.python.save')}
           </button>
         </div>
         <div className="kb-card__meta">
-          当前源：<code>{status?.indexUrl ?? '正在读取…'}</code>
+          {t('settings.python.currentIndex')}{' '}
+          <code>{status?.indexUrl ?? t('settings.python.reading')}</code>
         </div>
       </section>
 
       <section className="kb-card">
-        <div className="kb-card__title">已安装模块</div>
+        <div className="kb-card__title">{t('settings.python.modules.title')}</div>
         <p className="kb-card__desc">
-          列出这个环境里的模块。输入模块名安装，可以带版本，例如 <code>requests</code> 或{' '}
-          <code>pandas==2.2.3</code>。
+          {t('settings.python.modules.desc')} <code>requests</code>
+          {t('settings.python.modules.descOr')}
+          <code>pandas==2.2.3</code>.
         </p>
         <div className="kb-card__row">
           <input
@@ -197,7 +213,7 @@ export function PythonSection() {
             onKeyDown={(event) => {
               if (event.key === 'Enter') void installModule();
             }}
-            placeholder="要安装的模块名"
+            placeholder={t('settings.python.install.placeholder')}
             spellCheck={false}
             disabled={busy === 'install'}
           />
@@ -206,10 +222,12 @@ export function PythonSection() {
             onClick={() => void installModule()}
             disabled={Boolean(busy) || !installDraft.trim()}
           >
-            {busy === 'install' ? '正在安装…' : '安装'}
+            {busy === 'install'
+              ? t('settings.python.install.busy')
+              : t('settings.python.install.button')}
           </button>
           <button className="btn btn--ghost" onClick={() => void refreshModules()} disabled={Boolean(busy)}>
-            刷新列表
+            {t('settings.python.refreshList')}
           </button>
         </div>
 
@@ -227,7 +245,9 @@ export function PythonSection() {
         ) : (
           !modulesError && (
             <div className="kb-card__meta">
-              {status?.installed ? '这个环境里还没有第三方模块。' : '部署环境后可以在这里查看模块。'}
+              {status?.installed
+                ? t('settings.python.modules.emptyInstalled')
+                : t('settings.python.modules.emptyNotDeployed')}
             </div>
           )
         )}

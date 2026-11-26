@@ -7,6 +7,8 @@
  * cannot see read_file / write_file / run_command or any custom tool.
  */
 
+const uiText = require('../ui-text');
+
 let bridge = null;
 
 function setToolEditorBridge(next) {
@@ -16,7 +18,7 @@ function setToolEditorBridge(next) {
 function scopeOf(ctx) {
   const scope = ctx?.toolScope;
   if (!scope || scope.kind !== 'tool-editor' || !scope.categoryId) {
-    throw new Error('这个会话没有绑定功能分类。');
+    throw new Error(uiText.t('main.agent.errNoCategoryScope'));
   }
   return scope;
 }
@@ -24,7 +26,7 @@ function scopeOf(ctx) {
 function call(method, ctx, payload) {
   const scope = scopeOf(ctx);
   if (!bridge || typeof bridge[method] !== 'function') {
-    throw new Error('功能编辑服务不可用。');
+    throw new Error(uiText.t('main.agent.errToolEditorUnavailable'));
   }
   return bridge[method](scope, payload ?? {});
 }

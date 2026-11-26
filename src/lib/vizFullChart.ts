@@ -24,6 +24,9 @@ export interface FullChart {
   drawn: number;
 }
 
+/** The i18n `t` function, passed in from the component that owns the hook. */
+export type VizTranslate = (key: string, vars?: Record<string, string | number>) => string;
+
 function toNumber(cell: unknown): number | null {
   const text = String(cell ?? '')
     .replace(/[,，\s]/g, '')
@@ -130,6 +133,7 @@ export function buildFullChart(
   base: VizChart,
   columns: string[],
   rows: string[][],
+  translate: VizTranslate,
 ): FullChart | null {
   if (!columns || columns.length < 2 || !rows || rows.length === 0) return null;
 
@@ -151,7 +155,9 @@ export function buildFullChart(
     const value = toNumber(row[chosen.value]);
     if (value === null) return;
     used += 1;
-    const label = String(row[chosen.label] ?? '').trim() || `第 ${index + 1} 行`;
+    const label =
+      String(row[chosen.label] ?? '').trim() ||
+      translate('viz.full.rowLabel', { count: index + 1 });
     const existing = aggregated.get(label);
     if (existing) existing.value += value;
     else aggregated.set(label, { label, value, order: index });
@@ -168,7 +174,7 @@ export function buildFullChart(
 
   const points: VizDatum[] = shown.map((group) => ({ label: group.label, value: group.value }));
   const type = pickType(base, points.length, lineish);
-  const title = `${base.title} · 全部数据`;
+  const title = translate('viz.full.title', { title: base.title });
 
   const chart: VizChart =
     type === 'line' || type === 'smooth-line' || type === 'grouped-bar'

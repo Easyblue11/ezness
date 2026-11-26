@@ -6,6 +6,7 @@
  */
 
 const { appFetch } = require('../app-net');
+const uiText = require('../ui-text');
 
 function normalize(vector) {
   let sum = 0;
@@ -45,14 +46,24 @@ async function embedBatch(texts, config) {
 
       if (!response.ok) {
         const detail = await response.text().catch(() => '');
-        throw new Error(`向量服务返回 ${response.status}${detail ? ` · ${detail.slice(0, 160)}` : ''}`);
+        throw new Error(
+          uiText.t('main.kb.error.vectorService', {
+            status: response.status,
+            detail: detail ? ` · ${detail.slice(0, 160)}` : '',
+          }),
+        );
       }
 
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       const embeddings = data.embeddings || (data.embedding ? [data.embedding] : []);
       if (embeddings.length !== texts.length) {
-        throw new Error(`向量数量不匹配：期望 ${texts.length}，实际 ${embeddings.length}`);
+        throw new Error(
+          uiText.t('main.kb.error.vectorCount', {
+            expected: texts.length,
+            actual: embeddings.length,
+          }),
+        );
       }
       return embeddings.map((vector) => normalize(Float32Array.from(vector)));
     } catch (error) {
@@ -64,7 +75,7 @@ async function embedBatch(texts, config) {
 }
 
 async function embedTexts(texts, config, options = {}) {
-  if (!config?.model) throw new Error('还没有配置向量模型');
+  if (!config?.model) throw new Error(uiText.t('main.kb.error.noModel'));
   const batchSize = options.batchSize ?? 16;
   const onProgress = options.onProgress;
   const vectors = [];

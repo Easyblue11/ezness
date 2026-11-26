@@ -47,7 +47,9 @@ import {
   type CompressionToken,
 } from '../lib/compression';
 import { findSnippet, textByConversation } from '../lib/search';
+import { useI18n } from '../i18n';
 import { ActivityDot, type ActivityStatus } from './ActivityDot';
+import type { Translate } from './AskLevelSlider';
 import { ChatView } from './ChatView';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DirectorPage } from './DirectorPage';
@@ -111,28 +113,34 @@ interface SpaceHealth {
 }
 
 /** Full reason for the sidebar tooltip. */
-function spaceHealthDetail(workspace: Workspace, health: SpaceHealth): string {
+function spaceHealthDetail(workspace: Workspace, health: SpaceHealth, t: Translate): string {
   const target =
     workspace.kind === 'remote' && workspace.remote
       ? `${workspace.remote.username}@${workspace.remote.host}:${workspace.remote.root}`
       : workspace.path;
   const suffix = health.error ? `\n${health.error}` : '';
-  if (health.reason === 'missing') return `路径不存在：${target}${suffix}`;
-  if (health.reason === 'not-dir') return `路径不是文件夹：${target}${suffix}`;
-  if (health.reason === 'unreachable') return `远程连接失败：${target}${suffix}`;
-  return `无法访问：${target}${suffix}`;
+  if (health.reason === 'missing') {
+    return t('workspace.health.pathMissing', { target, suffix });
+  }
+  if (health.reason === 'not-dir') {
+    return t('workspace.health.notDir', { target, suffix });
+  }
+  if (health.reason === 'unreachable') {
+    return t('workspace.health.remoteFailed', { target, suffix });
+  }
+  return t('workspace.health.unreachable', { target, suffix });
 }
 
 /** One short line above the task list when the open workspace is unhealthy. */
-function spaceHealthSummary(workspace: Workspace, health: SpaceHealth): string {
+function spaceHealthSummary(workspace: Workspace, health: SpaceHealth, t: Translate): string {
   if (health.reason === 'missing') {
     return workspace.kind === 'remote'
-      ? '远程根目录不存在，任务无法读写文件'
-      : '本地路径不存在，任务无法读写文件';
+      ? t('workspace.health.remoteMissing')
+      : t('workspace.health.localMissing');
   }
-  if (health.reason === 'not-dir') return '这个路径不是文件夹';
-  if (health.reason === 'unreachable') return '远程工作空间连不上，检查网络或登录凭据';
-  return '工作空间当前无法访问';
+  if (health.reason === 'not-dir') return t('workspace.health.notDirSummary');
+  if (health.reason === 'unreachable') return t('workspace.health.remoteUnreachable');
+  return t('workspace.health.unavailable');
 }
 
 interface WorkspaceChat extends Session {
@@ -209,9 +217,6 @@ const uid = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
-const NO_TARGET_MESSAGE =
-  '还没有连接模型。先去「设置 → 模型接入」填好地址并获取模型，再在「默认模型」里选一个对话模型。';
-
 const DEFAULT_CHAT_KB: KbChatSettings = {
   enabled: false,
   categoryId: null,
@@ -243,40 +248,51 @@ interface FloatingTask {
   status: FloatingStatus;
 }
 
-const FLOATING_STATUS_LABEL: Record<FloatingStatus, string> = {
-  running: '运行中',
-  done: '已完成',
-  error: '出错',
-  stopped: '已停止',
+const FLOATING_STATUS_KEY: Record<FloatingStatus, string> = {
+  running: 'workspace.status.running',
+  done: 'workspace.status.done',
+  error: 'workspace.status.error',
+  stopped: 'workspace.status.stopped',
 };
+
+/** Stable ids for the locally generated editor welcome messages. */
+const TOOL_EDITOR_INTRO_ID = 'tool-editor-intro';
+const AGENT_EDITOR_INTRO_ID = 'agent-editor-intro';
 
 /**
  * Two groups share the left slot: 工作空间 + 任务 open together as one unit,
  * 文件 shows the folder tree. Clicking the active icon closes its group.
  */
 const WORKSPACE_PANELS = [
-  { key: 'work', label: '工作空间和任务', icon: WorkspaceIcon },
-  { key: 'files', label: '文件', icon: FolderIcon },
-  { key: 'director', label: '工作总监', icon: DirectorIcon },
+  { key: 'work', labelKey: 'workspace.panel.work', icon: WorkspaceIcon },
+  { key: 'files', labelKey: 'workspace.panel.files', icon: FolderIcon },
+  { key: 'director', labelKey: 'workspace.panel.director', icon: DirectorIcon },
 ] as const;
 
 type WorkspacePanel = (typeof WORKSPACE_PANELS)[number]['key'];
 
-function basename(target: string): string {
-  return target.split(/[\\/]/).filter(Boolean).pop() || '工作空间';
+function basename(target: string, fallback: string): string {
+  return target.split(/[\\/]/).filter(Boolean).pop() || fallback;
 }
 
 /** What the current workspace points at, shown above its task list. */
-function workspacePathLabel(workspace: {
-  kind?: 'folder' | 'tool-editor' | 'agent-editor' | 'director' | 'remote';
-  path: string;
-  categoryName?: string;
-  agentName?: string;
-  remote?: { host: string; port: number; username: string; root: string };
-}): string {
-  if (workspace.kind === 'tool-editor') return `功能分类：${workspace.categoryName ?? ''}`;
-  if (workspace.kind === 'agent-editor') return `Agent：${workspace.agentName ?? ''}`;
-  if (workspace.kind === 'director') return '全局';
+function workspacePathLabel(
+  workspace: {
+    kind?: 'folder' | 'tool-editor' | 'agent-editor' | 'director' | 'remote';
+    path: string;
+    categoryName?: string;
+    agentName?: string;
+    remote?: { host: string; port: number; username: string; root: string };
+  },
+  t: Translate,
+): string {
+  if (workspace.kind === 'tool-editor') {
+    return t('workspace.path.toolEditor', { name: workspace.categoryName ?? '' });
+  }
+  if (workspace.kind === 'agent-editor') {
+    return t('workspace.path.agent', { name: workspace.agentName ?? '' });
+  }
+  if (workspace.kind === 'director') return t('workspace.path.global');
   if (workspace.kind === 'remote' && workspace.remote) {
     const { username, host, port, root } = workspace.remote;
     return `${username}@${host}${Number(port || 22) === 22 ? '' : `:${port}`}:${root}`;
@@ -328,6 +344,10 @@ export function WorkspacePage({
   toolEditorFocus,
   agentEditorFocus,
 }: Props) {
+  const { t } = useI18n();
+  /** Long-lived subscriptions keep the latest translator without re-binding. */
+  const tRef = useRef(t);
+  tRef.current = t;
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   /** Reachability per real workspace: missing local path or unreachable host. */
   const [spaceHealth, setSpaceHealth] = useState<Record<string, SpaceHealth>>({});
@@ -801,7 +821,8 @@ export function WorkspacePage({
                       ? {
                           ...step,
                           status: 'error' as const,
-                          result: step.result ?? '应用重启，这一步被中断，没有结果。',
+                          result:
+                            step.result ?? tRef.current('workspace.step.restartInterrupted'),
                           endedAt: step.endedAt ?? Date.now(),
                         }
                       : step,
@@ -1135,7 +1156,7 @@ export function WorkspacePage({
     if (!space) {
       const created: Workspace = {
         id: uid(),
-        name: '工作总监',
+        name: t('workspace.director.name'),
         path: '',
         kind: 'director',
         createdAt: Date.now(),
@@ -1144,7 +1165,7 @@ export function WorkspacePage({
       chat = {
         id: uid(),
         workspaceId: created.id,
-        title: '工作总监',
+        title: t('workspace.director.name'),
         updatedAt: Date.now(),
         model: fallbackModel,
       };
@@ -1156,7 +1177,7 @@ export function WorkspacePage({
       chat = {
         id: uid(),
         workspaceId: space.id,
-        title: '工作总监',
+        title: t('workspace.director.name'),
         updatedAt: Date.now(),
         model: fallbackModel,
       };
@@ -1356,7 +1377,7 @@ export function WorkspacePage({
           ?.directorInstructionAck?.({
             id: instruction.id,
             ok: false,
-            error: '任务已经不在列表里',
+            error: tRef.current('workspace.error.taskGone'),
           })
           ?.catch(() => undefined);
         return;
@@ -1388,7 +1409,7 @@ export function WorkspacePage({
           results.push({
             employeeId: employee.employeeId,
             ok: false,
-            error: '工作空间已经不在列表里',
+            error: tRef.current('workspace.error.spaceGone'),
           });
           continue;
         }
@@ -1396,7 +1417,7 @@ export function WorkspacePage({
           .split('\n')[0]
           .replace(/\s+/g, ' ')
           .trim();
-        const title = `${employee.name} · ${firstLine || '任务'}`.slice(0, 60);
+        const title = `${employee.name} · ${firstLine || tRef.current('workspace.taskFallback')}`.slice(0, 60);
         const categoryIds = Array.isArray(employee.kbCategoryIds)
           ? employee.kbCategoryIds
           : [];
@@ -1511,16 +1532,17 @@ export function WorkspacePage({
           for (const id of ids) {
             const chat = chatsRef.current.find((item) => item.id === id);
             if (!chat) {
-              failures.push('任务已经不在列表里');
+              failures.push(tRef.current('workspace.error.taskGone'));
               continue;
             }
             const label =
-              modelsRef.current.find((option) => option.id === chat.model)?.label ?? '未指定';
+              modelsRef.current.find((option) => option.id === chat.model)?.label ??
+              tRef.current('workspace.modelUnspecified');
             // 优先写进任务所在的工作空间；路径不可用（远程空间等）时主进程落到 exports/。
             const folder =
               workspacesRef.current.find((item) => item.id === chat.workspaceId)?.path ?? '';
             const result = await window.ezness?.exportSession?.({
-              title: chat.title || '任务',
+              title: chat.title || tRef.current('workspace.taskFallback'),
               markdown: buildSessionMarkdown(chat, messagesRef.current, label),
               folder,
             });
@@ -1528,10 +1550,14 @@ export function WorkspacePage({
               files.push({
                 taskId: chat.id,
                 path: result.path,
-                name: result.path.split(/[\\/]/).pop() || `${chat.title || '任务'}.md`,
+                name:
+                  result.path.split(/[\\/]/).pop() ||
+                  `${chat.title || tRef.current('workspace.taskFallback')}.md`,
               });
             } else if (!result?.canceled) {
-              failures.push(result?.error || chat.title || '导出失败');
+              failures.push(
+                result?.error || chat.title || tRef.current('workspace.export.failed'),
+              );
             }
           }
           await window.ezness
@@ -1555,16 +1581,16 @@ export function WorkspacePage({
    */
   async function clearDirectorHistory(): Promise<boolean> {
     if (!directorChatId) {
-      flash('还没有总监对话');
+      flash(t('workspace.director.noChat'));
       return false;
     }
     if (streamingId === directorChatId) {
-      flash('等总监这一轮回复结束再清空');
+      flash(t('workspace.director.waitToClear'));
       return false;
     }
     const current = messages.filter((message) => message.sessionId === directorChatId);
     if (current.length === 0) {
-      flash('对话已经是空的');
+      flash(t('workspace.director.alreadyEmpty'));
       return false;
     }
     let result: { ok: boolean; id?: string; keep?: string[] | null; error?: string } | undefined;
@@ -1574,11 +1600,15 @@ export function WorkspacePage({
         messages: current,
       });
     } catch (error) {
-      flash(`清空失败：${error instanceof Error ? error.message : String(error)}`);
+      flash(
+        t('workspace.director.clearFailed', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
       return false;
     }
     if (!result?.ok) {
-      flash(result?.error ?? '清空失败');
+      flash(result?.error ?? t('workspace.director.clearFailedShort'));
       return false;
     }
     // 以主进程清空后的收件箱为准：已经处理过的确认（已确认/已放弃/已回答…）
@@ -1603,7 +1633,11 @@ export function WorkspacePage({
       ...prev.filter((message) => message.sessionId !== directorChatId),
       ...keep,
     ]);
-    flash(keep.length > 0 ? '对话已清空，还需要你确认的事项保留' : '对话已清空');
+    flash(
+      keep.length > 0
+        ? t('workspace.director.clearedWithKeep')
+        : t('workspace.director.cleared'),
+    );
     return true;
   }
 
@@ -1615,7 +1649,7 @@ export function WorkspacePage({
         spaces: { [value]: 'write' },
       });
       if (!saved?.ok) {
-        flash(saved?.error ?? '授权失败，工作空间没有交给总监');
+        flash(saved?.error ?? t('workspace.director.authFailed'));
         return;
       }
       refreshDirector();
@@ -1642,7 +1676,7 @@ export function WorkspacePage({
     }
     const result = await window.ezness?.directorResolve?.({ id: itemId, action, value });
     if (!result?.ok) {
-      flash(result?.error ?? '操作没有完成');
+      flash(result?.error ?? t('workspace.director.actionFailed'));
       return;
     }
     if (result.openTask) openDirectorTask(result.openTask);
@@ -1650,9 +1684,13 @@ export function WorkspacePage({
       // 用户自己跑的那轮没有总监指令可重排：拿回原话，像刚发出去一样再跑一次。
       if (result.retryText && retryTaskId) {
         void handleSendRef.current?.(result.retryText, [], undefined, retryTaskId);
-        flash('已换模型，正在重试');
+        flash(t('workspace.director.modelSwitched'));
       } else {
-        flash(result.retried ? '已换模型，正在重试' : '已换模型，需要的话重新发一遍');
+        flash(
+          result.retried
+            ? t('workspace.director.modelSwitched')
+            : t('workspace.director.modelSwitchedResend'),
+        );
       }
     }
     refreshDirector();
@@ -1764,22 +1802,24 @@ export function WorkspacePage({
 
           if (run.status === 'aborted') {
             stopped = true;
-            content = content || '（已停止）';
+            content = content || tRef.current('workspace.chat.stopped');
             steps = steps?.map((step) =>
               step.status === 'running'
                 ? {
                     ...step,
                     status: 'error' as const,
-                    result: step.result ?? '已中断，没有结果。',
+                    result: step.result ?? tRef.current('workspace.chat.interrupted'),
                     endedAt: step.endedAt ?? now,
                   }
                 : step,
             );
           } else if (run.status === 'error') {
-            const note = `调用模型失败：${run.error || '未知错误'}`;
+            const note = tRef.current('workspace.chat.modelFailed', {
+              error: run.error || tRef.current('workspace.chat.unknownError'),
+            });
             content = content ? `${content}\n\n${note}` : note;
           } else if (run.status === 'done' && !content.trim() && !steps?.length) {
-            content = '（模型没有返回内容）';
+            content = tRef.current('workspace.chat.emptyReply');
           }
 
           const message: Message = {
@@ -1892,22 +1932,28 @@ export function WorkspacePage({
       (definition) =>
         definition.category === categoryName && health?.[definition.id]?.status === 'broken',
     );
+    const translate = tRef.current;
     if (broken.length === 0) {
       return [
-        '【分类检查】',
-        `我读取了「${categoryName}」分类，目前没有故障功能。`,
-        '告诉我要新增、修改或删除什么功能，我会先说明方案，再修改并自动测试。',
+        translate('workspace.editor.toolTag'),
+        translate('workspace.editor.toolOk', { name: categoryName }),
+        translate('workspace.editor.toolOkHint'),
       ].join('\n');
     }
     const lines = [
-      '【分类检查】',
-      `我读取了「${categoryName}」分类，发现 ${broken.length} 个功能有故障：`,
+      translate('workspace.editor.toolTag'),
+      translate('workspace.editor.toolBroken', {
+        name: categoryName,
+        count: broken.length,
+      }),
     ];
     for (const definition of broken) {
-      const error = health?.[definition.id]?.errors?.[0]?.message ?? '测试未通过';
-      lines.push(`- ${definition.name}：${error}`);
+      const error =
+        health?.[definition.id]?.errors?.[0]?.message ??
+        translate('workspace.editor.toolTestFailed');
+      lines.push(translate('workspace.editor.toolErrorLine', { name: definition.name, error }));
     }
-    lines.push(''), lines.push('需要我现在逐个修复吗？修复后我会重新运行测试。');
+    lines.push(''), lines.push(translate('workspace.editor.toolFixAsk'));
     return lines.join('\n');
   }
 
@@ -1922,7 +1968,9 @@ export function WorkspacePage({
     appliedToolEditorFocus.current = toolEditorFocus.nonce;
 
     const { categoryId, categoryName } = toolEditorFocus;
-    const workspaceName = `功能编辑-${categoryName}`;
+    const workspaceName = tRef.current('workspace.editor.toolWorkspaceName', {
+      name: categoryName,
+    });
     const existingSpace = workspaces.find(
       (item) => item.kind === 'tool-editor' && item.categoryId === categoryId,
     );
@@ -1988,8 +2036,7 @@ export function WorkspacePage({
         if (
           prev.some(
             (message) =>
-              message.sessionId === activeChat.id &&
-              message.content.startsWith('【分类检查】'),
+              message.sessionId === activeChat.id && message.id === TOOL_EDITOR_INTRO_ID,
           )
         ) {
           return prev;
@@ -1997,7 +2044,7 @@ export function WorkspacePage({
         return [
           ...prev,
           {
-            id: uid(),
+            id: TOOL_EDITOR_INTRO_ID,
             sessionId: activeChat.id,
             role: 'assistant' as const,
             content: text,
@@ -2013,11 +2060,12 @@ export function WorkspacePage({
    * it must show even when no provider is configured.
    */
   function agentEditorIntro(agentName: string): string {
+    const translate = tRef.current;
     return [
-      '【Agent 编辑】',
-      `我已经打开 Agent「${agentName}」的定义。接下来你只要描述想要什么样的 Agent，我会直接修改并立即保存。`,
-      '可以调整名字、角色定义、性格、输入输出约定、提示词，也可以指定它能使用哪些能力分类。',
-      '修改保存后，回到 Agent 页面就能看到新的内容。',
+      translate('workspace.editor.agentTag'),
+      translate('workspace.editor.agentIntro', { name: agentName }),
+      translate('workspace.editor.agentScope'),
+      translate('workspace.editor.agentSaved'),
     ].join('\n');
   }
 
@@ -2032,7 +2080,9 @@ export function WorkspacePage({
     appliedAgentEditorFocus.current = agentEditorFocus.nonce;
 
     const { agentId, agentName } = agentEditorFocus;
-    const workspaceName = `Agent编辑-${agentHash(agentId)}`;
+    const workspaceName = tRef.current('workspace.editor.agentWorkspaceName', {
+      hash: agentHash(agentId),
+    });
     const existingSpace = workspaces.find(
       (item) => item.kind === 'agent-editor' && item.agentId === agentId,
     );
@@ -2092,8 +2142,7 @@ export function WorkspacePage({
       if (
         prev.some(
           (message) =>
-            message.sessionId === activeChat.id &&
-            message.content.startsWith('【Agent 编辑】'),
+            message.sessionId === activeChat.id && message.id === AGENT_EDITOR_INTRO_ID,
         )
       ) {
         return prev;
@@ -2101,7 +2150,7 @@ export function WorkspacePage({
       return [
         ...prev,
         {
-          id: uid(),
+          id: AGENT_EDITOR_INTRO_ID,
           sessionId: activeChat.id,
           role: 'assistant' as const,
           content: agentEditorIntro(agentName),
@@ -2199,7 +2248,7 @@ export function WorkspacePage({
       }
       return [
         ...prev,
-        { id: chatId, title: chat?.title || '未命名任务', status },
+        { id: chatId, title: chat?.title || tRef.current('workspace.chat.untitledTask'), status },
       ];
     });
   }
@@ -2403,7 +2452,7 @@ export function WorkspacePage({
                 {
                   requestId: event.requestId,
                   callId: call.id,
-                  question: event.question ?? '请选择',
+                  question: event.question ?? tRef.current('workspace.chat.questionFallback'),
                   options: event.options ?? [],
                 },
               ],
@@ -2431,9 +2480,10 @@ export function WorkspacePage({
           id: `compact-${Date.now()}`,
           name: 'compact',
           args: {},
-          summary: `把较早的对话压缩为摘要（${Math.round((event.before ?? 0) / 1000)}K → ${Math.round(
-            (event.after ?? 0) / 1000,
-          )}K 词元）`,
+          summary: tRef.current('workspace.chat.compactedStep', {
+            before: Math.round((event.before ?? 0) / 1000),
+            after: Math.round((event.after ?? 0) / 1000),
+          }),
           status: 'done',
           startedAt: Date.now(),
           endedAt: Date.now(),
@@ -2514,7 +2564,7 @@ export function WorkspacePage({
         setMessages((prev) =>
           prev.map((message) =>
             message.id === messageId && !message.content.trim() && !message.steps?.length
-              ? { ...message, content: '（模型没有返回内容）' }
+              ? { ...message, content: tRef.current('workspace.chat.emptyReply') }
               : message,
           ),
         );
@@ -2529,7 +2579,7 @@ export function WorkspacePage({
               ? {
                   ...message,
                   stopped: true,
-                  content: message.content || '（已停止）',
+                  content: message.content || tRef.current('workspace.chat.stopped'),
                   // The run is gone; a step that was mid-flight will not report
                   // again, so do not leave it spinning.
                   steps: message.steps?.map((step) =>
@@ -2537,7 +2587,7 @@ export function WorkspacePage({
                       ? {
                           ...step,
                           status: 'error' as const,
-                          result: step.result ?? '已中断，没有结果。',
+                          result: step.result ?? tRef.current('workspace.chat.interrupted'),
                           endedAt: step.endedAt ?? Date.now(),
                         }
                       : step,
@@ -2550,7 +2600,9 @@ export function WorkspacePage({
       }
 
       planRuns.current.delete(active.chatId);
-      const note = `调用模型失败：${event.error ?? '未知错误'}`;
+      const note = tRef.current('workspace.chat.modelFailed', {
+        error: event.error ?? tRef.current('workspace.chat.unknownError'),
+      });
       setMessages((prev) =>
         prev.map((message) =>
           message.id === messageId
@@ -2615,14 +2667,14 @@ export function WorkspacePage({
   function addLocalWorkspace(folder: string): { workspace: Workspace; chatId: string } {
     const workspace: Workspace = {
       id: uid(),
-      name: basename(folder),
+      name: basename(folder, t('workspace.workspace.untitled')),
       path: folder,
       createdAt: Date.now(),
     };
     const chat: WorkspaceChat = {
       id: uid(),
       workspaceId: workspace.id,
-      title: '新任务',
+      title: t('workspace.chat.newTask'),
       updatedAt: Date.now(),
       model: fallbackModel,
     };
@@ -2638,7 +2690,7 @@ export function WorkspacePage({
   async function createWorkspace() {
     const api = window.ezness;
     if (!api?.workspacePickFolder) {
-      flash('选择文件夹只在桌面端可用');
+      flash(t('workspace.error.desktopOnly'));
       return;
     }
 
@@ -2650,7 +2702,7 @@ export function WorkspacePage({
     );
     if (existing) {
       selectWorkspace(existing.id);
-      flash('这个文件夹已经是一个工作空间了');
+      flash(t('workspace.error.folderExists'));
       return;
     }
 
@@ -2674,7 +2726,7 @@ export function WorkspacePage({
     const chat: WorkspaceChat = {
       id: uid(),
       workspaceId: workspace.id,
-      title: '新任务',
+      title: t('workspace.chat.newTask'),
       updatedAt: Date.now(),
       model: fallbackModel,
     };
@@ -2711,7 +2763,7 @@ export function WorkspacePage({
     }
     const api = window.ezness;
     if (!api?.workspacePickFolder) {
-      flash('选择文件夹只在桌面端可用');
+      flash(t('workspace.error.desktopOnly'));
       return;
     }
     const folder = await api.workspacePickFolder();
@@ -2744,7 +2796,7 @@ export function WorkspacePage({
     const chat: WorkspaceChat = {
       id: uid(),
       workspaceId: activeWorkspaceId,
-      title: '新任务',
+      title: t('workspace.chat.newTask'),
       updatedAt: Date.now(),
       model,
     };
@@ -2855,9 +2907,9 @@ export function WorkspacePage({
     if (!workspace.path) return;
     try {
       const copied = await window.ezness?.copyText?.(workspace.path);
-      flash(copied ? '路径已复制' : '复制失败');
+      flash(copied ? t('workspace.flash.pathCopied') : t('workspace.flash.copyFailed'));
     } catch {
-      flash('复制失败');
+      flash(t('workspace.flash.copyFailed'));
     }
   }
 
@@ -2868,7 +2920,7 @@ export function WorkspacePage({
       workspaceId: workspace.id,
       path: '',
     });
-    if (result && !result.ok) flash(result.error || '无法打开文件夹');
+    if (result && !result.ok) flash(result.error || t('workspace.error.openFolder'));
   }
 
   function startRename(kind: 'space' | 'chat', id: string) {
@@ -2969,8 +3021,12 @@ export function WorkspacePage({
     setSelection(null);
     setPendingDelete(null);
     setPendingBatch(null);
-    const label = kind === 'space' ? '工作空间' : '任务';
-    flash(ids.length > 1 ? `已删除 ${ids.length} 个${label}` : `已删除${label}`);
+    const label = kind === 'space' ? t('workspace.kind.space') : t('workspace.kind.task');
+    flash(
+      ids.length > 1
+        ? t('workspace.flash.deletedMany', { count: ids.length, kind: label })
+        : t('workspace.flash.deletedOne', { kind: label }),
+    );
   }
   removeTargetsRef.current = removeTargets;
 
@@ -3010,13 +3066,19 @@ export function WorkspacePage({
   async function exportChat(id: string) {
     const chat = chats.find((item) => item.id === id);
     if (!chat) return;
-    const label = models.find((option) => option.id === chat.model)?.label ?? '未指定';
+    const label =
+      models.find((option) => option.id === chat.model)?.label ??
+      t('workspace.export.unspecified');
     const result = await window.ezness?.exportSession?.({
-      title: chat.title || '任务',
+      title: chat.title || t('workspace.kind.task'),
       markdown: buildSessionMarkdown(chat, messages, label),
     });
     if (result && !result.ok && !result.canceled) {
-      flash(`导出失败：${result.error ?? '未知错误'}`);
+      flash(
+        t('workspace.export.failed', {
+          error: result.error ?? t('workspace.error.unknown'),
+        }),
+      );
     }
   }
 
@@ -3027,7 +3089,9 @@ export function WorkspacePage({
         value={renameDraft}
         autoFocus
         spellCheck={false}
-        aria-label={kind === 'space' ? '重命名工作空间' : '重命名任务'}
+        aria-label={
+          kind === 'space' ? t('workspace.rename.spaceAria') : t('workspace.rename.chatAria')
+        }
         onClick={(event) => event.stopPropagation()}
         onChange={(event) => setRenameDraft(event.target.value)}
         onFocus={(event) => event.target.select()}
@@ -3107,13 +3171,13 @@ export function WorkspacePage({
     const chat = chats.find((item) => item.id === sessionId);
     if (!chat) return;
     if (sessionId === activeChatId && streamingId !== null) {
-      setCompressionError({ sessionId, message: '等当前任务结束后再压缩。' });
+      setCompressionError({ sessionId, message: t('workspace.compress.wait') });
       return;
     }
 
     const target = chatTarget(chat);
     if (!target) {
-      setCompressionError({ sessionId, message: '当前没有可用的模型，先去设置里接入一个。' });
+      setCompressionError({ sessionId, message: t('workspace.compress.noModel') });
       return;
     }
 
@@ -3180,8 +3244,8 @@ export function WorkspacePage({
         sessionId,
         contextLimit: work.contextLimit,
       });
-      if (!agent) throw new Error('压缩只在桌面端可用。');
-      if (agent.ok === false) throw new Error(agent.error || '压缩模型上下文失败。');
+      if (!agent) throw new Error(t('workspace.compress.desktopOnly'));
+      if (agent.ok === false) throw new Error(agent.error || t('workspace.compress.agentFailed'));
       if (agent.compacted) {
         agentCompacted = true;
         const saving = Math.max(0, (agent.before ?? 0) - (agent.after ?? 0));
@@ -3189,9 +3253,10 @@ export function WorkspacePage({
           setAgentCompactSaving({ sessionId, saving, at: Date.now() });
         }
         flash(
-          `已压缩模型上下文（${Math.round((agent.before ?? 0) / 1000)}K → ${Math.round(
-            (agent.after ?? 0) / 1000,
-          )}K 词元）`,
+          t('workspace.compress.done', {
+            before: Math.round((agent.before ?? 0) / 1000),
+            after: Math.round((agent.after ?? 0) / 1000),
+          }),
         );
         // The provider count from the last request describes the old, larger
         // prompt. Predict the next one with the same estimate-to-provider
@@ -3231,15 +3296,15 @@ export function WorkspacePage({
         setCompressionError({
           sessionId,
           message: agentCompacted
-            ? `模型上下文已压缩，但显示摘要生成失败：${displayError.message}`
-            : `显示摘要生成失败：${displayError.message}`,
+            ? t('workspace.compress.displayFailedAfter', { error: displayError.message })
+            : t('workspace.compress.displayFailed', { error: displayError.message }),
         });
       } else if (selected.length < 2 && !agentCompacted) {
         setCompressionError({
           sessionId,
-          message: `模型上下文已经压缩过，当前约 ${Math.round(
-            (agent.before ?? 0) / 1000,
-          )}K 词元，没有新的更早内容可折叠。`,
+          message: t('workspace.compress.nothing', {
+            size: Math.round((agent.before ?? 0) / 1000),
+          }),
         });
       }
     } catch (error) {
@@ -3247,7 +3312,9 @@ export function WorkspacePage({
         const message = error instanceof Error ? error.message : String(error);
         setCompressionError({
           sessionId,
-          message: agentCompacted ? `模型上下文已压缩，但后续步骤失败：${message}` : message,
+          message: agentCompacted
+            ? t('workspace.compress.followUpFailed', { error: message })
+            : message,
         });
       }
     } finally {
@@ -3337,7 +3404,7 @@ export function WorkspacePage({
               ...item,
               updatedAt: timestamp,
               title:
-                item.title === '新任务' && fallbackTitle
+                item.title === t('workspace.chat.newTask') && fallbackTitle
                   ? fallbackTitle.slice(0, 24)
                   : item.title,
             }
@@ -3365,14 +3432,14 @@ export function WorkspacePage({
             ? {
                 ...message,
                 stopped: true,
-                content: message.content || '（已停止）',
+                content: message.content || t('workspace.chat.stoppedParenthesized'),
                 // The run is gone; a step that was mid-flight will not report again.
                 steps: message.steps?.map((step) =>
                   step.status === 'running'
                     ? {
                         ...step,
                         status: 'error' as const,
-                        result: step.result ?? '已中断，没有结果。',
+                        result: step.result ?? t('workspace.chat.interrupted'),
                         endedAt: step.endedAt ?? Date.now(),
                       }
                     : step,
@@ -3417,13 +3484,13 @@ export function WorkspacePage({
     };
 
     if (!api) {
-      fail('任务只在桌面端可用。');
+      fail(t('workspace.error.desktopOnlyTask'));
       return;
     }
 
     const target = chatTarget(chat);
     if (!target) {
-      fail(NO_TARGET_MESSAGE);
+      fail(t('workspace.error.noTarget'));
       // 总监那边只知道“任务起不来”；把原因递过去，它才能把换模型的选择交给用户。
       const space = workspacesRef.current.find((item) => item.id === chat.workspaceId);
       if (
@@ -3433,7 +3500,10 @@ export function WorkspacePage({
         space.kind !== 'agent-editor'
       ) {
         void window.ezness
-          ?.directorRunBlocked?.({ taskId: chat.id, reason: '没有可用的模型配置' })
+          ?.directorRunBlocked?.({
+            taskId: chat.id,
+            reason: t('workspace.director.noModelConfig'),
+          })
           ?.catch(() => undefined);
       }
       return;
@@ -3441,7 +3511,7 @@ export function WorkspacePage({
 
     const workspace = workspaces.find((item) => item.id === chat.workspaceId);
     if (!workspace) {
-      fail('任务所属的工作空间不存在。');
+      fail(t('workspace.error.spaceGone'));
       return;
     }
 
@@ -3575,7 +3645,7 @@ export function WorkspacePage({
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantId
-            ? { ...message, content: `任务启动失败：${detail}` }
+            ? { ...message, content: t('workspace.chat.startFailed', { error: detail }) }
             : message,
         ),
       );
@@ -3587,7 +3657,7 @@ export function WorkspacePage({
   function handleStartPlan() {
     if (activeStream) return;
     handlePermissionChange('workspace-write');
-    void handleSend('开始执行上面的计划。', [], 'workspace-write');
+    void handleSend(t('workspace.chat.startPlan'), [], 'workspace-write');
   }
 
   function resolvePermission(
@@ -3696,16 +3766,19 @@ export function WorkspacePage({
       ),
     );
     if (!agent) {
-      flash('已改用普通代理，这个任务不再套用 Agent。');
+      flash(t('workspace.agent.switchedToPlain'));
       return;
     }
-    flash(`已启用 Agent：${agent.name}`);
+    flash(t('workspace.agent.enabled', { name: agent.name }));
     if (agent.enabled) return;
     void window.ezness?.agentsSave?.({ ...agent, enabled: true }).then((result) => {
       if (result?.ok) {
         setAgents(result.agents ?? []);
       } else {
-        flash(result?.error || `Agent「${agent.name}」启用失败`);
+        flash(
+          result?.error ||
+            t('workspace.agent.enableFailed', { name: agent.name }),
+        );
       }
     });
   }
@@ -3729,8 +3802,14 @@ export function WorkspacePage({
   const compressionProgressLabel =
     compressionStep && compressionStep.sessionId === activeChatId
       ? compressionStep.phase === 'reduce'
-        ? `正在合并摘要…（第 ${compressionStep.step}/${compressionStep.total} 步）`
-        : `正在压缩… 第 ${compressionStep.step}/${compressionStep.total} 段`
+        ? t('workspace.compress.progressReduce', {
+            step: compressionStep.step,
+            total: compressionStep.total,
+          })
+        : t('workspace.compress.progressMap', {
+            step: compressionStep.step,
+            total: compressionStep.total,
+          })
       : null;
   const compressionErrorText =
     compressionError && compressionError.sessionId === activeChatId
@@ -3738,8 +3817,8 @@ export function WorkspacePage({
       : null;
   const compressionDisabledReason = (() => {
     if (compressionBusy) return null;
-    if (streamingId !== null) return '等当前任务结束后再压缩。';
-    if (!chatTarget(activeChat)) return '当前没有可用的模型。';
+    if (streamingId !== null) return t('workspace.compress.wait');
+    if (!chatTarget(activeChat)) return t('workspace.compress.noModelShort');
     // The visible transcript may be short while the agent's own history is
     // long, so the page cannot decide "nothing to compress" from its messages.
     // The handler compacts the agent file and reports when both are empty.
@@ -3756,15 +3835,16 @@ export function WorkspacePage({
 
   return (
     <div className={`ws ${panel ? `ws--${panel}` : ''}`}>
-      <nav className="ws__rail" aria-label="工作空间侧栏">
-        {WORKSPACE_PANELS.map(({ key, label, icon: PanelIcon }) => {
+      <nav className="ws__rail" aria-label={t('workspace.rail.aria')}>
+        {WORKSPACE_PANELS.map(({ key, labelKey, icon: PanelIcon }) => {
           const active = panel === key;
+          const label = t(labelKey);
           return (
             <button
               key={key}
               type="button"
               className={`ws__rail-btn ${active ? 'is-active' : ''}`}
-              title={active ? `收起${label}` : label}
+              title={active ? t('workspace.rail.collapse', { label }) : label}
               aria-label={label}
               aria-pressed={active}
               onClick={() => setPanel((prev) => (prev === key ? null : key))}
@@ -3785,20 +3865,26 @@ export function WorkspacePage({
         inert={panel !== 'work'}
       >
         <div className="ws__head">
-          <span className="ws__heading">工作空间</span>
+          <span className="ws__heading">{t('workspace.sidebar.spaces')}</span>
           {visibleWorkspaces.length > 0 && (
             <button
               type="button"
               className={`ws__select-toggle ${selectingSpaces ? 'is-active' : ''}`}
               aria-pressed={Boolean(selectingSpaces)}
-              title={selectingSpaces ? '退出多选' : '多选工作空间'}
+              title={
+                selectingSpaces
+                  ? t('workspace.select.exit')
+                  : t('workspace.select.spaces')
+              }
               onClick={() =>
                 setSelection((prev) =>
                   prev?.kind === 'space' ? null : { kind: 'space', ids: new Set() },
                 )
               }
             >
-              {selectingSpaces ? '完成' : '多选'}
+              {selectingSpaces
+                ? t('workspace.select.done')
+                : t('workspace.select.start')}
             </button>
           )}
         </div>
@@ -3807,16 +3893,16 @@ export function WorkspacePage({
             <SearchIcon size={14} />
             <input
               value={spaceQuery}
-              placeholder="搜索工作空间"
+              placeholder={t('workspace.search.spaces')}
               spellCheck={false}
-              aria-label="搜索工作空间"
+              aria-label={t('workspace.search.spaces')}
               onChange={(event) => setSpaceQuery(event.target.value)}
             />
           </div>
           <button
             className="newchat"
-            title="新建工作空间"
-            aria-label="新建工作空间"
+            title={t('workspace.newSpace')}
+            aria-label={t('workspace.newSpace')}
             onClick={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();
               setAddMenu((prev) => (prev ? null : { x: rect.left, y: rect.bottom + 6 }));
@@ -3842,9 +3928,11 @@ export function WorkspacePage({
                   )
                 }
               />
-              全选
+              {t('workspace.select.all')}
             </label>
-            <span className="ws__selectcount">已选 {selectedSpaceIds.size} 项</span>
+            <span className="ws__selectcount">
+              {t('workspace.select.count', { count: selectedSpaceIds.size })}
+            </span>
             <button
               type="button"
               className="btn btn--danger btn--sm"
@@ -3853,7 +3941,7 @@ export function WorkspacePage({
                 setPendingBatch({ kind: 'space', ids: [...selectedSpaceIds] })
               }
             >
-              删除
+              {t('workspace.select.delete')}
             </button>
           </div>
         )}
@@ -3884,9 +3972,9 @@ export function WorkspacePage({
                   .join(' ')}
                 title={
                   offline && health
-                    ? spaceHealthDetail(workspace, health)
+                    ? spaceHealthDetail(workspace, health, t)
                     : editor
-                      ? workspacePathLabel(workspace)
+                      ? workspacePathLabel(workspace, t)
                       : workspace.path
                 }
                 role={selectingSpaces ? 'checkbox' : 'button'}
@@ -3945,21 +4033,27 @@ export function WorkspacePage({
                 <span className="ws-space__text">
                   <span className="ws-space__title">
                     {renamingThis ? renameInput('space') : (
-                      <span className="ws-space__name">{workspace.name}</span>
+                      <span className="ws-space__name">
+                        {/* The director workspace is a fixed part of the app, not
+                            data: its stored name is Chinese on existing installs. */}
+                        {workspace.kind === 'director'
+                          ? t('workspace.name.director')
+                          : workspace.name}
+                      </span>
                     )}
                     {!renamingThis && offline && health && (
                       <span
                         className="ws-space__warn"
                         role="img"
-                        title={spaceHealthDetail(workspace, health)}
-                        aria-label={spaceHealthDetail(workspace, health)}
+                        title={spaceHealthDetail(workspace, health, t)}
+                        aria-label={spaceHealthDetail(workspace, health, t)}
                       >
                         <AlertIcon size={11} />
                       </span>
                     )}
                   </span>
                   <span className="ws-space__path">
-                    {editor ? workspacePathLabel(workspace) : workspace.path}
+                    {editor ? workspacePathLabel(workspace, t) : workspace.path}
                   </span>
                 </span>
                 {selectingSpaces ? (
@@ -3972,14 +4066,14 @@ export function WorkspacePage({
                 ) : (
                   <>
                     {workspace.pinned && !renamingThis && (
-                      <span className="ws-item__pin" title="已置顶">
+                      <span className="ws-item__pin" title={t('workspace.item.pinned')}>
                         <PinIcon size={11} />
                       </span>
                     )}
                     {!renamingThis && (
                       <button
                         className="ws-item__more"
-                        title="更多"
+                        title={t('workspace.item.more')}
                         onClick={(event) => openMenu(event, 'space', workspace.id)}
                       >
                         <MoreIcon size={15} />
@@ -3993,12 +4087,12 @@ export function WorkspacePage({
           {visibleWorkspaces.length === 0 && (
             <div className="ws-hint">
               {spaceKeyword ? (
-                `没有匹配「${spaceQuery.trim()}」的工作空间`
+                t('workspace.empty.noSpaceMatch', { query: spaceQuery.trim() })
               ) : (
                 <>
-                  还没有工作空间。
+                  {t('workspace.empty.noSpaces')}
                   <br />
-                  点右上角 + 选择一个文件夹。
+                  {t('workspace.empty.noSpacesHint')}
                 </>
               )}
             </div>
@@ -4012,20 +4106,26 @@ export function WorkspacePage({
       >
         <div className="ws__head ws__head--stack">
           <div className="ws__head-row">
-            <span className="ws__heading">任务</span>
+            <span className="ws__heading">{t('workspace.sidebar.tasks')}</span>
             {activeWorkspace && visibleChats.length > 0 && (
               <button
                 type="button"
                 className={`ws__select-toggle ${selectingChats ? 'is-active' : ''}`}
                 aria-pressed={Boolean(selectingChats)}
-                title={selectingChats ? '退出多选' : '多选任务'}
+                title={
+                  selectingChats
+                    ? t('workspace.select.exit')
+                    : t('workspace.select.chats')
+                }
                 onClick={() =>
                   setSelection((prev) =>
                     prev?.kind === 'chat' ? null : { kind: 'chat', ids: new Set() },
                   )
                 }
               >
-                {selectingChats ? '完成' : '多选'}
+                {selectingChats
+                  ? t('workspace.select.done')
+                  : t('workspace.select.start')}
               </button>
             )}
           </div>
@@ -4033,21 +4133,21 @@ export function WorkspacePage({
             <button
               type="button"
               className="ws__path"
-              title={workspacePathLabel(activeWorkspace)}
+              title={workspacePathLabel(activeWorkspace, t)}
               disabled={!activeWorkspace.path || activeWorkspace.kind === 'remote'}
               onClick={() => void revealWorkspace(activeWorkspace)}
             >
-              {workspacePathLabel(activeWorkspace)}
+              {workspacePathLabel(activeWorkspace, t)}
             </button>
           )}
           {activeWorkspace && activeHealth && !activeHealth.ok && (
             <div
               className="ws__health"
               role="status"
-              title={spaceHealthDetail(activeWorkspace, activeHealth)}
+              title={spaceHealthDetail(activeWorkspace, activeHealth, t)}
             >
               <AlertIcon size={12} />
-              <span>{spaceHealthSummary(activeWorkspace, activeHealth)}</span>
+              <span>{spaceHealthSummary(activeWorkspace, activeHealth, t)}</span>
             </div>
           )}
         </div>
@@ -4056,17 +4156,21 @@ export function WorkspacePage({
             <SearchIcon size={14} />
             <input
               value={chatQuery}
-              placeholder="搜索任务或对话内容"
+              placeholder={t('workspace.search.chats')}
               spellCheck={false}
-              aria-label="搜索任务"
+              aria-label={t('workspace.search.tasksAria')}
               disabled={!activeWorkspace}
               onChange={(event) => setChatQuery(event.target.value)}
             />
           </div>
           <button
             className="newchat"
-            title={activeWorkspace ? '新建任务' : '先选择一个工作空间'}
-            aria-label="新建任务"
+            title={
+              activeWorkspace
+                ? t('workspace.newTask')
+                : t('workspace.newTaskFirstSpace')
+            }
+            aria-label={t('workspace.newTask')}
             disabled={!activeWorkspace}
             onClick={createChat}
           >
@@ -4090,26 +4194,30 @@ export function WorkspacePage({
                   )
                 }
               />
-              全选
+              {t('workspace.select.all')}
             </label>
-            <span className="ws__selectcount">已选 {selectedChatIds.size} 项</span>
+            <span className="ws__selectcount">
+              {t('workspace.select.count', { count: selectedChatIds.size })}
+            </span>
             <button
               type="button"
               className="btn btn--danger btn--sm"
               disabled={selectedChatIds.size === 0}
               onClick={() => setPendingBatch({ kind: 'chat', ids: [...selectedChatIds] })}
             >
-              删除
+              {t('workspace.select.delete')}
             </button>
           </div>
         )}
         <div className="ws__list">
-          {!activeWorkspace && <div className="ws-hint">先选择左侧的工作空间</div>}
+          {!activeWorkspace && (
+            <div className="ws-hint">{t('workspace.empty.pickSpace')}</div>
+          )}
           {activeWorkspace && visibleChats.length === 0 && (
             <div className="ws-hint">
               {chatKeyword
-                ? `没有匹配「${chatQuery.trim()}」的任务`
-                : '这个工作空间还没有任务'}
+                ? t('workspace.empty.noChatMatch', { query: chatQuery.trim() })
+                : t('workspace.empty.spaceNoChats')}
             </div>
           )}
           {visibleChats.map((chat) => {
@@ -4198,7 +4306,7 @@ export function WorkspacePage({
                 ) : (
                   <>
                     {chat.pinned && !renamingThis && (
-                      <span className="ws-item__pin" title="已置顶">
+                      <span className="ws-item__pin" title={t('workspace.item.pinned')}>
                         <PinIcon size={11} />
                       </span>
                     )}
@@ -4206,7 +4314,7 @@ export function WorkspacePage({
                     {!renamingThis && (
                       <button
                         className="ws-item__more"
-                        title="更多"
+                        title={t('workspace.item.more')}
                         onClick={(event) => openMenu(event, 'chat', chat.id)}
                       >
                         <MoreIcon size={15} />
@@ -4243,7 +4351,7 @@ export function WorkspacePage({
         )}
 
         {panel === 'director' && floatingTasks.length > 0 && (
-          <div className="director__running" aria-label="任务状态">
+          <div className="director__running" aria-label={t('workspace.floating.statusAria')}>
             {floatingTasks.map((task) => (
               <button
                 key={task.id}
@@ -4251,8 +4359,8 @@ export function WorkspacePage({
                 className={`director__running-pill is-${task.status}`}
                 title={
                   task.status === 'running'
-                    ? `看这个任务的对话：${task.title}（还在跑，跑完才能收起）`
-                    : `看这个任务的对话：${task.title}（右键直接收起）`
+                    ? t('workspace.floating.viewRunning', { title: task.title })
+                    : t('workspace.floating.viewDone', { title: task.title })
                 }
                 onClick={() => setBubbleTaskId(task.id)}
                 onContextMenu={(event) => {
@@ -4263,7 +4371,7 @@ export function WorkspacePage({
                 <span className="director__running-dot" aria-hidden="true" />
                 <span className="director__running-title">{task.title}</span>
                 <span className="director__running-status">
-                  {FLOATING_STATUS_LABEL[task.status]}
+                  {t(FLOATING_STATUS_KEY[task.status])}
                 </span>
                 <ChevronRightIcon className="director__running-go" size={13} />
               </button>
@@ -4366,18 +4474,20 @@ export function WorkspacePage({
             <WorkspaceIcon size={24} />
           </div>
           <h2 className="ws-empty__title">
-            {activeWorkspace ? '这个工作空间还没有任务' : '工作空间'}
+            {activeWorkspace
+              ? t('workspace.empty.noChats')
+              : t('workspace.sidebar.spaces')}
           </h2>
           <p className="ws-empty__sub">
             {activeWorkspace
-              ? '在左侧新建一个任务，它只会出现在当前工作空间里。'
-              : '每个工作空间对应一个文件夹，里面的任务互相独立。先新建一个开始。'}
+              ? t('workspace.empty.hintSpace')
+              : t('workspace.empty.hintFirst')}
           </p>
           <button
             className="btn btn--primary"
             onClick={activeWorkspace ? createChat : createWorkspace}
           >
-            {activeWorkspace ? '新建任务' : '新建工作空间'}
+            {activeWorkspace ? t('workspace.newTask') : t('workspace.newSpace')}
           </button>
         </section>
         )}
@@ -4407,14 +4517,14 @@ export function WorkspacePage({
               <button className="menu__item" onClick={() => togglePin(menu.kind, menu.id)}>
                 <span className="menu__label">
                   {menuPinned
-                    ? '取消置顶'
+                    ? t('workspace.menu.unpin')
                     : menu.kind === 'space'
-                      ? '置顶工作空间'
-                      : '置顶任务'}
+                      ? t('workspace.menu.pinSpace')
+                      : t('workspace.menu.pinChat')}
                 </span>
               </button>
               <button className="menu__item" onClick={() => startRename(menu.kind, menu.id)}>
-                <span className="menu__label">重命名</span>
+                <span className="menu__label">{t('workspace.menu.rename')}</span>
               </button>
               {menu.kind === 'space' &&
                 (() => {
@@ -4426,14 +4536,14 @@ export function WorkspacePage({
                         className="menu__item"
                         onClick={() => void copyWorkspacePath(space)}
                       >
-                        <span className="menu__label">复制路径</span>
+                        <span className="menu__label">{t('workspace.menu.copyPath')}</span>
                       </button>
                       {space.kind !== 'remote' && (
                         <button
                           className="menu__item"
                           onClick={() => void revealWorkspace(space)}
                         >
-                          <span className="menu__label">在资源管理器中打开</span>
+                          <span className="menu__label">{t('workspace.menu.reveal')}</span>
                         </button>
                       )}
                     </>
@@ -4447,7 +4557,7 @@ export function WorkspacePage({
                     void exportChat(menu.id);
                   }}
                 >
-                  <span className="menu__label">导出为 Markdown</span>
+                  <span className="menu__label">{t('workspace.menu.export')}</span>
                 </button>
               )}
               <button
@@ -4455,7 +4565,9 @@ export function WorkspacePage({
                 onClick={() => requestDelete(menu.kind, menu.id)}
               >
                 <span className="menu__label">
-                  {menu.kind === 'space' ? '删除工作空间' : '删除任务'}
+                  {menu.kind === 'space'
+                    ? t('workspace.menu.deleteSpace')
+                    : t('workspace.menu.deleteChat')}
                 </span>
               </button>
             </div>
@@ -4478,15 +4590,23 @@ export function WorkspacePage({
             : 0;
           return (
             <ConfirmDialog
-              title={space ? '删除工作空间' : '删除任务'}
+              title={
+                space
+                  ? t('workspace.menu.deleteSpace')
+                  : t('workspace.menu.deleteChat')
+              }
               message={
                 space
-                  ? `删除工作空间「${space.name}」？${
-                      taskCount > 0 ? `其中的 ${taskCount} 个任务也会一并删除，` : ''
-                    }此操作不可撤销。`
-                  : `删除任务「${chat?.title ?? ''}」？此操作不可撤销。`
+                  ? t('workspace.confirm.deleteSpace', {
+                      name: space.name,
+                      tasks:
+                        taskCount > 0
+                          ? t('workspace.confirm.tasksAlso', { count: taskCount })
+                          : '',
+                    })
+                  : t('workspace.confirm.deleteChat', { title: chat?.title ?? '' })
               }
-              confirmLabel="删除"
+              confirmLabel={t('workspace.confirm.delete')}
               danger
               onConfirm={confirmDelete}
               onCancel={() => setPendingDelete(null)}
@@ -4503,15 +4623,23 @@ export function WorkspacePage({
               : 0;
           return (
             <ConfirmDialog
-              title={pendingBatch.kind === 'space' ? '批量删除工作空间' : '批量删除任务'}
+              title={
+                pendingBatch.kind === 'space'
+                  ? t('workspace.confirm.batchSpaceTitle')
+                  : t('workspace.confirm.batchChatTitle')
+              }
               message={
                 pendingBatch.kind === 'space'
-                  ? `删除选中的 ${count} 个工作空间？${
-                      taskCount > 0 ? `其中的 ${taskCount} 个任务也会一并删除，` : ''
-                    }此操作不可撤销。`
-                  : `删除选中的 ${count} 个任务？此操作不可撤销。`
+                  ? t('workspace.confirm.batchSpace', {
+                      count,
+                      tasks:
+                        taskCount > 0
+                          ? t('workspace.confirm.tasksAlso', { count: taskCount })
+                          : '',
+                    })
+                  : t('workspace.confirm.batchChat', { count })
               }
-              confirmLabel={`删除 ${count} 项`}
+              confirmLabel={t('workspace.confirm.batchDelete', { count })}
               danger
               onConfirm={confirmBatchDelete}
               onCancel={() => setPendingBatch(null)}
@@ -4542,7 +4670,7 @@ export function WorkspacePage({
                   void createWorkspace();
                 }}
               >
-                本地文件夹…
+                {t('workspace.add.local')}
               </button>
               <button
                 className="menu__item"
@@ -4551,7 +4679,7 @@ export function WorkspacePage({
                   setRemoteDialogId(uid());
                 }}
               >
-                远程 SSH 地址…
+                {t('workspace.add.remote')}
               </button>
             </div>
           </>,

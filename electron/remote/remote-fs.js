@@ -9,10 +9,11 @@
 
 const posix = require('node:path').posix;
 const { clip } = require('../agent/workspace-fs');
+const uiText = require('../ui-text');
 
 class RemotePathEscapeError extends Error {
   constructor(requested) {
-    super(`路径越界：${requested} 不在远程工作空间内`);
+    super(uiText.t('main.remote.pathEscape', { path: requested }));
     this.code = 'path_escape';
   }
 }

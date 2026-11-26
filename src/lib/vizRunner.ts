@@ -22,6 +22,16 @@ import { attachTableRefs } from './vizTableRefs';
  * closing the whole window) cancels.
  */
 
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+/** Used when the caller has no i18n hook (e.g. a run resumed after reopening). */
+const ENGLISH_FALLBACK: Record<string, string> = {
+  'viz.run.unsupported': 'This version cannot generate visualizations. Update the app first.',
+  'viz.run.failed': 'Generation failed. Try again.',
+};
+
+const defaultTranslate: Translate = (key) => ENGLISH_FALLBACK[key] ?? key;
+
 export type VizRunStatus = 'running' | 'done' | 'error' | 'stopped';
 
 export interface VizRunSnapshot {
@@ -45,6 +55,8 @@ export interface VizRunInput {
   provider: ChatTarget;
   /** Called with the finished dashboard, even if the dialog is closed by then. */
   onResult: (result: WorkspaceVisualizeResult) => void;
+  /** The i18n `t` function, so run errors follow the interface language. */
+  translate?: Translate;
 }
 
 const runs = new Map<string, VizRunSnapshot>();
@@ -104,12 +116,13 @@ export function startVizRun(input: VizRunInput): void {
   // A double click lands before the button re-renders disabled; never let it
   // orphan the request that just started.
   if (runs.get(input.key)?.status === 'running') return;
+  const translate = input.translate ?? defaultTranslate;
   const api = window.ezness;
   if (!api?.workspaceVisualize) {
     commit(input.key, {
       status: 'error',
       result: null,
-      error: '这个版本还不能生成可视化，请先更新应用。',
+      error: translate('viz.run.unsupported'),
     });
     return;
   }
@@ -140,8 +153,9 @@ async function execute(input: VizRunInput, generation: number): Promise<void> {
       },
     );
 
+    const translate = input.translate ?? defaultTranslate;
     const api = window.ezness;
-    if (!api?.workspaceVisualize) throw new Error('这个版本还不能生成可视化，请先更新应用。');
+    if (!api?.workspaceVisualize) throw new Error(translate('viz.run.unsupported'));
 
     const requestId = `viz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     requests.set(input.key, requestId);
@@ -169,7 +183,7 @@ async function execute(input: VizRunInput, generation: number): Promise<void> {
     commit(input.key, {
       status: 'error',
       result: null,
-      error: next.error || '生成失败，请再试一次。',
+      error: next.error || translate('viz.run.failed'),
     });
   } catch (reason) {
     if (!current()) return;

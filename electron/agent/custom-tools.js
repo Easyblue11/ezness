@@ -28,6 +28,7 @@ const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { resolveInside } = require('./paths');
 const deps = require('./deps');
+const uiText = require('../ui-text');
 
 const FILE_NAME = 'custom-tools.json';
 const CATEGORY_FILE = 'tool-categories.json';
@@ -49,11 +50,11 @@ const MAX_OUTPUT = 48 * 1024;
 const PARAM_TYPES = new Set(['string', 'number', 'boolean']);
 const MODE_KEYS = ['read-only', 'plan', 'workspace-write', 'danger-full-access'];
 const POLICY_DECISIONS = new Set(['allow', 'ask', 'deny']);
-const MODE_LABELS = {
-  'read-only': '只读',
-  plan: '计划',
-  'workspace-write': '工作区写入',
-  'danger-full-access': '完全访问',
+const MODE_LABEL_KEYS = {
+  'read-only': 'main.policy.modeReadOnly',
+  plan: 'main.policy.modePlan',
+  'workspace-write': 'main.policy.modeWorkspaceWrite',
+  'danger-full-access': 'main.policy.modeDangerFullAccess',
 };
 const NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
 /** Total length allowed by NAME_RE; exported so importers can build a suffix. */
@@ -63,19 +64,19 @@ const RUNTIME_CACHE_MS = 60 * 1000;
 
 const RUNTIMES = {
   node: {
-    label: 'Node.js',
+    labelKey: 'main.tool.runtimeNode',
     ext: '.js',
-    hint: '使用 Ezness 自带的 Node.js，不需要另外安装。',
+    hintKey: 'main.tool.runtimeNodeHint',
   },
   python: {
-    label: 'Python 3',
+    labelKey: 'main.tool.runtimePython',
     ext: '.py',
-    hint: '使用系统安装的 Python 3（优先 py 启动器），或数据目录 runtimes/python 里的便携版。',
+    hintKey: 'main.tool.runtimePythonHint',
   },
   executable: {
-    label: '自定义命令',
+    labelKey: 'main.tool.runtimeExecutable',
     ext: '',
-    hint: '直接运行任意可执行文件，参数用 {参数名} 替换。',
+    hintKey: 'main.tool.runtimeExecutableHint',
   },
 };
 
@@ -163,7 +164,7 @@ function splitCommand(text) {
     has = true;
   }
 
-  if (quote) throw new Error('命令里的引号没有闭合。');
+  if (quote) throw new Error(uiText.t('main.tool.errQuoteOpen'));
   if (has) tokens.push(current);
   return tokens;
 }
@@ -193,7 +194,7 @@ function normalizeDefault(value, type, name, required, errors) {
   if (type === 'number') {
     const number = typeof value === 'string' && value.trim() === '' ? NaN : Number(value);
     if (!Number.isFinite(number)) {
-      errors.push(`参数 ${name} 的默认值必须是数字。`);
+      errors.push(uiText.t('main.tool.errDefaultNumber', { name }));
       return undefined;
     }
     return number;
@@ -201,7 +202,7 @@ function normalizeDefault(value, type, name, required, errors) {
   if (type === 'boolean') {
     if (typeof value === 'boolean') return value;
     if (value === 'true' || value === 'false') return value === 'true';
-    errors.push(`参数 ${name} 的默认值必须是 true 或 false。`);
+    errors.push(uiText.t('main.tool.errDefaultBoolean', { name }));
     return undefined;
   }
   return typeof value === 'object' ? undefined : String(value);
@@ -252,33 +253,37 @@ function normalizeDefinition(input, { builtinNames = [], others = [] } = {}) {
 
   const name = String(source.name ?? '').trim();
   if (!NAME_RE.test(name)) {
-    errors.push('名称只能包含字母、数字和下划线，且以字母或下划线开头，最长 64 个字符。');
+    errors.push(uiText.t('main.tool.errNameFormat'));
   } else if (builtinNames.includes(name)) {
-    errors.push(`名称 ${name} 和内置工具重名。`);
+    errors.push(uiText.t('main.tool.errNameBuiltin', { name }));
   } else if (others.some((tool) => tool.name === name)) {
-    errors.push(`名称 ${name} 已经被另一个自定义工具使用。`);
+    errors.push(uiText.t('main.tool.errNameTaken', { name }));
   }
 
   const description = String(source.description ?? '').trim();
-  if (!description) errors.push('说明不能为空：模型要靠它判断什么时候调用这个功能。');
-  else if (description.length > 4000) errors.push('说明最长 4000 个字符。');
+  if (!description) errors.push(uiText.t('main.tool.errDescriptionEmpty'));
+  else if (description.length > 4000) errors.push(uiText.t('main.tool.errDescriptionLong'));
 
   const category = String(source.category ?? '').trim().slice(0, 24) || '自定义';
 
   const rawParameters = Array.isArray(source.parameters) ? source.parameters : [];
   if (rawParameters.length > MAX_PARAMETERS) {
-    errors.push(`参数最多 ${MAX_PARAMETERS} 个。`);
+    errors.push(uiText.t('main.tool.errTooManyParams', { max: MAX_PARAMETERS }));
   }
   const parameters = [];
   const usedParams = new Set();
   for (const item of rawParameters.slice(0, MAX_PARAMETERS)) {
     const paramName = String(item?.name ?? '').trim();
     if (!NAME_RE.test(paramName)) {
-      errors.push(`参数名 ${paramName || '（空）'} 不合法，只能用字母、数字和下划线。`);
+      errors.push(
+        uiText.t('main.tool.errParamNameInvalid', {
+          name: paramName || uiText.t('main.tool.empty'),
+        }),
+      );
       continue;
     }
     if (usedParams.has(paramName)) {
-      errors.push(`参数名 ${paramName} 重复。`);
+      errors.push(uiText.t('main.tool.errParamDuplicate', { name: paramName }));
       continue;
     }
     usedParams.add(paramName);
@@ -310,7 +315,7 @@ function normalizeDefinition(input, { builtinNames = [], others = [] } = {}) {
   const rawRuntime = String(source.runtime ?? '').trim();
   const runtime = rawRuntime || (String(source.script ?? '').trim() ? 'node' : 'executable');
   if (!RUNTIMES[runtime]) {
-    errors.push('执行方式不合法，请选择 Node.js、Python 或自定义命令。');
+    errors.push(uiText.t('main.tool.errRuntimeInvalid'));
   }
 
   const command = String(source.command ?? '').trim();
@@ -318,24 +323,24 @@ function normalizeDefinition(input, { builtinNames = [], others = [] } = {}) {
 
   if (runtime === 'executable') {
     if (!command) {
-      errors.push('执行命令不能为空。');
+      errors.push(uiText.t('main.tool.errCommandEmpty'));
     } else if (command.length > 4000) {
-      errors.push('执行命令最长 4000 个字符。');
+      errors.push(uiText.t('main.tool.errCommandLong'));
     } else {
       try {
         const tokens = splitCommand(command);
-        if (tokens.length === 0) errors.push('执行命令不能为空。');
+        if (tokens.length === 0) errors.push(uiText.t('main.tool.errCommandEmpty'));
         const used = placeholdersOf(tokens);
         for (const placeholder of used) {
           if (!usedParams.has(placeholder)) {
-            errors.push(`命令里的 {${placeholder}} 没有对应的参数。`);
+            errors.push(uiText.t('main.tool.errPlaceholderNoParam', { name: placeholder }));
           }
         }
         // argv is visible to every process on the machine, so a credential
         // must never be substituted into the command line.
         for (const parameter of parameters) {
           if (parameter.secret && used.has(parameter.name)) {
-            errors.push(`保密参数 ${parameter.name} 不能写进命令模板；请改用脚本方式读取。`);
+            errors.push(uiText.t('main.tool.errSecretInCommand', { name: parameter.name }));
           }
         }
       } catch (error) {
@@ -344,11 +349,11 @@ function normalizeDefinition(input, { builtinNames = [], others = [] } = {}) {
     }
   } else if (RUNTIMES[runtime]) {
     if (!script.trim()) {
-      errors.push('脚本内容不能为空。');
+      errors.push(uiText.t('main.tool.errScriptEmpty'));
     } else if (script.length > MAX_SCRIPT) {
-      errors.push('脚本最长 64 KB。');
+      errors.push(uiText.t('main.tool.errScriptLong'));
     } else if (script.includes('\u0000')) {
-      errors.push('脚本不能包含空字符。');
+      errors.push(uiText.t('main.tool.errScriptNull'));
     }
   }
 
@@ -360,11 +365,11 @@ function normalizeDefinition(input, { builtinNames = [], others = [] } = {}) {
 
   const cwd = String(source.cwd ?? '').trim();
   if (cwd && path.isAbsolute(cwd)) {
-    errors.push('运行目录请填写相对工作空间的路径。');
+    errors.push(uiText.t('main.tool.errCwdAbsolute'));
   }
 
   const timeoutValue = Number(source.timeoutMs ?? 120000);
-  if (!Number.isFinite(timeoutValue)) errors.push('超时时间必须是数字。');
+  if (!Number.isFinite(timeoutValue)) errors.push(uiText.t('main.tool.errTimeoutNumber'));
   const timeoutMs = Math.min(Math.max(Number.isFinite(timeoutValue) ? timeoutValue : 120000, 1000), 300000);
 
   // Custom tools may modify files, so they can carry an explicit matrix.
@@ -372,13 +377,16 @@ function normalizeDefinition(input, { builtinNames = [], others = [] } = {}) {
   let policy;
   if (source.policy !== undefined && source.policy !== null) {
     if (typeof source.policy !== 'object' || Array.isArray(source.policy)) {
-      errors.push('权限策略格式不正确。');
+      errors.push(uiText.t('main.tool.errPolicyFormat'));
     } else {
       policy = {};
       for (const mode of MODE_KEYS) {
         const value = source.policy[mode];
         if (POLICY_DECISIONS.has(value)) policy[mode] = value;
-        else errors.push(`权限策略里的「${MODE_LABELS[mode]}」不合法。`);
+        else
+          errors.push(
+            uiText.t('main.tool.errPolicyMode', { mode: uiText.t(MODE_LABEL_KEYS[mode]) }),
+          );
       }
     }
   }
@@ -438,7 +446,11 @@ function runProcess(argv, { cwd, timeoutMs, signal, env }) {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
-      reject(new Error(`无法启动命令：${error?.message || String(error)}`));
+      reject(
+        new Error(
+          uiText.t('main.tool.errCommandStart', { error: error?.message || String(error) }),
+        ),
+      );
       return;
     }
 
@@ -470,36 +482,42 @@ function runProcess(argv, { cwd, timeoutMs, signal, env }) {
       else resolve(value);
     };
 
-    const onAbort = () => stop('用户中断');
+    const onAbort = () => stop(uiText.t('main.tool.stopUser'));
     const stop = (reason) => {
       if (stoppedBy) return;
       stoppedBy = reason;
       killTree(child);
       stopTimer = setTimeout(() => {
-        finish(new Error(`命令被${stoppedBy}终止。${body()}`));
+        finish(
+          new Error(uiText.t('main.tool.errCommandStopped', { reason: stoppedBy, output: body() })),
+        );
       }, 1500);
     };
 
     const timer = setTimeout(() => {
-      stop(`超时（${Math.round(timeoutMs / 1000)} 秒）`);
+      stop(uiText.t('main.tool.stopTimeout', { seconds: Math.round(timeoutMs / 1000) }));
     }, timeoutMs);
 
     if (signal?.aborted) {
-      stop('用户中断');
+      stop(uiText.t('main.tool.stopUser'));
       return;
     }
     signal?.addEventListener('abort', onAbort, { once: true });
 
     child.on('error', (error) => {
-      finish(new Error(`无法启动命令：${error?.message || String(error)}`));
+      finish(
+        new Error(uiText.t('main.tool.errCommandStart', { error: error?.message || String(error) })),
+      );
     });
     child.on('close', (code) => {
       if (stoppedBy) {
-        finish(new Error(`命令被${stoppedBy}终止。${body()}`));
+        finish(
+          new Error(uiText.t('main.tool.errCommandStopped', { reason: stoppedBy, output: body() })),
+        );
         return;
       }
       if (code !== 0) {
-        finish(new Error(`命令退出码 ${code}。${body()}`));
+        finish(new Error(uiText.t('main.tool.errCommandExit', { code, output: body() })));
         return;
       }
       finish(null, output.trim() ? clip(output.trim()) : '（没有输出）');
@@ -523,7 +541,7 @@ function scriptPathFor(agentDir, definition) {
 }
 
 async function ensureScriptFile(agentDir, definition) {
-  if (!agentDir) throw new Error('没有找到自定义功能的存储目录。');
+  if (!agentDir) throw new Error(uiText.t('main.tool.errToolDirMissing'));
   const file = scriptPathFor(agentDir, definition);
   const payload = definition.script;
 
@@ -706,33 +724,33 @@ async function detectRuntimes({ force = false } = {}) {
   const rows = [
     {
       id: 'node',
-      label: RUNTIMES.node.label,
+      label: uiText.t(RUNTIMES.node.labelKey),
       available: true,
       version: process.versions.node,
-      detail: 'Ezness 内置',
-      hint: RUNTIMES.node.hint,
+      detail: uiText.t('main.tool.runtimeBuiltin'),
+      hint: uiText.t(RUNTIMES.node.hintKey),
       source: 'builtin',
       meta: { command: process.execPath, prefix: [] },
     },
     {
       id: 'python',
-      label: RUNTIMES.python.label,
+      label: uiText.t(RUNTIMES.python.labelKey),
       available: Boolean(python),
       version: python?.version ?? '',
       detail: python?.detail ?? '',
       source: python?.source ?? '',
       hint: python
-        ? RUNTIMES.python.hint
-        : '没有找到 Python 3。安装 Python 并勾选“Add to PATH”，或把便携版放到 <数据目录>/runtimes/python/python.exe。',
+        ? uiText.t(RUNTIMES.python.hintKey)
+        : uiText.t('main.tool.runtimePythonMissing'),
       meta: python ? { command: python.command, prefix: python.prefix } : null,
     },
     {
       id: 'executable',
-      label: RUNTIMES.executable.label,
+      label: uiText.t(RUNTIMES.executable.labelKey),
       available: true,
       version: '',
-      detail: '由你填写',
-      hint: RUNTIMES.executable.hint,
+      detail: uiText.t('main.tool.runtimeUserProvided'),
+      hint: uiText.t(RUNTIMES.executable.hintKey),
       source: '',
       meta: null,
     },
@@ -747,7 +765,10 @@ async function resolveRuntime(runtime) {
   const row = rows.find((item) => item.id === runtime);
   if (!row || !row.available || !row.meta) {
     throw new Error(
-      `${RUNTIMES[runtime]?.label ?? runtime} 不可用。${row?.hint ?? '请换一种执行方式。'}`,
+      uiText.t('main.tool.runtimeUnavailable', {
+        label: RUNTIMES[runtime] ? uiText.t(RUNTIMES[runtime].labelKey) : runtime,
+        hint: row?.hint ?? uiText.t('main.tool.runtimePickAnother'),
+      }),
     );
   }
   return { ...row.meta, source: row.source };
@@ -768,7 +789,7 @@ function scriptInvocation(runtime, file, meta, args) {
 
 async function runCustom(ctx, definition, args = {}, agentDir = '') {
   if (definition.network && ctx.webEnabled === false) {
-    throw new Error('联网开关没有打开，不能调用这个功能。');
+    throw new Error(uiText.t('main.tool.errNetworkOff'));
   }
 
   for (const parameter of definition.parameters) {
@@ -777,7 +798,7 @@ async function runCustom(ctx, definition, args = {}, agentDir = '') {
     if (!parameter.required || parameter.secret) continue;
     const value = args[parameter.name];
     if (value === undefined || value === null || String(value).trim() === '') {
-      throw new Error(`缺少必填参数 ${parameter.name}`);
+      throw new Error(uiText.t('main.tool.errMissingParam', { name: parameter.name }));
     }
   }
 
@@ -807,10 +828,10 @@ async function runCustom(ctx, definition, args = {}, agentDir = '') {
       (parameter) => parameter.secret && placeholders.has(parameter.name),
     );
     if (leaked) {
-      throw new Error(`参数 ${leaked.name} 是保密参数，不能写进自定义命令模板。`);
+      throw new Error(uiText.t('main.tool.errSecretTemplate', { name: leaked.name }));
     }
     argv = substitute(tokens, resolved);
-    if (argv.length === 0 || !argv[0]) throw new Error('执行命令为空。');
+    if (argv.length === 0 || !argv[0]) throw new Error(uiText.t('main.tool.errCommandEmptyRun'));
   } else {
     meta = await resolveRuntime(definition.runtime);
     const file = await ensureScriptFile(agentDir, definition);
@@ -841,7 +862,10 @@ async function runCustom(ctx, definition, args = {}, agentDir = '') {
       const installed = await ensureDeclaredDependencies(ctx, definition, agentDir, meta);
       if (!installed.ok) {
         throw new Error(
-          `依赖安装失败（${definition.dependencies.join('、')}）：${installed.error}`,
+          uiText.t('main.tool.errDepsInstall', {
+            specs: definition.dependencies.join(uiText.t('main.tool.listSeparator')),
+            error: installed.error,
+          }),
         );
       }
       if (definition.runtime === 'python' && installed.pythonPath) {
@@ -872,7 +896,13 @@ async function runCustom(ctx, definition, args = {}, agentDir = '') {
       pythonMeta: meta,
     });
     if (!installed.ok) {
-      throw new Error(`${error.message}\n\n自动安装依赖失败（${specs.join('、')}）：${installed.error}`);
+      throw new Error(
+        uiText.t('main.tool.errAutoDepsInstall', {
+          message: error.message,
+          specs: specs.join(uiText.t('main.tool.listSeparator')),
+          error: installed.error,
+        }),
+      );
     }
     const retryEnv =
       definition.runtime === 'python' && installed.pythonPath
@@ -968,12 +998,12 @@ function normalizeCategoryName(raw) {
     .trim()
     .replace(/\s+/g, ' ')
     .slice(0, MAX_CATEGORY_NAME);
-  if (!name) return { ok: false, error: '分类名称不能为空。' };
+  if (!name) return { ok: false, error: uiText.t('main.tool.errCategoryEmpty') };
   if (RESERVED_CATEGORY_NAMES.has(name)) {
-    return { ok: false, error: `「${name}」是内置能力分类，不能再建同名分类。` };
+    return { ok: false, error: uiText.t('main.tool.errCategoryReserved', { name }) };
   }
   if (/[\\/:*?"<>|]/.test(name)) {
-    return { ok: false, error: '分类名称不能包含 \\ / : * ? " < > |。' };
+    return { ok: false, error: uiText.t('main.tool.errCategoryChars') };
   }
   return { ok: true, name };
 }

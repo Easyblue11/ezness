@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { VoiceEvent, VoiceModelStatus, VoiceSettings } from '../../types';
+import { useI18n } from '../../i18n';
 import { MicIcon, RefreshIcon } from '../Icons';
 
 interface Props {
@@ -19,6 +20,7 @@ function formatSize(bytes: number): string {
 }
 
 export function VoiceSection({ voice, onChange }: Props) {
+  const { t } = useI18n();
   const api = window.ezness;
   const [status, setStatus] = useState<VoiceModelStatus | null>(null);
   const [devices, setDevices] = useState<InputDevice[]>([]);
@@ -38,7 +40,7 @@ export function VoiceSection({ voice, onChange }: Props) {
 
   const refreshDevices = useCallback(async (ask: boolean) => {
     if (!navigator.mediaDevices?.enumerateDevices) {
-      setDeviceError('当前环境不支持枚举音频设备。');
+      setDeviceError(t('settings.voice.device.unsupported'));
       return;
     }
 
@@ -50,7 +52,9 @@ export function VoiceSection({ voice, onChange }: Props) {
         stream.getTracks().forEach((track) => track.stop());
       } catch (error) {
         setDeviceError(
-          `麦克风授权失败：${error instanceof Error ? error.message : String(error)}`,
+          t('settings.voice.device.permissionFailed', {
+            error: error instanceof Error ? error.message : String(error),
+          }),
         );
       } finally {
         setAsking(false);
@@ -63,7 +67,7 @@ export function VoiceSection({ voice, onChange }: Props) {
         .filter((device) => device.kind === 'audioinput')
         .map((device, index) => ({
           deviceId: device.deviceId,
-          label: device.label || `输入设备 ${index + 1}`,
+          label: device.label || t('settings.voice.device.input', { count: index + 1 }),
         }));
       setDevices(inputs);
       // Chromium hides labels until the origin has microphone permission.
@@ -72,10 +76,12 @@ export function VoiceSection({ voice, onChange }: Props) {
       );
     } catch (error) {
       setDeviceError(
-        `读取音频设备失败：${error instanceof Error ? error.message : String(error)}`,
+        t('settings.voice.device.readFailed', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
       );
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void refreshStatus();
@@ -109,7 +115,7 @@ export function VoiceSection({ voice, onChange }: Props) {
     const result = await api.voiceDownload();
     setDownloading(false);
     if (result.status) setStatus(result.status);
-    if (!result.ok) setDownloadError(result.error ?? '下载失败');
+    if (!result.ok) setDownloadError(result.error ?? t('settings.voice.download.failed'));
   }
 
   const percent = progress
@@ -123,8 +129,8 @@ export function VoiceSection({ voice, onChange }: Props) {
     <div className="section">
       <div className="section__head">
         <div>
-          <h2>语音配置</h2>
-          <p>语音识别完全在本机运行：Silero VAD 负责断句，SenseVoiceSmall 负责转写，音频不会上传。</p>
+          <h2>{t('settings.voice.title')}</h2>
+          <p>{t('settings.voice.desc')}</p>
         </div>
         <button
           className="btn btn--ghost"
@@ -132,27 +138,27 @@ export function VoiceSection({ voice, onChange }: Props) {
           onClick={() => void refreshDevices(true)}
         >
           <MicIcon size={14} />
-          {asking ? '等待授权…' : '授权麦克风'}
+          {asking ? t('settings.voice.waiting') : t('settings.voice.authorize')}
         </button>
       </div>
 
       <section className="kb-card">
         <div className="kb-card__title">
           <MicIcon size={15} />
-          麦克风 / 声卡
+          {t('settings.voice.device.title')}
         </div>
-        <p className="kb-card__desc">
-          选择语音输入使用的录音设备。系统会以 16 kHz 单声道采集，修改后下一条语音生效。
-        </p>
+        <p className="kb-card__desc">{t('settings.voice.device.desc')}</p>
         <div className="kb-card__row">
           <select
             className="select"
             value={voice.inputDeviceId}
             onChange={(event) => onChange({ inputDeviceId: event.target.value })}
           >
-            <option value="">系统默认输入设备</option>
+            <option value="">{t('settings.voice.device.systemDefault')}</option>
             {savedMissing && (
-              <option value={voice.inputDeviceId}>已保存的设备（当前不可用）</option>
+              <option value={voice.inputDeviceId}>
+                {t('settings.voice.device.savedMissing')}
+              </option>
             )}
             {devices.map((device) => (
               <option key={device.deviceId} value={device.deviceId}>
@@ -162,23 +168,18 @@ export function VoiceSection({ voice, onChange }: Props) {
           </select>
           <button className="btn" onClick={() => void refreshDevices(false)}>
             <RefreshIcon size={14} />
-            刷新
+            {t('system.refresh')}
           </button>
         </div>
         {needsPermission && (
-          <div className="notice notice--warn">
-            还没有拿到麦克风权限，系统只显示占位名称。点右上角「授权麦克风」后再刷新。
-          </div>
+          <div className="notice notice--warn">{t('settings.voice.permissionNotice')}</div>
         )}
         {deviceError && <div className="notice notice--warn">{deviceError}</div>}
       </section>
 
       <section className="kb-card">
-        <div className="kb-card__title">识别模型</div>
-        <p className="kb-card__desc">
-          Silero VAD（2.3 MB）+ SenseVoiceSmall INT8 ONNX（约 228 MB），由 sherpa-onnx
-          在本机推理，支持中、英、日、韩、粤语。
-        </p>
+        <div className="kb-card__title">{t('settings.voice.model.title')}</div>
+        <p className="kb-card__desc">{t('settings.voice.model.desc')}</p>
 
         <div className="voice-files">
           {(status?.files ?? []).map((file) => (
@@ -187,16 +188,18 @@ export function VoiceSection({ voice, onChange }: Props) {
               <span className="voice-file__label">{file.label}</span>
               <span className="voice-file__meta">
                 {file.ready
-                  ? `已就绪 · ${formatSize(file.size)}`
+                  ? t('settings.voice.file.ready', { size: formatSize(file.size) })
                   : file.size > 0
-                    ? `文件不完整 · ${formatSize(file.size)}`
-                    : '未下载'}
+                    ? t('settings.voice.file.incomplete', { size: formatSize(file.size) })
+                    : t('settings.voice.file.missing')}
               </span>
             </div>
           ))}
         </div>
 
-        {status && <div className="kb-card__meta">模型目录：{status.dir}</div>}
+        {status && (
+          <div className="kb-card__meta">{t('settings.voice.modelDir', { dir: status.dir })}</div>
+        )}
 
         {progress && (
           <div className="voice-progress">
@@ -204,8 +207,12 @@ export function VoiceSection({ voice, onChange }: Props) {
               <span style={{ width: `${percent}%` }} />
             </div>
             <div className="voice-progress__meta">
-              正在下载 {progress.label} · {percent}%（{formatSize(progress.received)} /{' '}
-              {formatSize(progress.total)}）
+              {t('settings.voice.progress', {
+                label: progress.label,
+                percent,
+                received: formatSize(progress.received),
+                total: formatSize(progress.total),
+              })}
             </div>
           </div>
         )}
@@ -214,14 +221,20 @@ export function VoiceSection({ voice, onChange }: Props) {
 
         <div className="kb-card__row">
           <button className="btn btn--primary" disabled={downloading} onClick={() => void download()}>
-            {downloading ? '正在下载…' : ready ? '检查并补全模型' : '下载语音模型（约 230 MB）'}
+            {downloading
+              ? t('settings.voice.downloading')
+              : ready
+                ? t('settings.voice.complete')
+                : t('settings.voice.download')}
           </button>
           {downloading && (
             <button className="btn" onClick={() => void api?.voiceCancelDownload()}>
-              取消
+              {t('settings.voice.cancel')}
             </button>
           )}
-          {ready && !downloading && <span className="kb-card__meta">语音输入已可用。</span>}
+          {ready && !downloading && (
+            <span className="kb-card__meta">{t('settings.voice.ready')}</span>
+          )}
         </div>
       </section>
     </div>

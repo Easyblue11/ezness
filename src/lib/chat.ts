@@ -1,5 +1,13 @@
 import type { Message, Session, WarehouseReadResult } from '../types';
 
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+/** Rendering context for an exported transcript; the UI supplies both. */
+export interface SessionMarkdownOptions {
+  t: Translate;
+  locale: string;
+}
+
 /**
  * Attachment text goes into the user turn, so every later message in the
  * session carries it again. 32k characters keeps a couple of normal documents
@@ -58,12 +66,40 @@ export function buildAttachmentContext(reads: WarehouseReadResult[]): string {
   return ['以下是用户在本条消息里附带的文件内容：', ...blocks].join('\n\n');
 }
 
+/**
+ * English fallbacks for callers that do not pass a translator yet. Keeping them
+ * here means an export never prints a raw i18n key.
+ */
+const FALLBACK_EXPORT: Record<string, string> = {
+  'app.export.model': 'Model: {model}',
+  'app.export.messageCount': 'Messages: {count}',
+  'app.export.exportedAt': 'Exported: {time}',
+  'app.export.user': 'User',
+  'app.export.assistant': 'Assistant',
+  'app.export.summaryHeading': 'Compressed summary · {time}',
+  'app.export.summaryNote': '> Folded {count} earlier messages (about {before} → {after} tokens).',
+  'app.export.empty': '(empty)',
+};
+
+const PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
+
+function fallbackTranslate(key: string, vars?: Record<string, string | number>): string {
+  const text = FALLBACK_EXPORT[key] ?? key;
+  if (!vars) return text;
+  return text.replace(PLACEHOLDER, (whole, name: string) =>
+    vars[name] === undefined ? whole : String(vars[name]),
+  );
+}
+
 /** Markdown handed to the save dialog when a conversation is exported. */
 export function buildSessionMarkdown(
   session: Pick<Session, 'id' | 'title'>,
   messages: Message[],
   modelLabel: string,
+  i18n?: SessionMarkdownOptions,
 ): string {
+  const t = i18n?.t ?? fallbackTranslate;
+  const locale = i18n?.locale ?? 'en-US';
   // Compressed originals stay in the file for search/undo, but they are not
   // part of the visible transcript any more.
   const items = messages.filter(
@@ -72,29 +108,31 @@ export function buildSessionMarkdown(
   const lines = [
     `# ${session.title}`,
     '',
-    `- 模型：${modelLabel}`,
-    `- 消息数：${items.length}`,
-    `- 导出时间：${new Date().toLocaleString('zh-CN')}`,
+    `- ${t('app.export.model', { model: modelLabel })}`,
+    `- ${t('app.export.messageCount', { count: items.length })}`,
+    `- ${t('app.export.exportedAt', { time: new Date().toLocaleString(locale) })}`,
     '',
   ];
 
   for (const message of items) {
-    const who = message.role === 'user' ? '用户' : '助手';
-    const time = new Date(message.createdAt).toLocaleString('zh-CN');
+    const who = message.role === 'user' ? t('app.export.user') : t('app.export.assistant');
+    const time = new Date(message.createdAt).toLocaleString(locale);
     if (message.summary) {
       lines.push(
-        `## 压缩摘要 · ${time}`,
+        `## ${t('app.export.summaryHeading', { time })}`,
         '',
-        `> 已压缩 ${message.summary.count} 条较早消息（约 ${Math.round(
-          message.summary.tokensBefore,
-        )} → ${Math.round(message.summary.tokensAfter)} 词元）。`,
+        t('app.export.summaryNote', {
+          count: message.summary.count,
+          before: Math.round(message.summary.tokensBefore),
+          after: Math.round(message.summary.tokensAfter),
+        }),
         '',
-        message.content.trim() || '（空）',
+        message.content.trim() || t('app.export.empty'),
         '',
       );
       continue;
     }
-    lines.push(`## ${who} · ${time}`, '', message.content.trim() || '（空）', '');
+    lines.push(`## ${who} · ${time}`, '', message.content.trim() || t('app.export.empty'), '');
   }
 
   return lines.join('\n');
@@ -106,6 +144,6 @@ export function buildSessionMarkdown(
  * are close to one token each, everything else averages ~4 characters per token.
  */
 export function estimateTokens(text: string): number {
-  const cjk = text.match(/[㐀-䶿一-鿿豈-﫿]/g)?.length ?? 0;
+  const cjk = text.match(/[\u3400-\u4dbf\u4e00-\u9fff\u8c48-\ufaff]/g)?.length ?? 0;
   return cjk + (text.length - cjk) / 4;
 }

@@ -5,6 +5,7 @@
 
 const path = require('node:path');
 const { utilityProcess } = require('electron');
+const uiText = require('../ui-text');
 
 const REQUEST_TIMEOUT = 300_000;
 
@@ -31,12 +32,16 @@ class OcrService {
       if (message.ok) {
         pending.resolve(message);
       } else {
-        pending.reject(new Error(message.error || 'OCR 识别失败'));
+        pending.reject(new Error(message.error || uiText.t('main.ocr.error.failed')));
       }
     });
 
     child.on('exit', (code) => {
-      const error = new Error(`OCR 进程已退出（代码 ${code ?? '未知'}）`);
+      const error = new Error(
+        uiText.t('main.ocr.error.processExited', {
+          code: code ?? uiText.t('main.ocr.error.unknownCode'),
+        }),
+      );
       for (const [id, pending] of this.pending) {
         this.pending.delete(id);
         clearTimeout(pending.timer);
@@ -56,7 +61,7 @@ class OcrService {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error('OCR 超时，已停止这次识别'));
+        reject(new Error(uiText.t('main.ocr.error.timeout')));
         try {
           child.kill();
         } catch {
@@ -88,7 +93,7 @@ class OcrService {
     for (const [id, pending] of this.pending) {
       this.pending.delete(id);
       clearTimeout(pending.timer);
-      pending.reject(new Error('应用正在退出'));
+      pending.reject(new Error(uiText.t('main.ocr.error.appQuitting')));
     }
     try {
       this.child?.kill();

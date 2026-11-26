@@ -24,6 +24,7 @@ const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const { spawn } = require('node:child_process');
 const pythonEnv = require('../python-env');
+const uiText = require('../ui-text');
 
 const MAX_DEPS = 12;
 const MAX_SPEC_LENGTH = 80;
@@ -69,7 +70,9 @@ const PY_ALIASES = {
 
 function clip(text, limit = OUTPUT_LIMIT) {
   const value = String(text ?? '').trim();
-  return value.length <= limit ? value : `${value.slice(0, limit)}\n…（输出已截断）`;
+  return value.length <= limit
+    ? value
+    : `${value.slice(0, limit)}\n${uiText.t('main.deps.clip.truncated')}`;
 }
 
 function pyPackagesDir(root) {
@@ -128,7 +131,7 @@ function normalizeDependencies(runtime, raw) {
     const spec = String(item ?? '').trim();
     if (!spec) continue;
     if (spec.length > MAX_SPEC_LENGTH) {
-      errors.push(`依赖「${spec.slice(0, 30)}…」太长。`);
+      errors.push(uiText.t('main.deps.error.specTooLong', { spec: `${spec.slice(0, 30)}…` }));
       continue;
     }
     const valid =
@@ -138,8 +141,8 @@ function normalizeDependencies(runtime, raw) {
     if (!valid) {
       errors.push(
         runtime === 'python'
-          ? `依赖「${spec}」不合法。只能写包名和版本，例如 requests 或 pandas==2.2.3。`
-          : `依赖「${spec}」不合法。只能写包名和版本，例如 lodash 或 lodash@4.17.21。`,
+          ? uiText.t('main.deps.error.invalidPythonSpec', { spec })
+          : uiText.t('main.deps.error.invalidNodeSpec', { spec }),
       );
       continue;
     }
@@ -150,7 +153,7 @@ function normalizeDependencies(runtime, raw) {
     if (specs.length >= MAX_DEPS) break;
   }
   if (specs.length >= MAX_DEPS && list.length > MAX_DEPS) {
-    errors.push(`依赖最多 ${MAX_DEPS} 个。`);
+    errors.push(uiText.t('main.deps.error.tooMany', { max: MAX_DEPS }));
   }
   return { specs, errors };
 }
@@ -220,7 +223,11 @@ function run(argv, { cwd, env, timeoutMs = INSTALL_TIMEOUT_MS, shell = false }) 
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
-      resolve({ ok: false, code: -1, output: `无法启动：${error?.message || String(error)}` });
+      resolve({
+        ok: false,
+        code: -1,
+        output: uiText.t('main.deps.error.spawn', { error: error?.message || String(error) }),
+      });
       return;
     }
 
@@ -244,7 +251,11 @@ function run(argv, { cwd, env, timeoutMs = INSTALL_TIMEOUT_MS, shell = false }) 
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ ok: false, code: -1, output: `无法启动：${error?.message || String(error)}` });
+      resolve({
+        ok: false,
+        code: -1,
+        output: uiText.t('main.deps.error.spawn', { error: error?.message || String(error) }),
+      });
     });
     child.on('close', (code) => {
       if (settled) return;
@@ -309,7 +320,7 @@ async function installPython(root, specs, pythonMeta) {
       return {
         ok: false,
         output: '',
-        error: '数据目录里的 Python 环境没有 pip。请到「设置 → 程序环境」点「检查并补全环境」。',
+        error: uiText.t('main.deps.error.envNoPip'),
       };
     }
     const result = await run([
@@ -326,15 +337,18 @@ async function installPython(root, specs, pythonMeta) {
     ], { env: childEnv({ PYTHONNOUSERSITE: '1' }) });
     return result.ok
       ? { ok: true, output: result.output, pythonPath: '' }
-      : { ok: false, output: result.output, error: result.output || 'pip 安装失败。' };
+      : {
+          ok: false,
+          output: result.output,
+          error: result.output || uiText.t('main.deps.error.pipFailed'),
+        };
   }
 
   if (!pythonMeta?.command) {
     return {
       ok: false,
       output: '',
-      error:
-        '没有可用的 Python。请到「设置 → 程序环境」部署独立 Python 环境，或安装 Python 3 后重试。',
+      error: uiText.t('main.deps.error.noPython'),
     };
   }
 
@@ -358,8 +372,8 @@ async function installPython(root, specs, pythonMeta) {
 
   if (!result.ok) {
     const hint = /No module named pip/i.test(result.output)
-      ? '这个 Python 里没有 pip。请到「设置 → 程序环境」部署独立 Python 环境。'
-      : result.output || 'pip 安装失败。';
+      ? uiText.t('main.deps.error.pythonNoPip')
+      : result.output || uiText.t('main.deps.error.pipFailed');
     return { ok: false, output: result.output, error: hint };
   }
   return { ok: true, output: result.output, pythonPath: target };
@@ -371,8 +385,7 @@ async function installNode(agentDir, specs) {
     return {
       ok: false,
       output: '',
-      error:
-        '没有找到 npm。Node.js 功能需要 npm 安装依赖；请安装 Node.js 后重试，或让这个功能不依赖第三方包。',
+      error: uiText.t('main.deps.error.noNpm'),
     };
   }
 
@@ -401,7 +414,11 @@ async function installNode(agentDir, specs) {
   });
   return result.ok
     ? { ok: true, output: result.output, pythonPath: '' }
-    : { ok: false, output: result.output, error: result.output || 'npm 安装失败。' };
+    : {
+        ok: false,
+        output: result.output,
+        error: result.output || uiText.t('main.deps.error.npmFailed'),
+      };
 }
 
 /**
@@ -412,11 +429,21 @@ async function ensureDependencies({ root, agentDir, runtime, specs, pythonMeta }
   const list = (specs ?? []).filter(Boolean);
   if (list.length === 0) return { ok: true, installed: [], output: '', pythonPath: '' };
   if (runtime !== 'node' && runtime !== 'python') {
-    return { ok: false, installed: [], output: '', error: '这种执行方式不支持依赖安装。' };
+    return {
+      ok: false,
+      installed: [],
+      output: '',
+      error: uiText.t('main.deps.error.unsupportedRuntime'),
+    };
   }
   const base = runtime === 'python' ? root : agentDir;
   if (!base) {
-    return { ok: false, installed: [], output: '', error: '没有找到数据目录，无法安装依赖。' };
+    return {
+      ok: false,
+      installed: [],
+      output: '',
+      error: uiText.t('main.deps.error.noDataRoot'),
+    };
   }
 
   const key = cacheKey(runtime, base, list);
@@ -434,7 +461,9 @@ async function ensureDependencies({ root, agentDir, runtime, specs, pythonMeta }
         installed: result.ok ? list : [],
         output: result.output ?? '',
         pythonPath: result.pythonPath ?? '',
-        ...(result.ok ? {} : { error: result.error || '依赖安装失败。' }),
+        ...(result.ok
+          ? {}
+          : { error: result.error || uiText.t('main.deps.error.installFailed') }),
       };
     } catch (error) {
       return {

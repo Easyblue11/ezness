@@ -6,7 +6,16 @@
  * `require('electron')` returning a path string. Strip it for the child only.
  */
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
+
+// Vite empties dist/ before writing, so starting mid-build (or without a
+// build at all) leaves Electron on a blank window. Say so instead.
+const indexFile = path.join(__dirname, '..', 'dist', 'index.html');
+if (!fs.existsSync(indexFile)) {
+  console.error('[Ezness] 缺少 dist/index.html，请先运行 npm run build，再运行 npm start。');
+  process.exit(1);
+}
 
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;

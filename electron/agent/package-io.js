@@ -20,6 +20,7 @@ const crypto = require('node:crypto');
 const customTools = require('./custom-tools');
 const agentsStore = require('./agents');
 const memoryStore = require('./memory');
+const uiText = require('../ui-text');
 
 const CATEGORY_FORMAT = 'ezness.capability';
 const AGENT_FORMAT = 'ezness.agent';
@@ -101,29 +102,30 @@ function parsePackage(raw, expectedFormat) {
     try {
       data = JSON.parse(raw);
     } catch {
-      return { ok: false, error: '文件不是合法的 JSON。' };
+      return { ok: false, error: uiText.t('main.package.badJson') };
     }
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, error: '文件内容不是一个导入包。' };
+    return { ok: false, error: uiText.t('main.package.notPackage') };
   }
   if (data.format !== expectedFormat) {
     return {
       ok: false,
-      error:
+      error: uiText.t(
         expectedFormat === CATEGORY_FORMAT
-          ? '这不是能力分类包。'
-          : '这不是 Agent 包。',
+          ? 'main.package.notCapabilityPackage'
+          : 'main.package.notAgentPackage',
+      ),
     };
   }
   const version = Number(data.version);
   if (!Number.isFinite(version) || version < 1) {
-    return { ok: false, error: '这个包没有写版本号，无法识别。' };
+    return { ok: false, error: uiText.t('main.package.noVersion') };
   }
   if (version > PACKAGE_VERSION) {
     return {
       ok: false,
-      error: `这个包来自更新的版本（v${version}），当前版本读不了。`,
+      error: uiText.t('main.package.newerVersion', { version }),
     };
   }
   return { ok: true, data };
@@ -179,16 +181,16 @@ function applyCategoryPackage(pkg, state) {
   if (state.categories.length >= customTools.MAX_CATEGORIES) {
     return {
       ok: false,
-      error: `分类已经有 ${customTools.MAX_CATEGORIES} 个了，先删掉一些再导入。`,
+      error: uiText.t('main.package.categoryLimit', { count: customTools.MAX_CATEGORIES }),
     };
   }
 
   const warnings = [];
   const takenNames = new Set(state.categories.map((category) => category.name.toLowerCase()));
   const name = uniqueCategoryName(parsed.name, takenNames);
-  if (!name) return { ok: false, error: '同名分类太多了，没法给这个包起一个不冲突的名字。' };
+  if (!name) return { ok: false, error: uiText.t('main.package.duplicateCategories') };
   if (name !== parsed.name) {
-    warnings.push(`已经有「${parsed.name}」了，这个包导入为「${name}」。`);
+    warnings.push(uiText.t('main.package.categoryRenamed', { from: parsed.name, to: name }));
   }
 
   const category = { id: crypto.randomUUID(), name, pinned: false };
@@ -205,18 +207,18 @@ function applyCategoryPackage(pkg, state) {
 
   for (const raw of rawTools) {
     if (!raw || typeof raw !== 'object') {
-      warnings.push('包里有格式不对的功能条目，已跳过。');
+      warnings.push(uiText.t('main.package.badToolEntry'));
       continue;
     }
     if (definitions.length >= customTools.MAX_TOOLS) {
-      warnings.push(`自定义功能已经有 ${customTools.MAX_TOOLS} 个了，剩下的没有导入。`);
+      warnings.push(uiText.t('main.package.toolLimit', { count: customTools.MAX_TOOLS }));
       break;
     }
 
-    const label = String(raw.name ?? '').trim() || '未命名功能';
+    const label = String(raw.name ?? '').trim() || uiText.t('main.package.unnamedTool');
     const toolName = uniqueToolName(label, takenTools);
     if (!toolName) {
-      warnings.push(`功能「${label}」没有导入：同名功能太多了。`);
+      warnings.push(uiText.t('main.package.duplicateToolName', { name: label }));
       continue;
     }
 
@@ -227,7 +229,12 @@ function applyCategoryPackage(pkg, state) {
       { builtinNames: state.builtinNames, others: definitions },
     );
     if (!result.ok) {
-      warnings.push(`功能「${label}」没有导入：${result.errors.join('；')}`);
+      warnings.push(
+        uiText.t('main.package.toolSkipped', {
+          name: label,
+          error: result.errors.join(uiText.getLanguage() === 'en' ? '; ' : '；'),
+        }),
+      );
       continue;
     }
 
@@ -237,7 +244,7 @@ function applyCategoryPackage(pkg, state) {
       delete result.definition.policy;
     }
     if (toolName !== label) {
-      warnings.push(`功能「${label}」重名，导入为「${toolName}」。`);
+      warnings.push(uiText.t('main.package.toolRenamed', { from: label, to: toolName }));
     }
     definitions.push(result.definition);
     takenTools.add(result.definition.name);
@@ -245,9 +252,7 @@ function applyCategoryPackage(pkg, state) {
   }
 
   if (droppedPolicy > 0) {
-    warnings.push(
-      `${droppedPolicy} 个功能原本带自动放行策略，导入后按默认规则逐次确认；需要的话在功能详情里重设。`,
-    );
+    warnings.push(uiText.t('main.package.droppedPolicy', { count: droppedPolicy }));
   }
 
   return {
@@ -274,7 +279,7 @@ function applyAgentPackage(pkg, state) {
   if (state.agents.length >= agentsStore.MAX_AGENTS) {
     return {
       ok: false,
-      error: `最多 ${agentsStore.MAX_AGENTS} 个 Agent，先删掉一些再导入。`,
+      error: uiText.t('main.package.agentLimit', { count: agentsStore.MAX_AGENTS }),
     };
   }
 
@@ -286,14 +291,14 @@ function applyAgentPackage(pkg, state) {
 
   const packs = Array.isArray(pkg.capabilities?.categories) ? pkg.capabilities.categories : [];
   for (const pack of packs) {
-    const label = String(pack?.category?.name ?? '').trim() || '未命名分类';
+    const label = String(pack?.category?.name ?? '').trim() || uiText.t('main.package.unnamedCategory');
     const applied = applyCategoryPackage(pack, {
       categories,
       definitions,
       builtinNames: state.builtinNames,
     });
     if (!applied.ok) {
-      warnings.push(`能力分类「${label}」没有导入：${applied.error}`);
+      warnings.push(uiText.t('main.package.categorySkipped', { name: label, error: applied.error }));
       continue;
     }
     const sourceId = String(pack?.category?.id ?? '');
@@ -304,11 +309,13 @@ function applyAgentPackage(pkg, state) {
   }
 
   const source = pkg.agent && typeof pkg.agent === 'object' ? pkg.agent : {};
-  const requested = String(source.name ?? '').trim() || '导入的 Agent';
+  const requested = String(source.name ?? '').trim() || uiText.t('main.package.importedAgent');
   const takenAgents = new Set(state.agents.map((agent) => agent.name.toLowerCase()));
   const name = uniqueAgentName(requested, takenAgents);
-  if (!name) return { ok: false, error: '同名 Agent 太多了，没法给这个包起一个不冲突的名字。' };
-  if (name !== requested) warnings.push(`已经有「${requested}」了，这个 Agent 导入为「${name}」。`);
+  if (!name) return { ok: false, error: uiText.t('main.package.duplicateAgentName') };
+  if (name !== requested) {
+    warnings.push(uiText.t('main.package.agentRenamed', { from: requested, to: name }));
+  }
 
   const wantedCustom = Array.isArray(source.capabilities?.custom)
     ? source.capabilities.custom.map(String)
@@ -341,11 +348,9 @@ function applyAgentPackage(pkg, state) {
   if (!result.ok) return { ok: false, error: result.errors.join('\n') };
 
   if (lostCategories > 0) {
-    warnings.push(
-      `有 ${lostCategories} 个被引用的分类没能导入，能力范围已按实际导入的分类收好。`,
-    );
+    warnings.push(uiText.t('main.package.lostCategories', { count: lostCategories }));
   }
-  warnings.push('知识库范围不随包导入，需要的话在 Agent 的知识库页重新勾选。');
+  warnings.push(uiText.t('main.package.kbScope'));
 
   const agent = result.agent;
   const entries = [];
@@ -353,7 +358,7 @@ function applyAgentPackage(pkg, state) {
   const rawEntries = Array.isArray(pkg.memory?.entries) ? pkg.memory.entries : [];
   for (const raw of rawEntries) {
     if (entries.length >= memoryStore.MAX_ENTRIES) {
-      warnings.push(`长期记忆最多 ${memoryStore.MAX_ENTRIES} 条，后面的没有导入。`);
+      warnings.push(uiText.t('main.package.memoryLimit', { count: memoryStore.MAX_ENTRIES }));
       break;
     }
     const parsed = memoryStore.normalizeEntry(

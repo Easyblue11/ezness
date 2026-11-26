@@ -20,6 +20,7 @@
 
 const { randomUUID } = require('node:crypto');
 const { appFetch } = require('./app-net');
+const uiText = require('./ui-text');
 
 const DEFAULT_MAX_TOKENS = 4096;
 const OPENCODE_USER_AGENT = 'Ezness/1.0';
@@ -451,10 +452,15 @@ async function streamChat(provider, messages, options = {}) {
       detail = response.ok ? '' : await response.text().catch(() => '');
     }
     if (!response.ok) {
-      throw new Error(`模型接口返回 ${response.status}${detail ? ` · ${detail.slice(0, 200)}` : ''}`);
+      throw new Error(
+        uiText.t('main.chat.httpError', {
+          status: response.status,
+          detail: detail ? ` · ${detail.slice(0, 200)}` : '',
+        }),
+      );
     }
   }
-  if (!response.body) throw new Error('模型接口没有返回流式响应');
+  if (!response.body) throw new Error(uiText.t('main.chat.noStream'));
 
   const decoder = new TextDecoder();
   let buffer = '';
@@ -597,7 +603,8 @@ async function streamChat(provider, messages, options = {}) {
       if (line.startsWith('{') && line.includes('"error"')) {
         try {
           const payload = JSON.parse(line);
-          const detail = payload?.error?.message ?? payload?.error ?? '模型返回错误';
+          const detail =
+            payload?.error?.message ?? payload?.error ?? uiText.t('main.chat.modelError');
           throw new Error(String(detail).slice(0, 300));
         } catch (error) {
           if (error instanceof SyntaxError) return;
@@ -615,7 +622,9 @@ async function streamChat(provider, messages, options = {}) {
     } catch {
       return;
     }
-    if (payload?.type === 'error') throw new Error(payload?.error?.message ?? '模型返回错误');
+    if (payload?.type === 'error') {
+      throw new Error(payload?.error?.message ?? uiText.t('main.chat.modelError'));
+    }
 
     // OpenAI-style usage (the final chunk when stream_options is honoured).
     if (payload?.usage) applyOpenAIUsage(payload.usage);

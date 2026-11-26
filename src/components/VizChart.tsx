@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { VizChart, VizDatum, VizSeries, VizXYDatum } from '../types';
+import { useI18n } from '../i18n';
 import { useElementWidth } from '../lib/useElementWidth';
 
 /**
@@ -48,16 +49,16 @@ function BarGradient({
   );
 }
 
-const TYPE_LABEL: Record<VizChart['type'], string> = {
-  line: '折线图',
-  'smooth-line': '曲线图',
-  scatter: '散点图',
-  pie: '饼图',
-  bar: '柱状图',
-  'horizontal-bar': '条形图',
-  'grouped-bar': '分组柱状图',
-  progress: '占比条',
-  table: '表格',
+const TYPE_KEY: Record<VizChart['type'], string> = {
+  line: 'viz.type.line',
+  'smooth-line': 'viz.type.smoothLine',
+  scatter: 'viz.type.scatter',
+  pie: 'viz.type.pie',
+  bar: 'viz.type.bar',
+  'horizontal-bar': 'viz.type.horizontalBar',
+  'grouped-bar': 'viz.type.groupedBar',
+  progress: 'viz.type.progress',
+  table: 'viz.type.table',
 };
 
 interface TooltipRow {
@@ -87,20 +88,31 @@ function trim(value: number): string {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-function fmt(value: number, unit = ''): string {
+function fmt(
+  value: number,
+  unit: string | undefined,
+  locale: string,
+  t: (key: string) => string,
+): string {
   const abs = Math.abs(value);
+  const chinese = locale.toLowerCase().startsWith('zh');
   let text: string;
-  if (abs >= 100000000) text = `${trim(value / 100000000)}亿`;
-  else if (abs >= 10000) text = `${trim(value / 10000)}万`;
-  else if (abs >= 1000) text = value.toLocaleString('zh-CN', { maximumFractionDigits: 0 });
-  else text = value.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+  if (chinese) {
+    if (abs >= 100000000) text = `${trim(value / 100000000)}${t('viz.unit.yi')}`;
+    else if (abs >= 10000) text = `${trim(value / 10000)}${t('viz.unit.wan')}`;
+    else if (abs >= 1000) text = value.toLocaleString(locale, { maximumFractionDigits: 0 });
+    else text = value.toLocaleString(locale, { maximumFractionDigits: 2 });
+  } else if (abs >= 1000000000) text = `${trim(value / 1000000000)}B`;
+  else if (abs >= 1000000) text = `${trim(value / 1000000)}M`;
+  else if (abs >= 1000) text = `${trim(value / 1000)}K`;
+  else text = value.toLocaleString(locale, { maximumFractionDigits: 2 });
   return unit ? `${text}${unit}` : text;
 }
 
 /** Exact numbers for the table view; charts may abbreviate, tables must not. */
-function fmtFull(value: number, unit = ''): string {
+function fmtFull(value: number, unit: string | undefined, locale: string): string {
   const rounded = Math.round(value * 100) / 100;
-  const text = rounded.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+  const text = rounded.toLocaleString(locale, { maximumFractionDigits: 2 });
   return unit ? `${text}${unit}` : text;
 }
 
@@ -217,6 +229,7 @@ function Tooltip({ state }: { state: TooltipState }) {
 /* ---------------- line / smooth line ---------------- */
 
 function LineChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
+  const { t, locale } = useI18n();
   const W = basis;
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<TooltipState | null>(null);
@@ -226,12 +239,12 @@ function LineChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) 
     () =>
       (chart.series ?? [])
         .map((item, index) => ({
-          name: item.name || `系列 ${index + 1}`,
+          name: item.name || t('viz.seriesFallback', { count: index + 1 }),
           color: COLORS[index % COLORS.length],
           points: item.points.filter(isDatum),
         }))
         .filter((item) => item.points.length >= 2),
-    [chart.series],
+    [chart.series, t],
   );
   const categories = useMemo(() => lineCategories(series), [series]);
 
@@ -276,14 +289,14 @@ function LineChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) 
       return {
         name: item.name,
         color: item.color,
-        value: value === undefined ? '—' : fmt(value, chart.unit),
+        value: value === undefined ? '—' : fmt(value, chart.unit, locale, t),
       };
     });
     setCrossIndex(index);
     setHover(tooltipAt(point.px, point.py, point.width, label, rows));
   };
 
-  if (categories.length < 2) return <div className="viz-empty">数据不足，无法绘图。</div>;
+  if (categories.length < 2) return <div className="viz-empty">{t('viz.insufficient')}</div>;
 
   return (
     <div className="viz-plot">
@@ -308,7 +321,7 @@ function LineChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) 
               y2={yOf(tick)}
             />
             <text className="viz-axis-text" x={pad.left - 8} y={yOf(tick) + 3.5} textAnchor="end">
-              {fmt(tick)}
+              {fmt(tick, '', locale, t)}
             </text>
           </g>
         ))}
@@ -399,6 +412,7 @@ function LineChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) 
 /* ---------------- scatter ---------------- */
 
 function ScatterChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
+  const { t, locale } = useI18n();
   const W = basis;
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<TooltipState | null>(null);
@@ -408,12 +422,12 @@ function ScatterChart({ chart, basis = 560 }: { chart: VizChart; basis?: number 
       (chart.series ?? [])
         .slice(0, 3)
         .map((item, index) => ({
-          name: item.name || `系列 ${index + 1}`,
+          name: item.name || t('viz.seriesFallback', { count: index + 1 }),
           color: COLORS[index % COLORS.length],
           points: item.points.filter(isXY),
         }))
         .filter((item) => item.points.length > 0),
-    [chart.series],
+    [chart.series, t],
   );
 
   const pad = { top: 18, right: 22, bottom: 46, left: 54 };
@@ -442,14 +456,22 @@ function ScatterChart({ chart, basis = 560 }: { chart: VizChart; basis?: number 
       return;
     }
     const rows = [
-      { name: chart.xLabel || 'X', color: best.series.color, value: fmt(best.point.x, chart.unit) },
-      { name: chart.yLabel || 'Y', color: best.series.color, value: fmt(best.point.y, chart.unit) },
+      {
+        name: chart.xLabel || 'X',
+        color: best.series.color,
+        value: fmt(best.point.x, chart.unit, locale, t),
+      },
+      {
+        name: chart.yLabel || 'Y',
+        color: best.series.color,
+        value: fmt(best.point.y, chart.unit, locale, t),
+      },
     ];
     const title = [best.series.name, best.point.label].filter(Boolean).join(' · ');
     setHover(tooltipAt(point.px, point.py, point.width, title, rows));
   };
 
-  if (all.length < 2) return <div className="viz-empty">数据不足，无法绘图。</div>;
+  if (all.length < 2) return <div className="viz-empty">{t('viz.insufficient')}</div>;
 
   return (
     <div className="viz-plot">
@@ -465,7 +487,7 @@ function ScatterChart({ chart, basis = 560 }: { chart: VizChart; basis?: number 
           <g key={`y-${tick}`}>
             <line className="viz-grid-line" x1={pad.left} x2={W - pad.right} y1={yOf(tick)} y2={yOf(tick)} />
             <text className="viz-axis-text" x={pad.left - 8} y={yOf(tick) + 3.5} textAnchor="end">
-              {fmt(tick)}
+              {fmt(tick, '', locale, t)}
             </text>
           </g>
         ))}
@@ -473,7 +495,7 @@ function ScatterChart({ chart, basis = 560 }: { chart: VizChart; basis?: number 
           <g key={`x-${tick}`}>
             <line className="viz-grid-line" x1={xOf(tick)} x2={xOf(tick)} y1={pad.top} y2={H - pad.bottom} />
             <text className="viz-axis-text" x={xOf(tick)} y={H - pad.bottom + 18} textAnchor="middle">
-              {fmt(tick)}
+              {fmt(tick, '', locale, t)}
             </text>
           </g>
         ))}
@@ -543,6 +565,7 @@ function hBarPath(
 }
 
 function BarChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
+  const { t, locale } = useI18n();
   const W = basis;
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<TooltipState | null>(null);
@@ -584,15 +607,15 @@ function BarChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
     setHover(
       tooltipAt(point.px, point.py, point.width, item.label, [
         {
-          name: chart.yLabel || '数值',
+          name: chart.yLabel || t('viz.value'),
           color: COLORS[0],
-          value: fmt(item.value, chart.unit),
+          value: fmt(item.value, chart.unit, locale, t),
         },
       ]),
     );
   };
 
-  if (items.length === 0) return <div className="viz-empty">数据不足，无法绘图。</div>;
+  if (items.length === 0) return <div className="viz-empty">{t('viz.insufficient')}</div>;
 
   return (
     <div className="viz-plot">
@@ -611,7 +634,7 @@ function BarChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
           <g key={tick}>
             <line className="viz-grid-line" x1={pad.left} x2={W - pad.right} y1={yOf(tick)} y2={yOf(tick)} />
             <text className="viz-axis-text" x={pad.left - 8} y={yOf(tick) + 3.5} textAnchor="end">
-              {fmt(tick)}
+              {fmt(tick, '', locale, t)}
             </text>
           </g>
         ))}
@@ -645,7 +668,7 @@ function BarChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
                   y={item.value >= 0 ? top - 6 : top + height + 13}
                   textAnchor="middle"
                 >
-                  {fmt(item.value, chart.unit)}
+                  {fmt(item.value, chart.unit, locale, t)}
                 </text>
               )}
               <g>
@@ -673,6 +696,7 @@ function BarChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
 
 /** Several measures side by side for the same categories (确诊 vs 死亡 …). */
 function GroupedBarChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
+  const { t, locale } = useI18n();
   const W = basis;
   const gradientId = useGradientId();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -684,12 +708,12 @@ function GroupedBarChart({ chart, basis = 560 }: { chart: VizChart; basis?: numb
       (chart.series ?? [])
         .slice(0, 4)
         .map((item, index) => ({
-          name: item.name || `系列 ${index + 1}`,
+          name: item.name || t('viz.seriesFallback', { count: index + 1 }),
           color: COLORS[index % COLORS.length],
           points: item.points.filter(isDatum),
         }))
         .filter((item) => item.points.length > 0),
-    [chart.series],
+    [chart.series, t],
   );
   const categories = useMemo(() => lineCategories(series), [series]);
   const byLabel = useMemo(
@@ -738,14 +762,15 @@ function GroupedBarChart({ chart, basis = 560 }: { chart: VizChart; basis?: numb
           return {
             name: item.name,
             color: item.color,
-            value: value === undefined ? '—' : fmt(value, chart.unit),
+            value: value === undefined ? '—' : fmt(value, chart.unit, locale, t),
           };
         }),
       ),
     );
   };
 
-  if (series.length < 2 || categories.length < 2) return <div className="viz-empty">数据不足，无法绘图。</div>;
+  if (series.length < 2 || categories.length < 2)
+    return <div className="viz-empty">{t('viz.insufficient')}</div>;
 
   return (
     <div className="viz-plot">
@@ -764,7 +789,7 @@ function GroupedBarChart({ chart, basis = 560 }: { chart: VizChart; basis?: numb
           <g key={tick}>
             <line className="viz-grid-line" x1={pad.left} x2={W - pad.right} y1={yOf(tick)} y2={yOf(tick)} />
             <text className="viz-axis-text" x={pad.left - 8} y={yOf(tick) + 3.5} textAnchor="end">
-              {fmt(tick)}
+              {fmt(tick, '', locale, t)}
             </text>
           </g>
         ))}
@@ -827,6 +852,7 @@ function GroupedBarChart({ chart, basis = 560 }: { chart: VizChart; basis?: numb
 }
 
 function HorizontalBarChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
+  const { t, locale } = useI18n();
   const W = basis;
   const gradientId = useGradientId();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -866,15 +892,15 @@ function HorizontalBarChart({ chart, basis = 560 }: { chart: VizChart; basis?: n
     setHover(
       tooltipAt(point.px, point.py, point.width, item.label, [
         {
-          name: chart.xLabel || '数值',
+          name: chart.xLabel || t('viz.value'),
           color: COLORS[0],
-          value: fmt(item.value, chart.unit),
+          value: fmt(item.value, chart.unit, locale, t),
         },
       ]),
     );
   };
 
-  if (items.length === 0) return <div className="viz-empty">数据不足，无法绘图。</div>;
+  if (items.length === 0) return <div className="viz-empty">{t('viz.insufficient')}</div>;
 
   return (
     <div className="viz-plot">
@@ -893,7 +919,7 @@ function HorizontalBarChart({ chart, basis = 560 }: { chart: VizChart; basis?: n
           <g key={tick}>
             <line className="viz-grid-line" x1={xOf(tick)} x2={xOf(tick)} y1={pad.top} y2={viewH - pad.bottom} />
             <text className="viz-axis-text" x={xOf(tick)} y={viewH - pad.bottom + 16} textAnchor="middle">
-              {fmt(tick)}
+              {fmt(tick, '', locale, t)}
             </text>
           </g>
         ))}
@@ -929,7 +955,7 @@ function HorizontalBarChart({ chart, basis = 560 }: { chart: VizChart; basis?: n
                 y={center + 3.5}
                 textAnchor={item.value >= 0 ? 'start' : 'end'}
               >
-                {fmt(item.value, chart.unit)}
+                {fmt(item.value, chart.unit, locale, t)}
               </text>
             </g>
           );
@@ -977,6 +1003,7 @@ function donutSlice(
 }
 
 function PieChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
+  const { t, locale } = useI18n();
   const W = basis;
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -1023,13 +1050,24 @@ function PieChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
     const percent = total > 0 ? (item.value / total) * 100 : 0;
     setHoverIndex(index);
     setHover(
-      tooltipAt(point.px, point.py, point.width, item.label, [
-        { name: '数值', color: COLORS[index % COLORS.length], value: fmt(item.value, chart.unit) },
-      ], `占比 ${percent.toFixed(1)}%`),
+      tooltipAt(
+        point.px,
+        point.py,
+        point.width,
+        item.label,
+        [
+          {
+            name: t('viz.value'),
+            color: COLORS[index % COLORS.length],
+            value: fmt(item.value, chart.unit, locale, t),
+          },
+        ],
+        t('viz.shareNote', { percent: percent.toFixed(1) }),
+      ),
     );
   };
 
-  if (items.length === 0) return <div className="viz-empty">数据不足，无法绘图。</div>;
+  if (items.length === 0) return <div className="viz-empty">{t('viz.insufficient')}</div>;
 
   return (
     <div className="viz-plot">
@@ -1071,10 +1109,10 @@ function PieChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
           );
         })}
         <text className="viz-donut__total" x={cx} y={cy - 2} textAnchor="middle">
-          {fmt(total, chart.unit)}
+          {fmt(total, chart.unit, locale, t)}
         </text>
         <text className="viz-donut__label" x={cx} y={cy + 16} textAnchor="middle">
-          合计
+          {t('viz.total')}
         </text>
       </svg>
       {hover && <Tooltip state={hover} />}
@@ -1085,9 +1123,10 @@ function PieChart({ chart, basis = 560 }: { chart: VizChart; basis?: number }) {
 /* ---------------- table + card ---------------- */
 
 function DataTable({ chart }: { chart: VizChart }) {
+  const { t, locale } = useI18n();
   if (chart.type === 'line' || chart.type === 'smooth-line' || chart.type === 'grouped-bar') {
     const series = (chart.series ?? []).map((item) => ({
-      name: item.name || '数值',
+      name: item.name || t('viz.value'),
       points: item.points.filter(isDatum),
     }));
     const categories = lineCategories(series);
@@ -1096,7 +1135,7 @@ function DataTable({ chart }: { chart: VizChart }) {
         <table className="viz-table">
           <thead>
             <tr>
-              <th>类别</th>
+              <th>{t('viz.table.category')}</th>
               {series.map((item) => (
                 <th key={item.name}>{item.name}</th>
               ))}
@@ -1108,7 +1147,11 @@ function DataTable({ chart }: { chart: VizChart }) {
                 <td>{label}</td>
                 {series.map((item) => {
                   const value = item.points.find((point) => point.label === label)?.value;
-                  return <td key={item.name}>{value === undefined ? '—' : fmtFull(value, chart.unit)}</td>;
+                  return (
+                    <td key={item.name}>
+                      {value === undefined ? '—' : fmtFull(value, chart.unit, locale)}
+                    </td>
+                  );
                 })}
               </tr>
             ))}
@@ -1127,18 +1170,18 @@ function DataTable({ chart }: { chart: VizChart }) {
         <table className="viz-table">
           <thead>
             <tr>
-              <th>系列</th>
+              <th>{t('viz.table.series')}</th>
               <th>{chart.xLabel || 'X'}</th>
               <th>{chart.yLabel || 'Y'}</th>
-              <th>标签</th>
+              <th>{t('viz.table.label')}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row, index) => (
               <tr key={`${row.name}-${index}`}>
                 <td>{row.name}</td>
-                <td>{fmtFull(row.point.x, chart.unit)}</td>
-                <td>{fmtFull(row.point.y, chart.unit)}</td>
+                <td>{fmtFull(row.point.x, chart.unit, locale)}</td>
+                <td>{fmtFull(row.point.y, chart.unit, locale)}</td>
                 <td>{row.point.label || '—'}</td>
               </tr>
             ))}
@@ -1155,16 +1198,16 @@ function DataTable({ chart }: { chart: VizChart }) {
       <table className="viz-table">
         <thead>
           <tr>
-            <th>名称</th>
-            <th>数值</th>
-            {chart.type === 'pie' && <th>占比</th>}
+            <th>{t('viz.table.name')}</th>
+            <th>{t('viz.value')}</th>
+            {chart.type === 'pie' && <th>{t('viz.table.share')}</th>}
           </tr>
         </thead>
         <tbody>
           {items.map((item, index) => (
             <tr key={`${item.label}-${index}`}>
               <td>{item.label}</td>
-              <td>{fmtFull(item.value, chart.unit)}</td>
+              <td>{fmtFull(item.value, chart.unit, locale)}</td>
               {chart.type === 'pie' && (
                 <td>{total > 0 ? `${((item.value / total) * 100).toFixed(1)}%` : '—'}</td>
               )}
@@ -1177,6 +1220,7 @@ function DataTable({ chart }: { chart: VizChart }) {
 }
 
 export function Legend({ chart }: { chart: VizChart }) {
+  const { t, locale } = useI18n();
   if (chart.type === 'pie') {
     const items = chart.items ?? [];
     const total = items.reduce((sum, item) => sum + item.value, 0);
@@ -1187,7 +1231,7 @@ export function Legend({ chart }: { chart: VizChart }) {
             <span className="viz-swatch" style={{ background: COLORS[index % COLORS.length] }} />
             <span className="viz-legend__name">{item.label}</span>
             <span className="viz-legend__value">
-              {fmt(item.value, chart.unit)}
+              {fmt(item.value, chart.unit, locale, t)}
               {total > 0 && <em>{((item.value / total) * 100).toFixed(1)}%</em>}
             </span>
           </li>
@@ -1220,9 +1264,10 @@ export function Legend({ chart }: { chart: VizChart }) {
 
 /** Share / completion ranking bars: label · track · value, one hue. */
 function ProgressChart({ chart }: { chart: VizChart }) {
+  const { t, locale } = useI18n();
   const items = (chart.items ?? []).filter((item) => Number.isFinite(item.value) && item.value >= 0);
   const max = Math.max(...items.map((item) => item.value), 1);
-  if (items.length === 0) return <div className="viz-empty">数据不足，无法绘图。</div>;
+  if (items.length === 0) return <div className="viz-empty">{t('viz.insufficient')}</div>;
   return (
     <div className="viz-progress">
       {items.map((item, index) => (
@@ -1236,7 +1281,7 @@ function ProgressChart({ chart }: { chart: VizChart }) {
               style={{ width: `${Math.max(1.5, (item.value / max) * 100)}%`, background: COLORS[0] }}
             />
           </span>
-          <span className="viz-progress__value">{fmt(item.value, chart.unit)}</span>
+          <span className="viz-progress__value">{fmt(item.value, chart.unit, locale, t)}</span>
         </div>
       ))}
     </div>
@@ -1245,10 +1290,11 @@ function ProgressChart({ chart }: { chart: VizChart }) {
 
 /** The source table shown as-is: the "有图有表" half of a dashboard. */
 function TableChart({ chart }: { chart: VizChart }) {
+  const { t } = useI18n();
   const columns = chart.columns ?? [];
   const rows = chart.rows ?? [];
   if (columns.length === 0 || rows.length === 0) {
-    return <div className="viz-empty">数据不足，无法生成表格。</div>;
+    return <div className="viz-empty">{t('viz.insufficientTable')}</div>;
   }
   return (
     <div className="viz-table-wrap viz-table-wrap--card">
@@ -1298,6 +1344,7 @@ export function VizChartCard({
   /** Opens every row of the file this chart was built from. */
   onOpenTable?: (chart: VizChart) => void;
 }) {
+  const { t } = useI18n();
   const [table, setTable] = useState(false);
   // The viewBox follows the box the chart actually gets. Drawing at a fixed
   // width per span was why a fullscreen card blew the whole chart up: the SVG
@@ -1319,13 +1366,19 @@ export function VizChartCard({
             <button
               type="button"
               className="viz-card__sample"
-              title={`图表只用了 ${chart.table.shown} 行抽样，文件里共有 ${chart.table.total} 行`}
+              title={t('viz.sampleTitle', {
+                shown: chart.table.shown,
+                total: chart.table.total,
+              })}
               onClick={() => onOpenTable(chart)}
             >
-              抽样 {chart.table.shown}/{chart.table.total} · 查看全部
+              {t('viz.sampleButton', {
+                shown: chart.table.shown,
+                total: chart.table.total,
+              })}
             </button>
           )}
-          <span className="viz-card__type">{TYPE_LABEL[chart.type]}</span>
+          <span className="viz-card__type">{t(TYPE_KEY[chart.type])}</span>
           {chart.type !== 'table' && (
             <button
               type="button"
@@ -1333,7 +1386,7 @@ export function VizChartCard({
               aria-pressed={table}
               onClick={() => setTable((value) => !value)}
             >
-              {table ? '图表' : '表格'}
+              {table ? t('viz.viewChart') : t('viz.viewTable')}
             </button>
           )}
         </div>
@@ -1348,12 +1401,12 @@ export function VizChartCard({
       {!table && <Legend chart={chart} />}
       {(chart.xLabel || chart.yLabel) && !table && chart.type !== 'table' && (
         <p className="viz-card__axes">
-          {chart.xLabel && <span>横轴：{chart.xLabel}</span>}
-          {chart.yLabel && <span>纵轴：{chart.yLabel}</span>}
-          {chart.unit && <span>单位：{chart.unit}</span>}
+          {chart.xLabel && <span>{t('viz.xAxis', { label: chart.xLabel })}</span>}
+          {chart.yLabel && <span>{t('viz.yAxis', { label: chart.yLabel })}</span>}
+          {chart.unit && <span>{t('viz.unitLabel', { unit: chart.unit })}</span>}
         </p>
       )}
-      {chart.source && <p className="viz-card__source">数据来源：{chart.source}</p>}
+      {chart.source && <p className="viz-card__source">{t('viz.source', { source: chart.source })}</p>}
     </section>
   );
 }

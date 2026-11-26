@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { WarehouseSnapshot } from '../../types';
+import { useI18n } from '../../i18n';
 import { RefreshIcon, WarehouseIcon } from '../Icons';
 
 function formatSize(bytes: number): string {
@@ -15,6 +16,7 @@ function formatSize(bytes: number): string {
 }
 
 export function WarehouseSection() {
+  const { t } = useI18n();
   const api = window.ezness;
   const [snapshot, setSnapshot] = useState<WarehouseSnapshot | null>(null);
 
@@ -31,39 +33,36 @@ export function WarehouseSection() {
     <div className="section">
       <div className="section__head">
         <div>
-          <h2>仓库</h2>
-          <p>
-            对话里粘贴的图片、文件都保存在这里。只存原文件，不解析、不向量化，和知识仓库互不影响。
-            存储位置统一在「设置 → 系统设置」里管理，仓库放在数据目录的 ezstorge 文件夹。
-          </p>
+          <h2>{t('settings.warehouse.title')}</h2>
+          <p>{t('settings.warehouse.desc')}</p>
         </div>
         <button className="btn btn--ghost" onClick={() => void refresh()}>
           <RefreshIcon size={14} />
-          刷新
+          {t('system.refresh')}
         </button>
       </div>
 
       <section className="kb-card">
         <div className="kb-card__title">
           <WarehouseIcon size={15} />
-          仓库内容
+          {t('settings.warehouse.content.title')}
         </div>
         <p className="kb-card__desc">
           {snapshot
-            ? `当前保存了 ${snapshot.count} 个文件，共 ${formatSize(snapshot.totalBytes)}。`
-            : '正在读取仓库…'}
+            ? t('settings.warehouse.content.summary', {
+                count: snapshot.count,
+                size: formatSize(snapshot.totalBytes),
+              })
+            : t('settings.warehouse.content.reading')}
         </p>
       </section>
 
       <section className="kb-card">
         <div className="kb-card__title">
           <WarehouseIcon size={15} />
-          和知识仓库的关系
+          {t('settings.warehouse.relation.title')}
         </div>
-        <p className="kb-card__desc">
-          仓库和知识仓库是两套独立的目录与索引：仓库里的文件不会进入向量检索，知识仓库里的解析、切片、
-          Embedding 也不会改动仓库里的原件。以后给仓库加处理能力时，也会使用单独的索引。
-        </p>
+        <p className="kb-card__desc">{t('settings.warehouse.relation.desc')}</p>
       </section>
     </div>
   );

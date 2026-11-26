@@ -11,15 +11,20 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { allTools } = require('./tools');
 const { decide } = require('./policy');
+const uiText = require('../ui-text');
 
 const MODE_KEYS = ['read-only', 'plan', 'workspace-write', 'danger-full-access'];
-const MODE_LABELS = {
-  'read-only': '只读',
-  plan: '计划',
-  'workspace-write': '工作区写入',
-  'danger-full-access': '完全访问',
+const MODE_LABEL_KEYS = {
+  'read-only': 'main.policy.modeReadOnly',
+  plan: 'main.policy.modePlan',
+  'workspace-write': 'main.policy.modeWorkspaceWrite',
+  'danger-full-access': 'main.policy.modeDangerFullAccess',
 };
-const DECISION_LABELS = { allow: '自动', ask: '询问', deny: '禁止' };
+const DECISION_LABEL_KEYS = {
+  allow: 'main.tool.decisionAllow',
+  ask: 'main.tool.decisionAsk',
+  deny: 'main.tool.decisionDeny',
+};
 
 const CATEGORY = {
   list_files: '文件读取',
@@ -50,81 +55,127 @@ const IMPLEMENTATION = {
   list_files: {
     file: 'electron/agent/tools.js',
     fn: 'listFiles',
-    process: '主进程内直接执行（Node.js 函数调用，不启动子进程）',
-    limits: ['递归深度 1–5 层，默认 2 层', '跳过 node_modules、.git、dist 等目录', '最多输出 600 行'],
+    process: () => uiText.t('main.tool.impl.inProcess'),
+    limits: () => [
+      uiText.t('main.tool.limit.listDepth'),
+      uiText.t('main.tool.limit.skipDirs'),
+      uiText.t('main.tool.limit.listLines'),
+    ],
   },
   read_file: {
     file: 'electron/agent/tools.js',
     fn: 'readFile',
-    process: '主进程内直接执行（Node.js 函数调用，不启动子进程）',
-    limits: ['单文件上限 120 KB', '默认读 400 行，最多 2000 行', '路径限制在工作空间内', '检测到二进制内容时拒绝读取'],
+    process: () => uiText.t('main.tool.impl.inProcess'),
+    limits: () => [
+      uiText.t('main.tool.limit.readSize'),
+      uiText.t('main.tool.limit.readLines'),
+      uiText.t('main.tool.limit.pathJail'),
+      uiText.t('main.tool.limit.binaryRead'),
+    ],
   },
   glob_search: {
     file: 'electron/agent/tools.js',
     fn: 'globSearch',
-    process: '主进程内直接执行（Node.js 函数调用，不启动子进程）',
-    limits: ['最多扫描 8000 个文件', '最多返回 300 个匹配', '跳过常见依赖目录'],
+    process: () => uiText.t('main.tool.impl.inProcess'),
+    limits: () => [
+      uiText.t('main.tool.limit.globScan'),
+      uiText.t('main.tool.limit.globMatches'),
+      uiText.t('main.tool.limit.skipDeps'),
+    ],
   },
   grep_search: {
     file: 'electron/agent/tools.js',
     fn: 'grepSearch',
-    process: '主进程内直接执行（Node.js 函数调用，不启动子进程）',
-    limits: ['默认返回 80 条，最多 300 条', '跳过大于 512 KB 的文件', '单条匹配只保留前 240 个字符'],
+    process: () => uiText.t('main.tool.impl.inProcess'),
+    limits: () => [
+      uiText.t('main.tool.limit.grepResults'),
+      uiText.t('main.tool.limit.grepSize'),
+      uiText.t('main.tool.limit.grepChars'),
+    ],
   },
   write_file: {
     file: 'electron/agent/tools.js',
     fn: 'writeFile',
-    process: '主进程内直接执行（Node.js 函数调用，不启动子进程）',
-    limits: ['单次写入上限 2 MB', '自动创建父目录', '路径限制在工作空间内'],
+    process: () => uiText.t('main.tool.impl.inProcess'),
+    limits: () => [
+      uiText.t('main.tool.limit.writeSize'),
+      uiText.t('main.tool.limit.autoParent'),
+      uiText.t('main.tool.limit.pathJail'),
+    ],
   },
   edit_file: {
     file: 'electron/agent/tools.js',
     fn: 'editFile',
-    process: '主进程内直接执行（Node.js 函数调用，不启动子进程）',
-    limits: ['old_string 必须能在文件里唯一匹配，或设置 replace_all', '路径限制在工作空间内'],
+    process: () => uiText.t('main.tool.impl.inProcess'),
+    limits: () => [
+      uiText.t('main.tool.limit.oldStringUnique'),
+      uiText.t('main.tool.limit.pathJail'),
+    ],
   },
   run_command: {
     file: 'electron/agent/tools.js',
     fn: 'runCommand',
-    process: '启动系统 shell 子进程（shell: true）',
-    limits: ['默认超时 120 秒，范围 1–300 秒', '输出上限 48 KB', '工作目录限制在工作空间内', '破坏性命令与越界路径由权限策略拦截'],
+    process: () => uiText.t('main.tool.impl.shell'),
+    limits: () => [
+      uiText.t('main.tool.limit.commandTimeout'),
+      uiText.t('main.tool.limit.outputSize'),
+      uiText.t('main.tool.limit.commandCwd'),
+      uiText.t('main.tool.limit.destructiveGate'),
+    ],
   },
   smoke_check: {
     file: 'electron/agent/tools.js',
     fn: 'smokeCheck',
-    process: '主进程内启动本地服务子进程，按 steps 发本机请求，结束后结束整个进程树',
-    limits: [
-      '只请求 127.0.0.1，同一端口被别的程序占用时拒绝启动',
-      '等待端口 2–60 秒，每个请求超时 1–30 秒',
-      '一次最多 30 个请求；正文只保留前 200 KB 用来核对',
-      '支持重启后复查、清理请求和 {{0.字段}} 传值',
+    process: () => uiText.t('main.tool.impl.smoke'),
+    limits: () => [
+      uiText.t('main.tool.limit.smokeLocal'),
+      uiText.t('main.tool.limit.smokeWaits'),
+      uiText.t('main.tool.limit.smokeRequests'),
+      uiText.t('main.tool.limit.smokeFeatures'),
     ],
   },
   todo_write: {
     file: 'electron/agent/tools.js',
     fn: 'todoWrite',
-    process: '主进程内直接执行（只更新任务清单，不访问文件）',
-    limits: ['最多 30 项', '每项内容最多 200 个字符'],
+    process: () => uiText.t('main.tool.impl.todo'),
+    limits: () => [uiText.t('main.tool.limit.todoCount'), uiText.t('main.tool.limit.todoChars')],
   },
   web_search: {
     file: 'electron/agent/tools.js',
     fn: 'webSearchTool',
-    process: '主进程内直接执行（调用已启用的搜索源）',
-    limits: ['必须打开「联网」开关', '最多返回 6 条结果'],
+    process: () => uiText.t('main.tool.impl.webSearch'),
+    limits: () => [uiText.t('main.tool.limit.webOn'), uiText.t('main.tool.limit.webResults')],
   },
   web_fetch: {
     file: 'electron/agent/tools.js',
     fn: 'webFetchTool',
-    process: '主进程内直接执行（HTTP 抓取并转成纯文本）',
-    limits: ['响应上限 4 MB', '正文最多 60000 个字符', '超时 20 秒', '必须打开「联网」开关'],
+    process: () => uiText.t('main.tool.impl.webFetch'),
+    limits: () => [
+      uiText.t('main.tool.limit.fetchSize'),
+      uiText.t('main.tool.limit.fetchChars'),
+      uiText.t('main.tool.limit.fetchTimeout'),
+      uiText.t('main.tool.limit.webOn'),
+    ],
   },
   ask_user: {
     file: 'electron/agent/tools.js',
     fn: 'askUser',
-    process: '主进程内阻塞等待用户在界面上回答',
-    limits: ['在所有权限模式下都直接执行', '最多提供 4 个预设选项'],
+    process: () => uiText.t('main.tool.impl.askUser'),
+    limits: () => [uiText.t('main.tool.limit.askEveryMode'), uiText.t('main.tool.limit.askOptions')],
   },
 };
+
+/** Materialise the display-only implementation strings in the current language. */
+function implementationOf(name) {
+  const entry = IMPLEMENTATION[name];
+  if (!entry) return null;
+  return {
+    file: entry.file,
+    fn: entry.fn,
+    process: entry.process(),
+    limits: entry.limits(),
+  };
+}
 
 /** Same shape as the schema, flattened for display. */
 function parametersOf(schema) {
@@ -160,36 +211,42 @@ function policyMatrix(tool) {
 }
 
 function policyNote(tool) {
-  if (tool.interactive) return '始终直接执行：向用户提问并等待回答。';
+  if (tool.interactive) return uiText.t('main.tool.note.always');
   if (tool.custom) {
     if (!tool.readOnly && tool.policy) {
       const parts = MODE_KEYS.map(
-        (mode) => `${MODE_LABELS[mode]} ${DECISION_LABELS[tool.policy[mode]] ?? '自动'}`,
+        (mode) =>
+          `${uiText.t(MODE_LABEL_KEYS[mode])} ${
+            DECISION_LABEL_KEYS[tool.policy[mode]]
+              ? uiText.t(DECISION_LABEL_KEYS[tool.policy[mode]])
+              : uiText.t('main.tool.decisionAllow')
+          }`,
       );
-      return `自定义权限策略：${parts.join(' · ')}。${
-        tool.network ? '调用前需要打开「联网」开关。' : ''
-      }`;
+      return uiText.t('main.tool.note.customPolicy', {
+        parts: parts.join(' · '),
+        network: tool.network ? uiText.t('main.tool.note.networkRequired') : '',
+      });
     }
     if (tool.network) {
       return tool.readOnly
-        ? '自定义联网只读功能：需要打开「联网」开关；在所有权限模式下自动执行。'
-        : '自定义联网功能：需要打开「联网」开关；只读和计划模式下禁止，其余模式自动执行。';
+        ? uiText.t('main.tool.note.customNetworkReadOnly')
+        : uiText.t('main.tool.note.customNetwork');
     }
     return tool.readOnly
-      ? '自定义只读功能：在所有权限模式下自动执行。'
-      : '自定义变更功能：只读和计划模式下禁止，其余模式自动执行。';
+      ? uiText.t('main.tool.note.customReadOnly')
+      : uiText.t('main.tool.note.customWrite');
   }
-  if (tool.network) return '需要打开「联网」开关；开启后搜索与抓取不再逐次询问。';
-  if (tool.readOnly) return '只读工具，在所有权限模式下自动放行。';
+  if (tool.network) return uiText.t('main.tool.note.network');
+  if (tool.readOnly) return uiText.t('main.tool.note.readOnly');
   if (tool.name === 'run_command') {
-    return '安全清单内的构建、测试、查看命令自动执行；破坏性、未知或超出工作空间的命令才询问。';
+    return uiText.t('main.tool.note.runCommand');
   }
   if (tool.name === 'write_file' || tool.name === 'edit_file') {
-    return '工作区写入模式下会先询问，确认后才修改文件；完全访问模式下自动执行。只读和计划模式下禁止。';
+    return uiText.t('main.tool.note.fileWrite');
   }
   return tool.readOnly === false
-    ? '修改操作受工作空间路径限制；只读和计划模式下禁止。'
-    : '在所有模式下自动放行。';
+    ? uiText.t('main.tool.note.mutating')
+    : uiText.t('main.tool.note.auto');
 }
 
 function emptyStats() {
@@ -309,7 +366,7 @@ async function describeCapabilities(sessionDir) {
       runtime: tool.custom ? String(tool.definition?.runtime ?? 'executable') : '',
       cwd: tool.custom ? String(tool.definition?.cwd ?? '') : '',
       timeoutMs: tool.custom ? Number(tool.definition?.timeoutMs ?? 0) : 0,
-      implementation: tool.custom ? null : IMPLEMENTATION[tool.name] ?? null,
+      implementation: tool.custom ? null : implementationOf(tool.name),
       stats: {
         calls: stats.calls,
         errors: stats.errors,

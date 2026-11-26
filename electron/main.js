@@ -47,6 +47,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
 const { createFileOpener } = require('./file-opener');
 const fileOpener = createFileOpener(shell);
+const uiText = require('./ui-text');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const { KbEngine } = require('./kb/engine');
@@ -113,8 +114,6 @@ let mainWindow = null;
    ------------------------------------------------------------------ */
 const CLOSE_ACTIONS = new Set(['tray', 'quit']);
 let closeAction = '';
-/** 'zh' | 'en' | '' (= follow the build default) for main-process UI text. */
-let uiLanguage = '';
 let tray = null;
 let trayHintShown = false;
 /** True while the app is really quitting, so 'close' stops being intercepted. */
@@ -140,11 +139,10 @@ function showMainWindow() {
 }
 
 function trayMenu() {
-  const text = uiText();
   return Menu.buildFromTemplate([
-    { label: text.open, click: () => showMainWindow() },
+    { label: uiText.t('main.tray.open'), click: () => showMainWindow() },
     { type: 'separator' },
-    { label: text.quitApp, click: () => quitApp() },
+    { label: uiText.t('main.tray.quit'), click: () => quitApp() },
   ]);
 }
 
@@ -165,10 +163,12 @@ function hideToTray() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
   if (!trayHintShown && tray && !tray.isDestroyed()) {
     trayHintShown = true;
-    const text = uiText();
     // Windows balloons are best-effort; never let a missing notification matter.
     try {
-      tray.displayBalloon({ title: text.balloonTitle, content: text.balloonBody });
+      tray.displayBalloon({
+        title: uiText.t('main.tray.balloonTitle'),
+        content: uiText.t('main.tray.balloonBody'),
+      });
     } catch {
       /* no shell notification support */
     }
@@ -182,43 +182,9 @@ function quitApp() {
 
 /* ------------------------------------------------------------------
    The close dialog and tray are main-process UI, outside the renderer's
-   translation runtime. They read the interface language from settings.json
-   (mirrored in `uiLanguage` on every save) and ship Chinese + English text.
+   translation runtime. Text comes from `./ui-text`, which follows the
+   interface language saved in settings.json.
    ------------------------------------------------------------------ */
-const CLOSE_TEXT = {
-  zh: {
-    title: '关闭 EZNess',
-    message: '关闭窗口后要做什么？',
-    tray: '最小化到托盘',
-    quit: '直接退出',
-    open: '打开 EZNess',
-    quitApp: '退出 EZNess',
-    balloonTitle: 'EZNess 还在运行',
-    balloonBody: '双击托盘图标打开主界面，右键可以退出。',
-  },
-  en: {
-    title: 'Close EZNess',
-    message: 'What should closing the window do?',
-    tray: 'Minimize to tray',
-    quit: 'Quit EZNess',
-    open: 'Open EZNess',
-    quitApp: 'Quit EZNess',
-    balloonTitle: 'EZNess is still running',
-    balloonBody: 'Double-click the tray icon to reopen, or right-click it to quit.',
-  },
-};
-
-/** 'en' | 'zh'; anything custom falls back to Chinese, like missing i18n keys. */
-function normalizeLanguage(value) {
-  const text = String(value ?? '');
-  if (/^en/i.test(text)) return 'en';
-  if (!text) return '';
-  return 'zh';
-}
-
-function uiText() {
-  return CLOSE_TEXT[uiLanguage || (app.isPackaged ? 'en' : 'zh')];
-}
 
 /** The toggle lives in the renderer's settings; the close event needs both. */
 async function readPreferences() {
@@ -227,7 +193,7 @@ async function readPreferences() {
     const value = String(data?.closeAction ?? '');
     return {
       closeAction: CLOSE_ACTIONS.has(value) ? value : '',
-      language: normalizeLanguage(data?.language),
+      language: uiText.normalizeLanguage(data?.language),
     };
   } catch {
     return { closeAction: '', language: '' };
@@ -269,13 +235,12 @@ const CLOSE_PROMPT_DISMISSED = 2;
 function askCloseAction() {
   if (!mainWindow || mainWindow.isDestroyed() || askingClose) return;
   askingClose = true;
-  const text = uiText();
   void dialog
     .showMessageBox(mainWindow, {
       type: 'question',
-      title: text.title,
-      message: text.message,
-      buttons: [text.tray, text.quit],
+      title: uiText.t('main.close.title'),
+      message: uiText.t('main.close.message'),
+      buttons: [uiText.t('main.close.tray'), uiText.t('main.close.quit')],
       defaultId: 0,
       cancelId: CLOSE_PROMPT_DISMISSED,
       noLink: true,
@@ -469,7 +434,7 @@ app.whenReady().then(async () => {
         provider: report.provider,
         usage: report.usage,
         sessionId: 'director',
-        workspaceName: '工作总监',
+        workspaceName: uiText.t('main.app.directorName'),
       }),
     // 重复工作的建议不能推荐已经有的东西。
     listPresets: () => ({
@@ -506,7 +471,7 @@ app.whenReady().then(async () => {
   // migration settled the data root.
   const preferences = await readPreferences();
   closeAction = preferences.closeAction;
-  uiLanguage = preferences.language;
+  uiText.setLanguage(preferences.language);
 
   createWindow();
   // Applying an SSH proxy can take a few seconds; the window must not wait.
@@ -651,8 +616,10 @@ ipcMain.handle('settings:save', async (_event, data) => {
   if (data && typeof data === 'object') {
     const value = String(data.closeAction ?? '');
     closeAction = CLOSE_ACTIONS.has(value) ? value : '';
-    // Main-process text (close dialog, tray) follows the interface language.
-    uiLanguage = normalizeLanguage(data.language);
+    // Main-process text (close dialog, tray, step labels) follows the interface
+    // language. A language switch cannot rewrite text already stored in a task,
+    // so the renderer prefers event codes over the labels written here.
+    uiText.setLanguage(data.language);
   }
   return true;
 });
@@ -677,8 +644,8 @@ ipcMain.handle('proxy:apply', async (_event, settings) => {
       applied: false,
       enabled: true,
       mode: 'direct',
-      detail: '代理还没有准备好。',
-      error: '应用还在启动，请稍后再试。',
+      detail: uiText.t('main.app.proxyNotReady'),
+      error: uiText.t('main.app.appStarting'),
     };
   }
   return proxyManager.apply(settings);
@@ -690,7 +657,7 @@ ipcMain.handle('proxy:status', () =>
     applied: false,
     enabled: true,
     mode: 'direct',
-    detail: '直接连接',
+    detail: uiText.t('main.app.directConnection'),
   },
 );
 
@@ -700,8 +667,8 @@ ipcMain.handle('proxy:test', async (_event, url) =>
   proxyManager?.test(url) ?? {
     ok: false,
     latencyMs: 0,
-    detail: '连接失败',
-    error: '应用还在启动，请稍后再试。',
+    detail: uiText.t('main.app.connectionFailed'),
+    error: uiText.t('main.app.appStarting'),
   },
 );
 
@@ -717,7 +684,7 @@ function trimBase(baseUrl) {
 
 function modelsEndpoint(baseUrl, apiType) {
   const base = trimBase(baseUrl);
-  if (!base) throw new Error('API 地址为空');
+  if (!base) throw new Error(uiText.t('main.app.apiUrlEmpty'));
 
   if (apiType === 'ollama') {
     const root = base.replace(/\/v1$/i, '');
@@ -931,7 +898,7 @@ ipcMain.handle('usage:export', async (_event, payload) => {
     const result = testDir
       ? { canceled: false, filePath: path.join(testDir, `${base}.csv`) }
       : await saveDialog({
-          title: '导出计费统计',
+          title: uiText.t('main.app.exportUsageTitle'),
           defaultPath: path.join(app.getPath('documents'), `${base}.csv`),
           filters: [{ name: 'CSV', extensions: ['csv'] }],
         });
@@ -1063,7 +1030,7 @@ function applyRunEvent(snapshot, payload) {
       snapshot.questions.push({
         requestId: snapshot.requestId,
         callId: call.id,
-        question: payload.question ?? '请选择',
+        question: payload.question ?? uiText.t('main.app.chooseQuestion'),
         options: Array.isArray(payload.options) ? payload.options : [],
       });
       return;
@@ -1077,9 +1044,10 @@ function applyRunEvent(snapshot, payload) {
         id: `compact-${at}`,
         name: 'compact',
         args: {},
-        summary: `把较早的对话压缩为摘要（${Math.round((payload.before ?? 0) / 1000)}K → ${Math.round(
-          (payload.after ?? 0) / 1000,
-        )}K 词元）`,
+        summary: uiText.t('main.app.compactionSummary', {
+          before: Math.round((payload.before ?? 0) / 1000),
+          after: Math.round((payload.after ?? 0) / 1000),
+        }),
         status: 'done',
         startedAt: at,
         endedAt: at,
@@ -1096,7 +1064,7 @@ function applyRunEvent(snapshot, payload) {
       return;
     case 'error':
       snapshot.status = 'error';
-      snapshot.error = payload.error ?? '未知错误';
+      snapshot.error = payload.error ?? uiText.t('main.app.unknownError');
       snapshot.finishedAt = Date.now();
       return;
     default:
@@ -1228,12 +1196,19 @@ function editorScratchDir(category) {
 
 function healthLine(definition) {
   const health = toolHealth[definition.id];
-  if (!health) return '未测试';
+  if (!health) return uiText.t('main.app.healthUntested');
   if (health.status === 'broken') {
-    return `故障：${health.errors?.[0]?.message ?? '测试未通过'}`;
+    return uiText.t('main.app.healthBroken', {
+      message: health.errors?.[0]?.message ?? uiText.t('main.app.healthTestFailed'),
+    });
   }
-  if (health.status === 'untested') return '未测试';
-  return `正常${health.testedAt ? `（测试于 ${new Date(health.testedAt).toLocaleString()}）` : ''}`;
+  if (health.status === 'untested') return uiText.t('main.app.healthUntested');
+  if (!health.testedAt) return uiText.t('main.app.healthOk');
+  return uiText.t('main.app.healthTestedAt', {
+    at: new Date(health.testedAt).toLocaleString(
+      uiText.getLanguage() === 'en' ? 'en-US' : 'zh-CN',
+    ),
+  });
 }
 
 async function editorList(scope) {
@@ -1827,18 +1802,21 @@ ipcMain.handle('agent:start', async (event, request) => {
   if (isToolEditor) {
     const category = categoryById(categoryId);
     if (!category) {
-      send({ type: 'error', error: '这个功能分类已经被删除，无法继续编辑。' });
+      send({ type: 'error', error: uiText.t('main.app.toolCategoryGoneEdit') });
       return true;
     }
     const scratch = editorScratchDir(category);
     try {
       await fs.mkdir(scratch, { recursive: true });
     } catch (error) {
-      send({ type: 'error', error: `测试目录不可用：${error?.message || String(error)}` });
+      send({
+        type: 'error',
+        error: uiText.t('main.app.testDirUnavailable', { error: error?.message || String(error) }),
+      });
       return true;
     }
     workspacePath = scratch;
-    workspaceName = `功能编辑-${category.name}`;
+    workspaceName = uiText.t('main.app.toolEditorWorkspace', { name: category.name });
     toolScope = { kind: 'tool-editor', categoryId: category.id };
     toolContext = {
       category,
@@ -1848,18 +1826,23 @@ ipcMain.handle('agent:start', async (event, request) => {
   } else if (isAgentEditor) {
     const agent = agentDefinitions.find((item) => item.id === String(agentId ?? '')) ?? null;
     if (!agent) {
-      send({ type: 'error', error: '这个 Agent 已经被删除，无法继续编辑。' });
+      send({ type: 'error', error: uiText.t('main.app.agentGoneEdit') });
       return true;
     }
     const scratch = agentEditorScratchDir(agent.id);
     try {
       await fs.mkdir(scratch, { recursive: true });
     } catch (error) {
-      send({ type: 'error', error: `编辑目录不可用：${error?.message || String(error)}` });
+      send({
+        type: 'error',
+        error: uiText.t('main.app.editDirUnavailable', { error: error?.message || String(error) }),
+      });
       return true;
     }
     workspacePath = scratch;
-    workspaceName = `Agent编辑-${agentEditorHash(agent.id)}`;
+    workspaceName = uiText.t('main.app.agentEditorWorkspace', {
+      hash: agentEditorHash(agent.id),
+    });
     toolScope = { kind: 'agent-editor', agentId: agent.id };
     toolContext = {
       agent,
@@ -1873,11 +1856,14 @@ ipcMain.handle('agent:start', async (event, request) => {
     try {
       await fs.mkdir(scratch, { recursive: true });
     } catch (error) {
-      send({ type: 'error', error: `总监目录不可用：${error?.message || String(error)}` });
+      send({
+        type: 'error',
+        error: uiText.t('main.app.directorDirUnavailable', { error: error?.message || String(error) }),
+      });
       return true;
     }
     workspacePath = scratch;
-    workspaceName = '工作总监';
+    workspaceName = uiText.t('main.app.directorName');
     // The director talks and judges; it never edits files itself.
     toolScope = { kind: 'director', mode: directorState.mode };
     const directorQuery = typeof message === 'string' ? message : '';
@@ -1944,7 +1930,7 @@ ipcMain.handle('agent:start', async (event, request) => {
     } catch (error) {
       send({
         type: 'error',
-        error: `远程工作空间连接失败：${error?.message || String(error)}`,
+        error: uiText.t('main.app.remoteConnectFailed', { error: error?.message || String(error) }),
       });
       return true;
     }
@@ -1955,11 +1941,14 @@ ipcMain.handle('agent:start', async (event, request) => {
     try {
       const stat = await fs.stat(workspacePath);
       if (!stat.isDirectory()) {
-        send({ type: 'error', error: '工作空间不是一个文件夹' });
+        send({ type: 'error', error: uiText.t('main.app.workspaceNotFolder') });
         return true;
       }
     } catch (error) {
-      send({ type: 'error', error: `工作空间不可访问：${error?.message || String(error)}` });
+      send({
+        type: 'error',
+        error: uiText.t('main.app.workspaceUnavailable', { error: error?.message || String(error) }),
+      });
       return true;
     }
   }
@@ -2147,10 +2136,10 @@ ipcMain.handle('agent:delete-session', async (_event, sessionId) => {
  */
 ipcMain.handle('agent:compact', async (_event, request) => {
   const sessionId = String(request?.sessionId ?? '');
-  if (!sessionId) return { ok: false, error: '缺少任务 id。' };
+  if (!sessionId) return { ok: false, error: uiText.t('main.app.missingTaskId') };
   for (const snapshot of agentSnapshots.values()) {
     if (snapshot.sessionId === sessionId && snapshot.finishedAt === null) {
-      return { ok: false, error: '这个任务正在运行，结束后再压缩。' };
+      return { ok: false, error: uiText.t('main.app.taskRunningCompact') };
     }
   }
   const work = await readWorkSettings();
@@ -2258,11 +2247,11 @@ ipcMain.handle('python:set-index', (_event, value) => pythonEnv.setIndexUrl(stor
  * permission card; it is never written to a prompt or the transcript.
  */
 ipcMain.handle('agent:pick-secret-file', async (_event, request) => {
-  const title = String(request?.title ?? '').trim() || '选择文件';
+  const title = String(request?.title ?? '').trim() || uiText.t('main.app.chooseFile');
   const result = await openDialog({
     title,
     properties: ['openFile'],
-    filters: [{ name: '全部文件', extensions: ['*'] }],
+    filters: [{ name: uiText.t('main.app.allFiles'), extensions: ['*'] }],
   });
   return result.canceled ? '' : String(result.filePaths?.[0] ?? '');
 });
@@ -2285,7 +2274,10 @@ ipcMain.handle('agent:custom-tools-save', async (_event, input) => {
   if (knownCategory) {
     definition.category = knownCategory.name;
   } else if (toolCategories.length >= customTools.MAX_CATEGORIES) {
-    return { ok: false, error: `最多 ${customTools.MAX_CATEGORIES} 个分类。` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.maxCategories', { count: customTools.MAX_CATEGORIES }),
+    };
   } else {
     const nextCategories = [
       ...toolCategories,
@@ -2294,7 +2286,10 @@ ipcMain.handle('agent:custom-tools-save', async (_event, input) => {
     try {
       await customTools.saveCategories(agentDir(), nextCategories);
     } catch (error) {
-      return { ok: false, error: `保存分类失败：${error?.message || String(error)}` };
+      return {
+        ok: false,
+        error: uiText.t('main.app.saveCategoryFailed', { error: error?.message || String(error) }),
+      };
     }
     toolCategories = nextCategories;
   }
@@ -2303,13 +2298,19 @@ ipcMain.handle('agent:custom-tools-save', async (_event, input) => {
     ? customToolDefs.map((tool, at) => (at === index ? definition : tool))
     : [...customToolDefs, definition];
   if (next.length > customTools.MAX_TOOLS) {
-    return { ok: false, error: `最多 ${customTools.MAX_TOOLS} 个自定义功能。` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.maxTools', { count: customTools.MAX_TOOLS }),
+    };
   }
 
   try {
     await customTools.saveDefinitions(agentDir(), next);
   } catch (error) {
-    return { ok: false, error: `保存失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.saveFailed', { error: error?.message || String(error) }),
+    };
   }
 
   customToolDefs = next;
@@ -2328,9 +2329,9 @@ ipcMain.handle('agent:tool-health', () => toolHealth);
 ipcMain.handle('agent:tool-retest', async (_event, request) => {
   const id = String(request?.id ?? '');
   const target = customToolDefs.find((definition) => definition.id === id);
-  if (!target) return { ok: false, error: '功能不存在。' };
+  if (!target) return { ok: false, error: uiText.t('main.app.toolNotFound') };
   const category = toolCategories.find((item) => item.name === target.category);
-  if (!category) return { ok: false, error: '功能所属分类不存在。' };
+  if (!category) return { ok: false, error: uiText.t('main.app.toolCategoryNotFound') };
 
   const evaluation = await evaluateCustomTool(target, {
     testArgs: request?.args ?? toolHealth[target.id]?.testArgs,
@@ -2356,14 +2357,17 @@ ipcMain.handle('agent:category-save', async (_event, input) => {
   const wantsPin = typeof input?.pinned === 'boolean';
 
   if (!id) {
-    if (!wantsRename) return { ok: false, error: '分类名称不能为空。' };
+    if (!wantsRename) return { ok: false, error: uiText.t('main.app.categoryNameEmpty') };
     if (toolCategories.length >= customTools.MAX_CATEGORIES) {
-      return { ok: false, error: `最多 ${customTools.MAX_CATEGORIES} 个分类。` };
+      return {
+        ok: false,
+        error: uiText.t('main.app.maxCategories', { count: customTools.MAX_CATEGORIES }),
+      };
     }
     const parsed = customTools.normalizeCategoryName(input.name);
     if (!parsed.ok) return { ok: false, error: parsed.error };
     if (toolCategories.some((category) => category.name.toLowerCase() === parsed.name.toLowerCase())) {
-      return { ok: false, error: '已经有同名分类了。' };
+      return { ok: false, error: uiText.t('main.app.categoryExists') };
     }
     const nextCategories = [
       ...toolCategories,
@@ -2372,14 +2376,17 @@ ipcMain.handle('agent:category-save', async (_event, input) => {
     try {
       await customTools.saveCategories(agentDir(), nextCategories);
     } catch (error) {
-      return { ok: false, error: `保存分类失败：${error?.message || String(error)}` };
+      return {
+        ok: false,
+        error: uiText.t('main.app.saveCategoryFailed', { error: error?.message || String(error) }),
+      };
     }
     toolCategories = nextCategories;
     return { ok: true, categories: toolCategories, definitions: customToolDefs };
   }
 
   const current = toolCategories.find((category) => category.id === id);
-  if (!current) return { ok: false, error: '分类不存在。' };
+  if (!current) return { ok: false, error: uiText.t('main.app.categoryNotFound') };
 
   let name = current.name;
   if (wantsRename) {
@@ -2390,7 +2397,7 @@ ipcMain.handle('agent:category-save', async (_event, input) => {
         (category) => category.id !== id && category.name.toLowerCase() === parsed.name.toLowerCase(),
       )
     ) {
-      return { ok: false, error: '已经有同名分类了。' };
+      return { ok: false, error: uiText.t('main.app.categoryExists') };
     }
     name = parsed.name;
   }
@@ -2404,7 +2411,10 @@ ipcMain.handle('agent:category-save', async (_event, input) => {
     try {
       await customTools.saveDefinitions(agentDir(), nextDefs);
     } catch (error) {
-      return { ok: false, error: `重命名失败：${error?.message || String(error)}` };
+      return {
+        ok: false,
+        error: uiText.t('main.app.renameFailed', { error: error?.message || String(error) }),
+      };
     }
     customToolDefs = nextDefs;
     compileToolRegistry();
@@ -2416,7 +2426,10 @@ ipcMain.handle('agent:category-save', async (_event, input) => {
   try {
     await customTools.saveCategories(agentDir(), nextCategories);
   } catch (error) {
-    return { ok: false, error: `保存分类失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.saveCategoryFailed', { error: error?.message || String(error) }),
+    };
   }
   toolCategories = nextCategories;
   return { ok: true, categories: toolCategories, definitions: customToolDefs };
@@ -2431,7 +2444,10 @@ ipcMain.handle('agent:category-delete', async (_event, id) => {
   try {
     await customTools.saveDefinitions(agentDir(), nextDefs);
   } catch (error) {
-    return { ok: false, error: `删除失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.deleteFailed', { error: error?.message || String(error) }),
+    };
   }
   for (const definition of removed) {
     await customTools.removeToolFiles(agentDir(), definition.id);
@@ -2441,7 +2457,10 @@ ipcMain.handle('agent:category-delete', async (_event, id) => {
   try {
     await customTools.saveCategories(agentDir(), nextCategories);
   } catch (error) {
-    return { ok: false, error: `删除分类失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.deleteCategoryFailed', { error: error?.message || String(error) }),
+    };
   }
 
   customToolDefs = nextDefs;
@@ -2461,7 +2480,10 @@ ipcMain.handle('agent:custom-tools-delete', async (_event, id) => {
   try {
     await customTools.saveDefinitions(agentDir(), next);
   } catch (error) {
-    return { ok: false, error: `删除失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.deleteFailed', { error: error?.message || String(error) }),
+    };
   }
 
   await customTools.removeToolFiles(agentDir(), targetId);
@@ -2489,16 +2511,20 @@ function packageFileName(name, suffix, fallback) {
 
 ipcMain.handle('agent:category-export', async (_event, id) => {
   const category = toolCategories.find((item) => item.id === String(id ?? ''));
-  if (!category) return { ok: false, error: '分类不存在。' };
+  if (!category) return { ok: false, error: uiText.t('main.app.categoryNotFound') };
 
   try {
     const result = await saveDialog({
-      title: `导出能力分类「${category.name}」`,
+      title: uiText.t('main.app.exportCategoryTitle', { name: category.name }),
       defaultPath: path.join(
         app.getPath('documents'),
-        packageFileName(category.name, '.capability', '能力分类'),
+        packageFileName(
+          category.name,
+          '.capability',
+          uiText.t('main.app.capabilityCategoryFile'),
+        ),
       ),
-      filters: [{ name: '能力分类包', extensions: ['json'] }],
+      filters: [{ name: uiText.t('main.app.capabilityPackageFilter'), extensions: ['json'] }],
     });
     if (result.canceled || !result.filePath) return { ok: false, canceled: true };
 
@@ -2514,7 +2540,12 @@ ipcMain.handle('agent:category-export', async (_event, id) => {
       tools: body.tools.length,
       warnings:
         withPolicy > 0
-          ? [`${withPolicy} 个功能设了自动放行策略。策略不随包走，导入方按默认规则逐次确认。`]
+          ? [
+              uiText.t('main.app.policyWarning', {
+                count: withPolicy,
+                noun: uiText.t(withPolicy === 1 ? 'main.app.policyTool' : 'main.app.policyTools'),
+              }),
+            ]
           : [],
     };
   } catch (error) {
@@ -2525,9 +2556,9 @@ ipcMain.handle('agent:category-export', async (_event, id) => {
 ipcMain.handle('agent:category-import', async () => {
   try {
     const picked = await openDialog({
-      title: '导入能力分类',
+      title: uiText.t('main.app.importCategoryTitle'),
       properties: ['openFile'],
-      filters: [{ name: '能力分类包', extensions: ['json'] }],
+      filters: [{ name: uiText.t('main.app.capabilityPackageFilter'), extensions: ['json'] }],
     });
     if (picked.canceled || !picked.filePaths[0]) return { ok: false, canceled: true };
 
@@ -2568,7 +2599,10 @@ ipcMain.handle('agent:category-import', async () => {
       warnings: applied.warnings,
     };
   } catch (error) {
-    return { ok: false, error: `导入失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.importFailed', { error: error?.message || String(error) }),
+    };
   }
 });
 
@@ -2588,19 +2622,19 @@ ipcMain.handle('agents:list', () => agentDefinitions);
  */
 ipcMain.handle('agents:review', async (_event, request) => {
   const provider = request?.provider;
-  if (!provider?.baseUrl) return { ok: false, error: '当前没有可用的模型，请先在设置里接入。' };
+  if (!provider?.baseUrl) return { ok: false, error: uiText.t('main.app.noModel') };
 
   const agents = (Array.isArray(request?.agents) ? request.agents : []).slice(
     0,
     agentsStore.MAX_AGENTS,
   );
-  if (agents.length === 0) return { ok: false, error: '还没有 Agent 可以审查。' };
+  if (agents.length === 0) return { ok: false, error: uiText.t('main.app.reviewNoAgents') };
 
   // Only stored definitions are reviewed: an id the renderer made up must not
   // pull a prompt from anywhere else.
   const known = new Set(agentDefinitions.map((agent) => agent.id));
   const list = agents.filter((agent) => known.has(String(agent?.id ?? '')));
-  if (list.length === 0) return { ok: false, error: '没有找到要审查的 Agent。' };
+  if (list.length === 0) return { ok: false, error: uiText.t('main.app.reviewAgentsMissing') };
 
   try {
     const result = await agentReview.reviewAgents({
@@ -2615,7 +2649,10 @@ ipcMain.handle('agents:review', async (_event, request) => {
     }
     return result;
   } catch (error) {
-    return { ok: false, error: `审查失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.reviewFailed', { error: error?.message || String(error) }),
+    };
   }
 });
 
@@ -2631,15 +2668,15 @@ ipcMain.on('workspace:viz-cancel', (_event, requestId) => {
 
 ipcMain.handle('workspace:visualize', async (event, request) => {
   const provider = request?.provider;
-  if (!provider?.baseUrl) return { ok: false, error: '当前没有可用的模型，请先在设置里接入。' };
+  if (!provider?.baseUrl) return { ok: false, error: uiText.t('main.app.noModel') };
 
   const topic = String(request?.topic ?? '').trim().slice(0, 200);
   const context = request?.context;
   if (!context || typeof context !== 'object') {
-    return { ok: false, error: '没有可以分析的工作空间数据。' };
+    return { ok: false, error: uiText.t('main.app.vizNoData') };
   }
   if (!Array.isArray(context.tasks) || context.tasks.length === 0) {
-    return { ok: false, error: '这个工作空间还没有任务，先新建一个任务再试。' };
+    return { ok: false, error: uiText.t('main.app.vizNoTasks') };
   }
 
   const requestId = String(request?.requestId ?? '').trim();
@@ -2669,7 +2706,10 @@ ipcMain.handle('workspace:visualize', async (event, request) => {
       usageStore?.record({ feature: 'workspace-viz', provider, usage: error.usage });
     }
     if (controller.signal.aborted) return { ok: false, aborted: true, error: '' };
-    return { ok: false, error: `生成失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.vizGenerateFailed', { error: error?.message || String(error) }),
+    };
   } finally {
     if (requestId && vizRuns.get(requestId) === controller) vizRuns.delete(requestId);
     if (sender && !sender.isDestroyed()) sender.removeListener('destroyed', onGone);
@@ -2680,7 +2720,7 @@ ipcMain.handle('agents:save', async (_event, input) => {
   const id = String(input?.id ?? '').trim();
   const existing = agentDefinitions.find((agent) => agent.id === id) ?? null;
   if (!existing && agentDefinitions.length >= agentsStore.MAX_AGENTS) {
-    return { ok: false, error: `最多 ${agentsStore.MAX_AGENTS} 个 Agent。` };
+    return { ok: false, error: uiText.t('main.app.maxAgents', { count: agentsStore.MAX_AGENTS }) };
   }
 
   const others = agentDefinitions.filter((agent) => agent.id !== id);
@@ -2703,7 +2743,10 @@ ipcMain.handle('agents:save', async (_event, input) => {
   try {
     await agentsStore.saveAgents(agentDir(), next);
   } catch (error) {
-    return { ok: false, error: `保存失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.saveFailed', { error: error?.message || String(error) }),
+    };
   }
   agentDefinitions = next;
   return { ok: true, agents: agentDefinitions, agent: result.agent };
@@ -2711,13 +2754,16 @@ ipcMain.handle('agents:save', async (_event, input) => {
 
 ipcMain.handle('agents:delete', async (_event, id) => {
   const target = agentDefinitions.find((agent) => agent.id === String(id ?? ''));
-  if (!target) return { ok: false, error: 'Agent 不存在。' };
+  if (!target) return { ok: false, error: uiText.t('main.app.agentNotFound') };
 
   const next = agentDefinitions.filter((agent) => agent.id !== target.id);
   try {
     await agentsStore.saveAgents(agentDir(), next);
   } catch (error) {
-    return { ok: false, error: `删除失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.deleteFailed', { error: error?.message || String(error) }),
+    };
   }
   agentDefinitions = next;
 
@@ -2734,13 +2780,16 @@ ipcMain.handle('agents:delete', async (_event, id) => {
 
 ipcMain.handle('agents:export', async (_event, id) => {
   const agent = agentDefinitions.find((item) => item.id === String(id ?? ''));
-  if (!agent) return { ok: false, error: 'Agent 不存在。' };
+  if (!agent) return { ok: false, error: uiText.t('main.app.agentNotFound') };
 
   try {
     const result = await saveDialog({
-      title: `导出 Agent「${agent.name}」`,
-      defaultPath: path.join(app.getPath('documents'), packageFileName(agent.name, '.agent', 'Agent')),
-      filters: [{ name: 'Agent 包', extensions: ['json'] }],
+      title: uiText.t('main.app.exportAgentTitle', { name: agent.name }),
+      defaultPath: path.join(
+        app.getPath('documents'),
+        packageFileName(agent.name, '.agent', uiText.t('main.app.agentFile')),
+      ),
+      filters: [{ name: uiText.t('main.app.agentPackageFilter'), extensions: ['json'] }],
     });
     if (result.canceled || !result.filePath) return { ok: false, canceled: true };
 
@@ -2763,7 +2812,12 @@ ipcMain.handle('agents:export', async (_event, id) => {
       memory: body.memory.entries.length,
       warnings:
         withPolicy > 0
-          ? [`${withPolicy} 个功能设了自动放行策略。策略不随包走，导入方按默认规则逐次确认。`]
+          ? [
+              uiText.t('main.app.policyWarning', {
+                count: withPolicy,
+                noun: uiText.t(withPolicy === 1 ? 'main.app.policyTool' : 'main.app.policyTools'),
+              }),
+            ]
           : [],
     };
   } catch (error) {
@@ -2774,9 +2828,9 @@ ipcMain.handle('agents:export', async (_event, id) => {
 ipcMain.handle('agents:import', async () => {
   try {
     const picked = await openDialog({
-      title: '导入 Agent',
+      title: uiText.t('main.app.importAgentTitle'),
       properties: ['openFile'],
-      filters: [{ name: 'Agent 包', extensions: ['json'] }],
+      filters: [{ name: uiText.t('main.app.agentPackageFilter'), extensions: ['json'] }],
     });
     if (picked.canceled || !picked.filePaths[0]) return { ok: false, canceled: true };
 
@@ -2836,7 +2890,10 @@ ipcMain.handle('agents:import', async () => {
       warnings: applied.warnings,
     };
   } catch (error) {
-    return { ok: false, error: `导入失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.importFailed', { error: error?.message || String(error) }),
+    };
   }
 });
 
@@ -2854,7 +2911,10 @@ ipcMain.handle('director:save', async (_event, patch) => {
   try {
     await directorStore.save(directorDir(), next);
   } catch (error) {
-    return { ok: false, error: `保存失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.saveFailed', { error: error?.message || String(error) }),
+    };
   }
   directorState = next;
   broadcast('director:event', directorState);
@@ -2870,7 +2930,10 @@ ipcMain.handle('director:presence', async (_event, input) => {
   try {
     await directorStore.save(directorDir(), state);
   } catch (error) {
-    return { ok: false, error: `保存失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.saveFailed', { error: error?.message || String(error) }),
+    };
   }
   broadcast('director:event', directorState);
   // Leaving a task hands it back to the director; instructions that were held
@@ -2907,20 +2970,20 @@ ipcMain.handle('director:mark-read', (_event, ids) => {
 });
 
 ipcMain.handle('director:resolve', async (_event, payload) => {
-  if (!directorService) return { ok: false, error: '工作总监还没有启动' };
+  if (!directorService) return { ok: false, error: uiText.t('main.app.directorNotRunning') };
   return directorService.resolveInbox(payload ?? {});
 });
 
 /** 内容审计：重复投入的本地统计，打开弹窗就能画图，不等模型。
  *  announce=true 表示用户刚点了「开始审计」，审计组要回一条消息。 */
 ipcMain.handle('director:audit', (_event, options) => {
-  if (!directorService) return { ok: false, error: '工作总监还没有启动' };
+  if (!directorService) return { ok: false, error: uiText.t('main.app.directorNotRunning') };
   return directorService.auditView({ announce: Boolean(options?.announce) });
 });
 
 /** 审计里「让审计组出一次建议」：用户主动要，不受冷却和每日限额影响。 */
 ipcMain.handle('director:review-now', async () => {
-  if (!directorService) return { ok: false, error: '工作总监还没有启动' };
+  if (!directorService) return { ok: false, error: uiText.t('main.app.directorNotRunning') };
   return directorService.reviewNow();
 });
 
@@ -3155,15 +3218,25 @@ async function directorArchiveTitles(clusters) {
     return `【第 ${index + 1} 段】\n${lines}`;
   });
   if (!blocks.some((block) => block.length > 8)) return failed;
+  // The names and summaries are shown in the archive list, so they are written
+  // in the interface language. The whole instruction is swapped rather than
+  // appended to: the Chinese one asks for a 16-character Chinese name.
+  const namingSystem =
+    uiText.getLanguage() === 'en'
+      ? 'You are the Work Director assistant. Give each conversation segment a short English name, ' +
+        'like naming a folder: say what it was about so it is obvious at a glance. Keep it under ' +
+        '60 characters, a short noun phrase, no quotes, no full stop, not a request sentence like ' +
+        '"Help me ...". Also write a one-sentence summary: what the user wanted, what the director ' +
+        'did, and any unfinished agreement, under 300 characters, facts only. Output JSON only.'
+      : '你是工作总监的助理。给每段对话取一个中文名字，像给文件夹起名：概括这段在做什么，让人一眼能看懂。' +
+        '不超过 16 个字，用短名词短语，例如「周报整理与图表导出」「团建餐厅选址」「nginx 部署排错」。' +
+        '不要引号、不要句号，不要写成「帮我…」这样的请求句。' +
+        '同时写一句粗摘要：这段用户要什么、总监最后怎么处理、有没有未完成的约定，不超过 120 字，只陈述事实。' +
+        '只输出 JSON。';
   try {
     const answer = await Promise.race([
       directorService.ask({
-        system:
-          '你是工作总监的助理。给每段对话取一个中文名字，像给文件夹起名：概括这段在做什么，让人一眼能看懂。' +
-          '不超过 16 个字，用短名词短语，例如「周报整理与图表导出」「团建餐厅选址」「nginx 部署排错」。' +
-          '不要引号、不要句号，不要写成「帮我…」这样的请求句。' +
-          '同时写一句粗摘要：这段用户要什么、总监最后怎么处理、有没有未完成的约定，不超过 120 字，只陈述事实。' +
-          '只输出 JSON。',
+        system: namingSystem,
         user:
           '请只返回一个 JSON 对象 {"items": [{"index": 段号, "title": "名字", "summary": "粗摘要"}]}，每段一条。\n\n' +
           blocks.join('\n\n'),
@@ -3285,16 +3358,16 @@ const directorClearInFlight = new Set();
 
 ipcMain.handle('director:clear', async (event, request) => {
   const sessionId = String(request?.sessionId ?? '').trim();
-  if (!sessionId) return { ok: false, error: '没有找到总监对话' };
+  if (!sessionId) return { ok: false, error: uiText.t('main.app.directorConversationMissing') };
   for (const requestId of agentRuns.keys()) {
     if (agentSnapshots.get(requestId)?.sessionId === sessionId) {
-      return { ok: false, error: '总监正在回复，等这一轮结束再清空' };
+      return { ok: false, error: uiText.t('main.app.directorBusyClear') };
     }
   }
   // 一次清空还没写完就被再点一次时，第二下直接忽略；否则同一段对话会被
   // 重复留档（历史上那些一模一样的存档就是这么来的）。
   if (directorClearInFlight.has(sessionId)) {
-    return { ok: false, error: '清空还在进行中，稍等一下' };
+    return { ok: false, error: uiText.t('main.app.directorClearInProgress') };
   }
   directorClearInFlight.add(sessionId);
   try {
@@ -3394,7 +3467,10 @@ ipcMain.handle('director:clear', async (event, request) => {
     const keep = directorService?.pruneForClear() ?? null;
     return { ok: true, id: ids[0], ids, keep };
   } catch (error) {
-    return { ok: false, error: `清空失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.clearFailed', { error: error?.message || String(error) }),
+    };
   } finally {
     directorClearInFlight.delete(sessionId);
   }
@@ -3454,7 +3530,10 @@ ipcMain.handle('director:history-dedupe', async () => {
   try {
     return await dedupeDirectorHistory();
   } catch (error) {
-    return { ok: false, error: `清理失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.cleanupFailed', { error: error?.message || String(error) }),
+    };
   }
 });
 
@@ -3462,7 +3541,10 @@ ipcMain.handle('director:history-delete', async (_event, ids) => {
   try {
     return await deleteDirectorHistory(ids);
   } catch (error) {
-    return { ok: false, error: `删除失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.deleteFailed', { error: error?.message || String(error) }),
+    };
   }
 });
 
@@ -3473,7 +3555,7 @@ async function deleteDirectorHistory(ids) {
   const wanted = (Array.isArray(ids) ? ids : [])
     .map((id) => String(id ?? '').trim())
     .filter(Boolean);
-  if (wanted.length === 0) return { ok: false, error: '没有选中要删除的存档' };
+  if (wanted.length === 0) return { ok: false, error: uiText.t('main.app.archiveNothingSelected') };
   const dir = directorHistoryDir();
   const index = await readHistoryIndex();
   const removedIds = [];
@@ -3631,17 +3713,17 @@ async function backfillArchiveMemory() {
 
 ipcMain.handle('director:history-get', async (_event, id) => {
   const safe = String(id ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safe) return { ok: false, error: '记录不存在' };
+  if (!safe) return { ok: false, error: uiText.t('main.app.archiveMissing') };
   try {
     const data = JSON.parse(await fs.readFile(path.join(directorHistoryDir(), `${safe}.json`), 'utf8'));
     return { ok: true, entry: data };
   } catch {
-    return { ok: false, error: '记录不存在或已损坏' };
+    return { ok: false, error: uiText.t('main.app.archiveCorrupt') };
   }
 });
 
 ipcMain.handle('director:inspect', async (_event, payload) => {
-  if (!directorService) return { ok: false, error: '工作总监还没有启动' };
+  if (!directorService) return { ok: false, error: uiText.t('main.app.directorNotRunning') };
   return directorService.inspect(payload?.taskId, payload?.part ?? 'overview');
 });
 
@@ -3652,13 +3734,13 @@ ipcMain.handle('director:instruction-ack', (_event, payload) => {
 
 // 界面按总监的派工单建好了员工任务：把 taskId 交回来，转为普通指令。
 ipcMain.handle('director:spawn-ack', (_event, payload) => {
-  if (!directorService) return { ok: false, error: '工作总监还没有启动' };
+  if (!directorService) return { ok: false, error: uiText.t('main.app.directorNotRunning') };
   return directorService.spawnAck(payload ?? {});
 });
 
 // 界面执行完总监的任务操作（删除/导出）之后回执。
 ipcMain.handle('director:task-ack', (_event, payload) => {
-  if (!directorService) return { ok: false, error: '工作总监还没有启动' };
+  if (!directorService) return { ok: false, error: uiText.t('main.app.directorNotRunning') };
   return directorService.taskAck(payload ?? {});
 });
 
@@ -3682,9 +3764,10 @@ ipcMain.handle('director:typing', (_event, active) => {
 });
 
 ipcMain.handle('session:export', async (_event, payload) => {
-  const title = String(payload?.title || '对话');
+  const title = String(payload?.title || uiText.t('main.app.conversation'));
   const markdown = String(payload?.markdown ?? '');
-  const safe = title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || '对话';
+  const safe =
+    title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || uiText.t('main.app.conversation');
 
   // 总监发起的导出：写进任务自己的工作空间，不弹保存框。远程空间或路径
   // 不可用时统一落到数据根的 exports/，再作为文件卡片发给用户。
@@ -3720,7 +3803,7 @@ ipcMain.handle('session:export', async (_event, payload) => {
 
   try {
     const result = await saveDialog({
-      title: '导出对话',
+      title: uiText.t('main.app.exportConversationTitle'),
       defaultPath: path.join(app.getPath('documents'), `${safe}.md`),
       filters: [{ name: 'Markdown', extensions: ['md'] }],
     });
@@ -3770,15 +3853,18 @@ ipcMain.handle('prompts:save', async (_event, data) => {
 
 ipcMain.handle('prompts:export', async (_event, payload) => {
   const template = payload?.template;
-  if (!template || typeof template !== 'object') return { ok: false, error: '没有可导出的模板' };
-  const name = String(template.name || template.nameEn || '提示词模板');
-  const safe = name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || '提示词模板';
+  if (!template || typeof template !== 'object') {
+    return { ok: false, error: uiText.t('main.app.noTemplateToExport') };
+  }
+  const name = String(template.name || template.nameEn || uiText.t('main.app.promptTemplate'));
+  const safe =
+    name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || uiText.t('main.app.promptTemplate');
 
   try {
     const result = await saveDialog({
-      title: '导出提示词模板',
+      title: uiText.t('main.app.exportPromptTemplateTitle'),
       defaultPath: path.join(app.getPath('documents'), `${safe}.prompt.json`),
-      filters: [{ name: '提示词模板', extensions: ['json'] }],
+      filters: [{ name: uiText.t('main.app.promptTemplate'), extensions: ['json'] }],
     });
     if (result.canceled || !result.filePath) return { ok: false, canceled: true };
 
@@ -3793,9 +3879,9 @@ ipcMain.handle('prompts:export', async (_event, payload) => {
 ipcMain.handle('prompts:import', async () => {
   try {
     const result = await openDialog({
-      title: '导入提示词模板',
+      title: uiText.t('main.app.importPromptTemplateTitle'),
       properties: ['openFile'],
-      filters: [{ name: '提示词模板', extensions: ['json'] }],
+      filters: [{ name: uiText.t('main.app.promptTemplate'), extensions: ['json'] }],
     });
     if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
 
@@ -3822,7 +3908,7 @@ let voiceDownload = null;
 ipcMain.handle('voice:status', () => voiceModelStatus(storage.root));
 
 ipcMain.handle('voice:download', async () => {
-  if (voiceDownload) return { ok: false, error: '模型正在下载中' };
+  if (voiceDownload) return { ok: false, error: uiText.t('main.app.modelDownloading') };
   const controller = new AbortController();
   voiceDownload = controller;
   try {
@@ -3844,7 +3930,7 @@ ipcMain.handle('voice:cancel-download', () => {
 });
 
 ipcMain.handle('voice:start', async () => {
-  if (!voice) return { ok: false, error: '语音模块还没准备好' };
+  if (!voice) return { ok: false, error: uiText.t('main.app.voiceNotReady') };
   try {
     return await voice.start();
   } catch (error) {
@@ -3942,18 +4028,18 @@ ipcMain.handle('kb:set-config', async (_event, patch) => {
 
 ipcMain.handle('kb:pick-files', async () => {
   const result = await openDialog({
-    title: '选择要加入知识库的文件',
+    title: uiText.t('main.app.pickKbFilesTitle'),
     properties: ['openFile', 'multiSelections'],
     filters: [
       {
-        name: '支持的文档',
+        name: uiText.t('main.app.supportedDocuments'),
         extensions: [
           'pdf', 'docx', 'xlsx', 'xlsm',
           'pptx', 'pptm', 'ppsx', 'potx',
           'txt', 'md', 'markdown', 'csv', 'json', 'html', 'htm',
         ],
       },
-      { name: '全部文件', extensions: ['*'] },
+      { name: uiText.t('main.app.allFiles'), extensions: ['*'] },
     ],
   });
   return result.canceled ? [] : result.filePaths;
@@ -3976,21 +4062,21 @@ ipcMain.handle('kb:delete-document', (_event, docId) => kb.deleteDocument(docId)
 async function exportKbDocument(store, docId) {
   try {
     const doc = store?.getDocument(docId);
-    if (!doc?.stored_path) return { ok: false, error: '找不到这个文件' };
+    if (!doc?.stored_path) return { ok: false, error: uiText.t('main.app.fileNotFound') };
 
     try {
       await fs.access(doc.stored_path);
     } catch {
-      return { ok: false, error: '原始文件已不在知识库目录里了' };
+      return { ok: false, error: uiText.t('main.app.originalFileGone') };
     }
 
     const safe = String(doc.name || path.basename(doc.stored_path))
       .replace(/[\\/:*?"<>|]/g, '_')
       .slice(0, 80);
     const result = await saveDialog({
-      title: '下载原文件',
+      title: uiText.t('main.app.downloadOriginalTitle'),
       defaultPath: path.join(app.getPath('downloads'), safe),
-      buttonLabel: '下载',
+      buttonLabel: uiText.t('main.app.downloadButton'),
     });
     if (result.canceled || !result.filePath) return { ok: false, canceled: true };
 
@@ -4045,11 +4131,11 @@ ipcMain.handle('warehouse:snapshot', async () => {
 
 ipcMain.handle('warehouse:pick-files', async () => {
   const result = await openDialog({
-    title: '选择要放进仓库的文件',
+    title: uiText.t('main.app.pickWarehouseFilesTitle'),
     properties: ['openFile', 'multiSelections'],
     filters: [
       {
-        name: '图片与文档',
+        name: uiText.t('main.app.imagesAndDocuments'),
         extensions: [
           'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg',
           'pdf', 'docx', 'xlsx',
@@ -4057,7 +4143,7 @@ ipcMain.handle('warehouse:pick-files', async () => {
           'txt', 'md', 'csv', 'json', 'html',
         ],
       },
-      { name: '全部文件', extensions: ['*'] },
+      { name: uiText.t('main.app.allFiles'), extensions: ['*'] },
     ],
   });
   return result.canceled ? [] : result.filePaths;
@@ -4065,7 +4151,7 @@ ipcMain.handle('warehouse:pick-files', async () => {
 
 ipcMain.handle('workspace:pick-folder', async () => {
   const result = await openDialog({
-    title: '选择工作空间文件夹',
+    title: uiText.t('main.app.pickWorkspaceFolderTitle'),
     properties: ['openDirectory', 'createDirectory'],
   });
   return result.canceled ? null : result.filePaths[0] ?? null;
@@ -4158,7 +4244,7 @@ async function statWithTimeout(target, timeoutMs) {
       fs.stat(target),
       new Promise((_, reject) => {
         timer = setTimeout(() => {
-          reject(Object.assign(new Error('检查路径超时。'), { code: 'ETIMEDOUT' }));
+          reject(Object.assign(new Error(uiText.t('main.app.pathCheckTimeout')), { code: 'ETIMEDOUT' }));
         }, timeoutMs);
       }),
     ]);
@@ -4174,7 +4260,7 @@ async function statWithTimeout(target, timeoutMs) {
  */
 ipcMain.handle('workspace:probe', async (_event, request) => {
   const id = String(request?.id ?? '');
-  if (!id) return { ok: false, reason: 'error', error: '缺少工作空间 id。' };
+  if (!id) return { ok: false, reason: 'error', error: uiText.t('main.app.missingWorkspaceId') };
   if (String(request?.kind ?? 'folder') === 'remote') {
     const result = await remotes().probe(id, request?.remote ?? {});
     if (result.ok) return { ok: true };
@@ -4190,12 +4276,12 @@ ipcMain.handle('workspace:probe', async (_event, request) => {
     };
   }
   const target = String(request?.path ?? '');
-  if (!target) return { ok: false, reason: 'missing', error: '没有填写路径。' };
+  if (!target) return { ok: false, reason: 'missing', error: uiText.t('main.app.pathEmpty') };
   try {
     const info = await statWithTimeout(target, 10000);
     return info.isDirectory()
       ? { ok: true }
-      : { ok: false, reason: 'not-dir', error: '这个路径不是文件夹。' };
+      : { ok: false, reason: 'not-dir', error: uiText.t('main.app.pathNotFolder') };
   } catch (error) {
     return {
       ok: false,
@@ -4207,9 +4293,9 @@ ipcMain.handle('workspace:probe', async (_event, request) => {
 
 ipcMain.handle('workspace:pick-key-file', async () => {
   const result = await openDialog({
-    title: '选择私钥文件',
+    title: uiText.t('main.app.pickKeyFileTitle'),
     properties: ['openFile'],
-    filters: [{ name: '私钥', extensions: ['*'] }],
+    filters: [{ name: uiText.t('main.app.privateKey'), extensions: ['*'] }],
   });
   return result.canceled ? '' : String(result.filePaths?.[0] ?? '');
 });
@@ -4319,29 +4405,31 @@ async function workspaceRootInfo(workspaceId) {
 }
 
 function describeFsError(error) {
-  if (error?.code === 'ENOENT') return '文件夹不存在，或已经被移动。';
-  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '没有权限修改这个位置。';
-  if (error?.code === 'EISDIR') return '这是一个文件夹。';
-  if (error?.code === 'ENOTDIR') return '目标位置不是文件夹。';
-  if (error?.code === 'EEXIST' || error?.code === 'ENOTEMPTY') return '已经有同名文件或文件夹。';
-  if (error?.code === 'EBUSY') return '这个项目正在被其他程序使用。';
+  if (error?.code === 'ENOENT') return uiText.t('main.app.fsNotFound');
+  if (error?.code === 'EACCES' || error?.code === 'EPERM') return uiText.t('main.app.fsNoPermission');
+  if (error?.code === 'EISDIR') return uiText.t('main.app.fsIsFolder');
+  if (error?.code === 'ENOTDIR') return uiText.t('main.app.fsNotFolder');
+  if (error?.code === 'EEXIST' || error?.code === 'ENOTEMPTY') {
+    return uiText.t('main.app.fsNameTaken');
+  }
+  if (error?.code === 'EBUSY') return uiText.t('main.app.fsBusy');
   if (error?.code === 'path_escape') return error.message;
-  return error?.message ? String(error.message) : '操作失败。';
+  return error?.message ? String(error.message) : uiText.t('main.app.fsFailed');
 }
 
 /** Windows file names: one path segment, no reserved characters or devices. */
 function validateEntryName(value) {
   const name = typeof value === 'string' ? value.trim() : '';
-  if (!name) return { error: '名称不能为空。' };
-  if (name === '.' || name === '..') return { error: '这个名称不能用。' };
+  if (!name) return { error: uiText.t('main.app.nameEmpty') };
+  if (name === '.' || name === '..') return { error: uiText.t('main.app.nameReserved') };
   if (/[<>:"/\\|?*\u0000-\u001F]/.test(name)) {
-    return { error: '名称里不能包含 < > : " / \\ | ? * 这些字符。' };
+    return { error: uiText.t('main.app.nameBadChars') };
   }
-  if (/[. ]$/.test(name)) return { error: '名称不能以空格或句点结尾。' };
+  if (/[. ]$/.test(name)) return { error: uiText.t('main.app.nameTrailing') };
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(name)) {
-    return { error: '这是 Windows 的保留名称，请换一个。' };
+    return { error: uiText.t('main.app.nameDevice') };
   }
-  if (name.length > 255) return { error: '名称太长。' };
+  if (name.length > 255) return { error: uiText.t('main.app.nameTooLong') };
   return { name };
 }
 
@@ -4358,8 +4446,8 @@ function formatBytes(bytes) {
 /** Resolve a relative entry path and keep it inside the workspace root. */
 async function resolveWorkspaceTarget(workspaceId, relativePath) {
   const info = await workspaceRootInfo(workspaceId);
-  if (!info) throw new Error('找不到这个工作空间，请重新选择一个文件夹。');
-  if (info.remote) throw new Error('这是远程工作空间。');
+  if (!info) throw new Error(uiText.t('main.app.workspaceNotFound'));
+  if (info.remote) throw new Error(uiText.t('main.app.workspaceIsRemote'));
   if (info.isScratch) await fs.mkdir(info.root, { recursive: true });
   const root = await fs.realpath(info.root);
   const target = await resolveInside(root, relativePath || '.');
@@ -4396,7 +4484,7 @@ const IMAGE_MIME = {
 ipcMain.handle('workspace:viz-tables', async (_event, request) => {
   try {
     const remoteFs = await remoteWorkspaceFs(request?.workspaceId);
-    if (remoteFs) return { ok: false, error: '远程工作空间暂不支持读取表格内容。' };
+    if (remoteFs) return { ok: false, error: uiText.t('main.app.remoteTablesUnsupported') };
     const { root } = await resolveWorkspaceTarget(request?.workspaceId);
     const tables = await vizFiles.collectWorkspaceTables(root);
     return { ok: true, tables };
@@ -4408,10 +4496,10 @@ ipcMain.handle('workspace:viz-tables', async (_event, request) => {
 ipcMain.handle('workspace:viz-table-rows', async (_event, request) => {
   try {
     const remoteFs = await remoteWorkspaceFs(request?.workspaceId);
-    if (remoteFs) return { ok: false, error: '远程工作空间暂不支持展开表格。' };
+    if (remoteFs) return { ok: false, error: uiText.t('main.app.remoteTableRowsUnsupported') };
     const { root } = await resolveWorkspaceTarget(request?.workspaceId);
     const table = await vizFiles.readTableRows(root, request?.refs);
-    if (!table) return { ok: false, error: '读不到这张表的原始文件了，可能已经被删除。' };
+    if (!table) return { ok: false, error: uiText.t('main.app.tableSourceGone') };
     return { ok: true, ...table };
   } catch (error) {
     return { ok: false, error: describeFsError(error) };
@@ -4465,13 +4553,16 @@ ipcMain.handle('workspace:read-file', async (_event, request) => {
     const stat = await fs.stat(target);
     const name = path.basename(target);
     const relativePath = path.relative(root, target).split(path.sep).join('/');
-    if (stat.isDirectory()) return { ok: false, error: '这是一个文件夹，不能预览。' };
+    if (stat.isDirectory()) return { ok: false, error: uiText.t('main.app.previewFolder') };
 
     const ext = path.extname(target).slice(1).toLowerCase();
     const mime = IMAGE_MIME[ext];
     if (mime) {
       if (stat.size > IMAGE_PREVIEW_LIMIT) {
-        return { ok: false, error: `图片太大（${formatBytes(stat.size)}），无法在应用内预览。` };
+        return {
+          ok: false,
+          error: uiText.t('main.app.imageTooLarge', { size: formatBytes(stat.size) }),
+        };
       }
       const data = await fs.readFile(target);
       return {
@@ -4519,7 +4610,7 @@ ipcMain.handle('workspace:read-file', async (_event, request) => {
 ipcMain.handle('workspace:open-file', async (_event, request) => {
   try {
     if (await remoteWorkspaceFs(request?.workspaceId)) {
-      return { ok: false, error: '这是远程文件，不能直接用本机程序打开；请在应用内预览。' };
+      return { ok: false, error: uiText.t('main.app.remoteFileOpen') };
     }
     const { target } = await resolveWorkspaceTarget(request?.workspaceId, request?.path);
     const error = await fileOpener.openPath(target);
@@ -4532,7 +4623,7 @@ ipcMain.handle('workspace:open-file', async (_event, request) => {
 ipcMain.handle('workspace:reveal', async (_event, request) => {
   try {
     if (await remoteWorkspaceFs(request?.workspaceId)) {
-      return { ok: false, error: '这是远程工作空间，文件不在本机上。' };
+      return { ok: false, error: uiText.t('main.app.remoteFileReveal') };
     }
     const { target } = await resolveWorkspaceTarget(request?.workspaceId, request?.path);
     const stat = await fs.stat(target);
@@ -4558,7 +4649,7 @@ ipcMain.handle('workspace:create-folder', async (_event, request) => {
     const checked = validateEntryName(request?.name);
     if (checked.error) return { ok: false, error: checked.error };
     if (!(await fs.stat(parent)).isDirectory()) {
-      return { ok: false, error: '只能在文件夹里新建文件夹。' };
+      return { ok: false, error: uiText.t('main.app.newFolderInFolder') };
     }
     const target = path.join(parent, checked.name);
     await fs.mkdir(target);
@@ -4573,19 +4664,19 @@ ipcMain.handle('workspace:move', async (_event, request) => {
     const remoteFs = await remoteWorkspaceFs(request?.workspaceId);
     if (remoteFs) return await remoteIpc.move(remoteFs, request ?? {});
     const fromRequest = String(request?.from ?? '').trim();
-    if (!fromRequest) return { ok: false, error: '没有选中要移动的项目。' };
+    if (!fromRequest) return { ok: false, error: uiText.t('main.app.nothingToMove') };
     const { root, target: from } = await resolveWorkspaceTarget(
       request?.workspaceId,
       fromRequest,
     );
-    if (from === root) return { ok: false, error: '不能移动工作空间的根目录。' };
+    if (from === root) return { ok: false, error: uiText.t('main.app.cannotMoveRoot') };
 
     const { target: toDir } = await resolveWorkspaceTarget(
       request?.workspaceId,
       request?.toDir,
     );
     if (!(await fs.stat(toDir)).isDirectory()) {
-      return { ok: false, error: '只能移动到文件夹里。' };
+      return { ok: false, error: uiText.t('main.app.moveIntoFolder') };
     }
     if (path.dirname(from) === toDir) {
       return { ok: true, path: toWorkspacePath(root, from) };
@@ -4598,7 +4689,7 @@ ipcMain.handle('workspace:move', async (_event, request) => {
         relativeToSource === '' ||
         (!relativeToSource.startsWith('..') && !path.isAbsolute(relativeToSource))
       ) {
-        return { ok: false, error: '不能把文件夹移动到它自己或它的子文件夹里。' };
+        return { ok: false, error: uiText.t('main.app.moveIntoSelf') };
       }
     }
 
@@ -4606,7 +4697,7 @@ ipcMain.handle('workspace:move', async (_event, request) => {
     if (target === from) return { ok: true, path: toWorkspacePath(root, from) };
     try {
       await fs.access(target);
-      return { ok: false, error: '目标文件夹里已经有同名项目。' };
+      return { ok: false, error: uiText.t('main.app.moveNameTaken') };
     } catch {
       /* target is free */
     }
@@ -4625,7 +4716,7 @@ ipcMain.handle('workspace:rename', async (_event, request) => {
       request?.workspaceId,
       request?.path,
     );
-    if (from === root) return { ok: false, error: '不能重命名工作空间的根目录。' };
+    if (from === root) return { ok: false, error: uiText.t('main.app.cannotRenameRoot') };
     const checked = validateEntryName(request?.name);
     if (checked.error) return { ok: false, error: checked.error };
 
@@ -4638,7 +4729,7 @@ ipcMain.handle('workspace:rename', async (_event, request) => {
     if (!caseOnly) {
       try {
         await fs.access(target);
-        return { ok: false, error: '已经有同名文件或文件夹。' };
+        return { ok: false, error: uiText.t('main.app.fsNameTaken') };
       } catch {
         /* target is free */
       }
@@ -4659,7 +4750,7 @@ ipcMain.handle('workspace:delete', async (_event, request) => {
       request?.workspaceId,
       request?.path,
     );
-    if (target === root) return { ok: false, error: '不能删除工作空间的根目录。' };
+    if (target === root) return { ok: false, error: uiText.t('main.app.cannotDeleteRoot') };
     await fs.lstat(target);
     await shell.trashItem(target);
     return { ok: true };
@@ -4741,7 +4832,7 @@ function queueWorkspaceChange(workspaceId, dir) {
 
 ipcMain.handle('workspace:watch', async (_event, request) => {
   const workspaceId = String(request?.workspaceId ?? '');
-  if (!workspaceId) return { ok: false, error: '没有指定工作空间。' };
+  if (!workspaceId) return { ok: false, error: uiText.t('main.workspace.missingId') };
   // A remote host cannot be watched with fs.watch; the tree refreshes on open
   // and on demand instead.
   if ((await workspaceRootInfo(workspaceId))?.remote) return { ok: true, dirs: [] };
@@ -4853,14 +4944,14 @@ ipcMain.handle('warehouse:delete-many', async (_event, ids) => {
 
 ipcMain.handle('warehouse:open', async (_event, id) => {
   const found = await warehouse.itemPath(id);
-  if (!found) return { ok: false, error: '仓库里找不到这个文件' };
+  if (!found) return { ok: false, error: uiText.t('main.warehouse.fileMissing') };
   const error = await fileOpener.openPath(found.path);
   return error ? { ok: false, error } : { ok: true };
 });
 
 ipcMain.handle('warehouse:reveal', async (_event, id) => {
   const found = await warehouse.itemPath(id);
-  if (!found) return { ok: false, error: '仓库里找不到这个文件' };
+  if (!found) return { ok: false, error: uiText.t('main.warehouse.fileMissing') };
   fileOpener.revealPath(found.path);
   return { ok: true };
 });
@@ -4894,7 +4985,7 @@ function readOcrOptions(options) {
 
 async function readWarehouseFile(id, ocrOptions) {
   const found = await warehouse.itemPath(id);
-  if (!found) return { id, ok: false, error: '仓库里找不到这个文件' };
+  if (!found) return { id, ok: false, error: uiText.t('main.warehouse.fileMissing') };
 
   const { item, path: filePath } = found;
   const base = {
@@ -4910,11 +5001,11 @@ async function readWarehouseFile(id, ocrOptions) {
 
   if (item.kind === 'image') {
     if (!ocrOptions.enabled) {
-      return { ...base, ok: false, error: '图片识别没有开启（设置 → OCR 配置）' };
+      return { ...base, ok: false, error: uiText.t('main.warehouse.ocrDisabled') };
     }
     try {
       const full = (await ocr.recognizeImage(filePath)).trim();
-      if (!full) throw new Error('图片里没有识别到文字');
+      if (!full) throw new Error(uiText.t('main.warehouse.imageNoText'));
       const truncated = full.length > MAX_ATTACHMENT_CHARS;
       return {
         ...base,
@@ -4953,24 +5044,27 @@ async function readWarehouseFile(id, ocrOptions) {
     try {
       const scanned = await ocr.recognizePdf(filePath, { maxPages: ocrOptions.maxPages });
       const text = scanned.pages
-        .map((page) => `【第 ${page.page} 页】\n${page.text}`.trim())
+        .map((page) => uiText.t('main.warehouse.pageHeader', { page: page.page, text: page.text }).trim())
         .join('\n\n')
         .trim();
       if (text) {
         full = text;
         usedOcr = true;
         if (scanned.truncated) {
-          note = `文档共 ${scanned.totalPages} 页，只识别了前 ${scanned.pages.length} 页`;
+          note = uiText.t('main.warehouse.pdfPageLimit', {
+            total: scanned.totalPages,
+            used: scanned.pages.length,
+          });
         }
       }
     } catch (error) {
       // Keep the text layer when OCR fails; the note explains the fallback.
-      note = `扫描件 OCR 失败：${error?.message || String(error)}`;
+      note = uiText.t('main.warehouse.ocrFailed', { error: error?.message || String(error) });
     }
   }
 
   if (!full) {
-    const reason = extractError?.message || note || '文件里没有可读取的文字';
+    const reason = extractError?.message || note || uiText.t('main.warehouse.noText');
     return { ...base, ok: false, error: reason };
   }
 
@@ -5296,7 +5390,7 @@ function startMemoryLearning({ agent, provider, history, message, sessionId, mes
             provider,
             usage,
             sessionId,
-            workspaceName: '长期记忆',
+            workspaceName: uiText.t('main.app.memoryWorkspace'),
           }),
         onEvent: (payload) => broadcast('agent:memory-event', { ...payload, at: Date.now() }),
       })
@@ -5306,10 +5400,10 @@ function startMemoryLearning({ agent, provider, history, message, sessionId, mes
 
 async function recheckMemory(agent, store, entry, options = {}) {
   if (!agent.memory?.allowWebRecheck && !options.force) {
-    return { ok: false, error: '这个 Agent 关闭了联网复核。' };
+    return { ok: false, error: uiText.t('main.app.recheckDisabled') };
   }
   const provider = await memoryProvider();
-  if (!provider) return { ok: false, error: '还没有可用的对话模型，无法复核。' };
+  if (!provider) return { ok: false, error: uiText.t('main.app.noModelForRecheck') };
 
   const verdict = await memoryRecheck.verifyEntry({ entry, provider });
   usageStore?.record({
@@ -5317,7 +5411,7 @@ async function recheckMemory(agent, store, entry, options = {}) {
     provider,
     usage: verdict.usage,
     sessionId: '',
-    workspaceName: '记忆复核',
+    workspaceName: uiText.t('main.app.memoryRecheckWorkspace'),
   });
   const applied = memoryStore.applyVerdict(store, entry.id, verdict, {
     force: Boolean(options.force),
@@ -5346,7 +5440,7 @@ async function recheckMemory(agent, store, entry, options = {}) {
 
 ipcMain.handle('agents:memory-snapshot', async (_event, id) => {
   const agent = memoryAgent(id);
-  if (!agent) return { ok: false, error: 'Agent 不存在。' };
+  if (!agent) return { ok: false, error: uiText.t('main.app.agentNotFound') };
   const store = await memoryStore.loadStore(agentDir(), agent.id);
   const snapshot = memoryStore.snapshotOf(store);
   const events = await memoryStore.readEvents(agentDir(), agent.id, 40);
@@ -5364,11 +5458,11 @@ ipcMain.handle('agents:memory-snapshot', async (_event, id) => {
 
 ipcMain.handle('agents:memory-save', async (_event, id, input) => {
   const agent = memoryAgent(id);
-  if (!agent) return { ok: false, error: 'Agent 不存在。' };
+  if (!agent) return { ok: false, error: uiText.t('main.app.agentNotFound') };
   const store = await memoryStore.loadStore(agentDir(), agent.id);
   const memoryId = String(input?.id ?? '').trim();
   const previous = memoryId ? store.entries.find((item) => item.id === memoryId) : null;
-  if (memoryId && !previous) return { ok: false, error: '这条记忆已经不存在。' };
+  if (memoryId && !previous) return { ok: false, error: uiText.t('main.app.memoryEntryGone') };
 
   const now = memoryStore.nowMs();
   const previousTags = JSON.stringify(previous?.tags ?? []);
@@ -5414,7 +5508,11 @@ ipcMain.handle('agents:memory-save', async (_event, id, input) => {
   if (previous && contentChanged) {
     entry.history = [
       ...(previous.history ?? []),
-      memoryStore.snapshotEntry(previous, { now, reason: '用户手动修改', verifiedBy: 'manual' }),
+      memoryStore.snapshotEntry(previous, {
+        now,
+        reason: uiText.t('main.app.memoryEditReason'),
+        verifiedBy: 'manual',
+      }),
     ].slice(-20);
     entry.revision = (previous.revision ?? 1) + 1;
   }
@@ -5431,10 +5529,10 @@ ipcMain.handle('agents:memory-save', async (_event, id, input) => {
 
 ipcMain.handle('agents:memory-delete', async (_event, id, memoryId) => {
   const agent = memoryAgent(id);
-  if (!agent) return { ok: false, error: 'Agent 不存在。' };
+  if (!agent) return { ok: false, error: uiText.t('main.app.agentNotFound') };
   const store = await memoryStore.loadStore(agentDir(), agent.id);
   const index = store.entries.findIndex((item) => item.id === String(memoryId ?? ''));
-  if (index === -1) return { ok: false, error: '这条记忆已经不存在。' };
+  if (index === -1) return { ok: false, error: uiText.t('main.app.memoryEntryGone') };
   const [removed] = store.entries.splice(index, 1);
   await commitMemory(agent.id, store, {
     type: 'delete',
@@ -5446,12 +5544,12 @@ ipcMain.handle('agents:memory-delete', async (_event, id, memoryId) => {
 
 ipcMain.handle('agents:memory-review', async (_event, id, memoryId, decision) => {
   const agent = memoryAgent(id);
-  if (!agent) return { ok: false, error: 'Agent 不存在。' };
+  if (!agent) return { ok: false, error: uiText.t('main.app.agentNotFound') };
   const status = MEMORY_REVIEW_STATUS[String(decision ?? '')];
-  if (!status) return { ok: false, error: '未知的操作。' };
+  if (!status) return { ok: false, error: uiText.t('main.app.unknownAction') };
   const store = await memoryStore.loadStore(agentDir(), agent.id);
   const entry = store.entries.find((item) => item.id === String(memoryId ?? ''));
-  if (!entry) return { ok: false, error: '这条记忆已经不存在。' };
+  if (!entry) return { ok: false, error: uiText.t('main.app.memoryEntryGone') };
 
   const now = memoryStore.nowMs();
   entry.status = status;
@@ -5476,10 +5574,10 @@ ipcMain.handle('agents:memory-review', async (_event, id, memoryId, decision) =>
 
 ipcMain.handle('agents:memory-recheck', async (_event, id, memoryId) => {
   const agent = memoryAgent(id);
-  if (!agent) return { ok: false, error: 'Agent 不存在。' };
+  if (!agent) return { ok: false, error: uiText.t('main.app.agentNotFound') };
   const store = await memoryStore.loadStore(agentDir(), agent.id);
   const entry = store.entries.find((item) => item.id === String(memoryId ?? ''));
-  if (!entry) return { ok: false, error: '这条记忆已经不存在。' };
+  if (!entry) return { ok: false, error: uiText.t('main.app.memoryEntryGone') };
   try {
     return await recheckMemory(agent, store, entry, { force: true, verifiedBy: 'user' });
   } catch (error) {
@@ -5489,7 +5587,7 @@ ipcMain.handle('agents:memory-recheck', async (_event, id, memoryId) => {
 
 ipcMain.handle('agents:memory-proposal', async (_event, id, memoryId, accept) => {
   const agent = memoryAgent(id);
-  if (!agent) return { ok: false, error: 'Agent 不存在。' };
+  if (!agent) return { ok: false, error: uiText.t('main.app.agentNotFound') };
   const store = await memoryStore.loadStore(agentDir(), agent.id);
   const result = memoryStore.applyProposal(store, String(memoryId ?? ''), Boolean(accept), {
     now: memoryStore.nowMs(),
@@ -5504,7 +5602,7 @@ ipcMain.handle('agents:memory-proposal', async (_event, id, memoryId, accept) =>
 
 ipcMain.handle('agents:memory-events', async (_event, id) => {
   const agent = memoryAgent(id);
-  if (!agent) return { ok: false, error: 'Agent 不存在。' };
+  if (!agent) return { ok: false, error: uiText.t('main.app.agentNotFound') };
   return {
     ok: true,
     events: await memoryStore.readEvents(agentDir(), agent.id, 60),
@@ -5513,7 +5611,7 @@ ipcMain.handle('agents:memory-events', async (_event, id) => {
 
 ipcMain.handle('agents:memory-config', async (_event, id, patch) => {
   const agent = memoryAgent(id);
-  if (!agent) return { ok: false, error: 'Agent 不存在。' };
+  if (!agent) return { ok: false, error: uiText.t('main.app.agentNotFound') };
   const next = agentDefinitions.map((item) =>
     item.id === agent.id
       ? { ...item, memory: agentsStore.normalizeMemory({ ...item.memory, ...(patch ?? {}) }), updatedAt: Date.now() }
@@ -5522,7 +5620,10 @@ ipcMain.handle('agents:memory-config', async (_event, id, patch) => {
   try {
     await agentsStore.saveAgents(agentDir(), next);
   } catch (error) {
-    return { ok: false, error: `保存失败：${error?.message || String(error)}` };
+    return {
+      ok: false,
+      error: uiText.t('main.app.saveFailed', { error: error?.message || String(error) }),
+    };
   }
   agentDefinitions = next;
   // Turning auto-confirm on clears the review queue too: entries that were
@@ -5644,7 +5745,7 @@ async function warmMemoryVectors() {
 setMemoryBridge({
   search: async (agentId, query, limit) => {
     const agent = memoryAgent(agentId);
-    if (!agent) return { error: 'Agent 不存在。' };
+    if (!agent) return { error: uiText.t('main.app.agentNotFound') };
     const store = await memoryStore.loadStore(agentDir(), agent.id);
     const now = memoryStore.nowMs();
 
@@ -5789,7 +5890,7 @@ ipcMain.handle('storage:info', () => storageInfo());
 
 ipcMain.handle('storage:pick-root', async () => {
   const result = await openDialog({
-    title: '选择应用数据的储存位置',
+    title: uiText.t('main.storage.pickRootTitle'),
     properties: ['openDirectory', 'createDirectory'],
   });
   return result.canceled ? null : result.filePaths[0] || null;

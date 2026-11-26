@@ -6,6 +6,7 @@
  */
 
 const engine = require('./engine');
+const uiText = require('../ui-text');
 
 async function handle(request) {
   const { id, type } = request;
@@ -29,7 +30,7 @@ async function handle(request) {
       return;
     }
 
-    throw new Error(`未知的 OCR 请求类型：${type}`);
+    throw new Error(uiText.t('main.ocr.error.unknownRequest', { type }));
   } catch (error) {
     process.parentPort.postMessage({
       id,

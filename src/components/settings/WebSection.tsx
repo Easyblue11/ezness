@@ -1,18 +1,24 @@
 import { useState } from 'react';
-import { webEntryId } from '../../data/web';
+import { DEFAULT_WEB_ENTRIES, LOW_MATCH_NOTE, WEB_ENTRY_NAME_KEYS, webEntryId } from '../../data/web';
+import { useI18n } from '../../i18n';
 import type { WebEntry, WebParser, WebSettings } from '../../types';
 import { GlobeIcon, PlusIcon, TrashIcon } from '../Icons';
 import { WebModeSlider } from '../WebModeSlider';
 
-const PARSER_LABEL: Record<WebParser, string> = {
-  bing: 'Bing 结果页',
-  so: '360 结果页',
-  baidu: '百度结果页',
-  shenma: '神马结果页',
-  quark: '夸克结果页',
-  duckduckgo: 'DuckDuckGo Lite',
-  html: '通用 HTML',
+const PARSER_KEY: Record<WebParser, string> = {
+  bing: 'settings.web.parser.bing',
+  so: 'settings.web.parser.so',
+  baidu: 'settings.web.parser.baidu',
+  shenma: 'settings.web.parser.shenma',
+  quark: 'settings.web.parser.quark',
+  duckduckgo: 'settings.web.parser.duckduckgo',
+  html: 'settings.web.parser.html',
 };
+
+/** Built-in names are localised while the entry still carries its default name. */
+function builtinName(entry: WebEntry): string {
+  return DEFAULT_WEB_ENTRIES.find((item) => item.id === entry.id)?.name ?? '';
+}
 
 type TestState = {
   state: 'idle' | 'loading' | 'ok' | 'error';
@@ -27,10 +33,16 @@ interface Props {
 }
 
 export function WebSection({ web, onChange }: Props) {
-  const [probe, setProbe] = useState('今天的新闻');
+  const { t } = useI18n();
+  const [probe, setProbe] = useState(() => t('settings.web.test.probeDefault'));
   const [test, setTest] = useState<TestState>({ state: 'idle' });
 
   const enabled = web.entries.filter((entry) => entry.enabled);
+
+  function entryName(entry: WebEntry): string {
+    const key = entry.builtin ? WEB_ENTRY_NAME_KEYS[entry.id] : undefined;
+    return key && entry.name === builtinName(entry) ? t(key) : entry.name;
+  }
 
   function patchEntry(id: string, patch: Partial<WebEntry>) {
     onChange({
@@ -52,7 +64,9 @@ export function WebSection({ web, onChange }: Props) {
         ...web.entries,
         {
           id: webEntryId(),
-          name: `自定义入口 ${web.entries.filter((entry) => !entry.builtin).length + 1}`,
+          name: t('settings.web.entry.customName', {
+            count: web.entries.filter((entry) => !entry.builtin).length + 1,
+          }),
           url: '',
           parser: 'html',
           enabled: true,
@@ -67,26 +81,33 @@ export function WebSection({ web, onChange }: Props) {
     const query = probe.trim();
     if (!api || !query) return;
 
-    setTest({ state: 'loading', text: '正在向启用的入口并发请求…' });
+    setTest({ state: 'loading', text: t('settings.web.test.running') });
     try {
       const result = await api.webSearch(query, enabled);
       if (!result.ok) {
-        setTest({ state: 'error', text: result.error ?? '没有拿到结果' });
+        setTest({ state: 'error', text: result.error ?? t('settings.web.test.noResult') });
         return;
       }
       const results = result.results ?? [];
       const stats = (result.engines ?? [])
         .filter((engine) => engine.count > 0)
-        .map((engine) => `${engine.name} ${engine.count} 条`)
+        .map((engine) => {
+          const key = WEB_ENTRY_NAME_KEYS[engine.id];
+          return t('settings.web.test.engineCount', {
+            name: key ? t(key) : engine.name,
+            count: engine.count,
+          });
+        })
         .join(' · ');
       setTest({
         state: 'ok',
-        text: `汇总 ${results.length} 条结果${stats ? ` · ${stats}` : ''}${
-          result.weak ? ' · 匹配度偏低，仅作参考' : ''
-        }`,
+        text: `${t('settings.web.test.summary', { count: results.length })}${
+          stats ? ` · ${stats}` : ''
+        }${result.weak ? ` ${t('settings.web.test.weak')}` : ''}`,
         // Entries that contributed nothing still matter: a captcha here is why a
         // source that used to work suddenly went quiet.
-        notes: (result.errors ?? []).filter((note) => !/结果与问题不匹配/.test(note)),
+        // Backend notes carry this fixed marker; it is matched, never rendered.
+        notes: (result.errors ?? []).filter((note) => !note.includes(LOW_MATCH_NOTE)),
         samples: results.slice(0, 3).map((item) => ({ title: item.title, url: item.url })),
       });
     } catch (error) {
@@ -98,26 +119,24 @@ export function WebSection({ web, onChange }: Props) {
     <div className="section">
       <div className="section__head">
         <div>
-          <h2>网络设置</h2>
-          <p>
-            联网检索时，下面每个被激活的入口都会在本地并发请求一次，结果去重后一起交给模型。
-            请求全部在本机主进程发出，不经过模型厂商。
-          </p>
+          <h2>{t('settings.web.title')}</h2>
+          <p>{t('settings.web.desc')}</p>
         </div>
         <span className="pill">
-          <GlobeIcon size={12} /> {enabled.length} / {web.entries.length} 已启用
+          <GlobeIcon size={12} />{' '}
+          {t('settings.web.enabledCount', {
+            enabled: enabled.length,
+            total: web.entries.length,
+          })}
         </span>
       </div>
 
       <section className="kb-card">
         <div className="kb-card__title">
           <GlobeIcon size={15} />
-          默认联网方式
+          {t('settings.web.default.title')}
         </div>
-        <p className="kb-card__desc">
-          新对话和新任务从这里取初始状态；每条对话里的「联网」仍然可以单独调整。
-          自动模式会先让 AI 判断消息是否需要最新信息，只在需要时检索——寒暄和通用问题不会触发搜索。
-        </p>
+        <p className="kb-card__desc">{t('settings.web.default.desc')}</p>
         <WebModeSlider
           value={web.defaultMode}
           onChange={(defaultMode) => onChange({ ...web, defaultMode })}
@@ -125,19 +144,17 @@ export function WebSection({ web, onChange }: Props) {
       </section>
 
       {enabled.length === 0 && (
-        <div className="notice notice--warn">
-          现在没有任何入口是激活的。开着「联网」发送消息时不会检索网页——至少打开一个。
-        </div>
+        <div className="notice notice--warn">{t('settings.web.none')}</div>
       )}
 
       <section className="kb-card">
         <div className="kb-card__title">
           <GlobeIcon size={15} />
-          搜索地址
+          {t('settings.web.url.title')}
         </div>
         <p className="kb-card__desc">
-          地址里的 <code>{'{query}'}</code> 会被替换成已编码的问题。内置入口按各自的结果页结构解析；
-          自定义入口按「标题链接」通用规则提取，适合简单的结果页。
+          {t('settings.web.url.desc1')} <code>{'{query}'}</code>
+          {t('settings.web.url.desc2')}
         </p>
 
         <div className="web-list">
@@ -149,7 +166,9 @@ export function WebSection({ web, onChange }: Props) {
                 <div className="web-entry__head">
                   <button
                     className={`switch ${entry.enabled ? 'is-on' : ''}`}
-                    title={entry.enabled ? '已激活，联网时会请求' : '未激活，联网时跳过'}
+                    title={
+                      entry.enabled ? t('settings.web.entry.onTitle') : t('settings.web.entry.offTitle')
+                    }
                     aria-pressed={entry.enabled}
                     onClick={() => patchEntry(entry.id, { enabled: !entry.enabled })}
                   >
@@ -157,17 +176,20 @@ export function WebSection({ web, onChange }: Props) {
                   </button>
                   <input
                     className="input web-entry__name"
-                    value={entry.name}
-                    placeholder="入口名称"
+                    value={entryName(entry)}
+                    placeholder={t('settings.web.entry.namePlaceholder')}
                     onChange={(event) => patchEntry(entry.id, { name: event.target.value })}
                   />
                   <span className="web-entry__tag">
-                    {entry.builtin ? '内置' : '自定义'} · {PARSER_LABEL[entry.parser] ?? '通用 HTML'}
+                    {entry.builtin
+                      ? t('settings.web.entry.builtin')
+                      : t('settings.web.entry.custom')}{' '}
+                    · {t(PARSER_KEY[entry.parser] ?? PARSER_KEY.html)}
                   </span>
                   {!entry.builtin && (
                     <button
                       className="iconbtn"
-                      title="删除这个入口"
+                      title={t('settings.web.entry.remove')}
                       onClick={() => removeEntry(entry.id)}
                     >
                       <TrashIcon size={14} />
@@ -182,11 +204,12 @@ export function WebSection({ web, onChange }: Props) {
                   onChange={(event) => patchEntry(entry.id, { url: event.target.value })}
                 />
                 {emptyUrl && (
-                  <div className="web-entry__hint">还没有填地址，联网时这个入口会被跳过。</div>
+                  <div className="web-entry__hint">{t('settings.web.entry.emptyUrl')}</div>
                 )}
                 {badUrl && (
                   <div className="web-entry__hint web-entry__hint--warn">
-                    地址里缺少 <code>{'{query}'}</code>，联网时这个入口会被跳过。
+                    {t('settings.web.entry.badUrlBefore')} <code>{'{query}'}</code>
+                    {t('settings.web.entry.badUrlAfter')}
                   </div>
                 )}
               </div>
@@ -197,21 +220,19 @@ export function WebSection({ web, onChange }: Props) {
         <div className="kb-card__row">
           <button className="btn" onClick={addEntry}>
             <PlusIcon size={14} />
-            新增入口
+            {t('settings.web.entry.add')}
           </button>
         </div>
       </section>
 
       <section className="kb-card">
-        <div className="kb-card__title">试一下</div>
-        <p className="kb-card__desc">
-          用当前激活的入口真实请求一次，检查是否能解析出结果、各入口贡献了多少。不会调用模型。
-        </p>
+        <div className="kb-card__title">{t('settings.web.test.title')}</div>
+        <p className="kb-card__desc">{t('settings.web.test.desc')}</p>
         <div className="kb-card__row">
           <input
             className="input"
             value={probe}
-            placeholder="输入一个测试问题"
+            placeholder={t('settings.web.test.placeholder')}
             onChange={(event) => setProbe(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') void runTest();
@@ -222,7 +243,9 @@ export function WebSection({ web, onChange }: Props) {
             disabled={test.state === 'loading' || enabled.length === 0 || !probe.trim()}
             onClick={() => void runTest()}
           >
-            {test.state === 'loading' ? '检索中…' : '测试所有入口'}
+            {test.state === 'loading'
+              ? t('settings.web.test.searching')
+              : t('settings.web.test.button')}
           </button>
         </div>
 
@@ -231,7 +254,11 @@ export function WebSection({ web, onChange }: Props) {
           <>
             <div className="kb-card__meta">{test.text}</div>
             {test.notes && test.notes.length > 0 && (
-              <div className="web-entry__hint">未采用：{test.notes.join('；')}</div>
+              <div className="web-entry__hint">
+                {t('settings.web.test.notesRejected', {
+                  notes: test.notes.join(t('settings.web.test.notesJoin')),
+                })}
+              </div>
             )}
             {test.samples && test.samples.length > 0 && (
               <ul className="web-samples">

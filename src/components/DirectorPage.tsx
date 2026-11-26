@@ -12,6 +12,7 @@ import type {
   DirectorState,
   VizChart,
 } from '../types';
+import { useI18n } from '../i18n';
 import { ConfirmDialog } from './ConfirmDialog';
 import { BillingIcon, DirectorIcon, SettingsIcon } from './Icons';
 import { MarkdownView } from './MarkdownView';
@@ -51,24 +52,25 @@ interface Props {
   speed?: number | null;
 }
 
-const MODES: { key: DirectorMode; label: string; hint: string }[] = [
-  { key: 'observe', label: '观察', hint: '有岔路口时主动提醒，不替你拍板' },
-  { key: 'suggest', label: '建议', hint: '每个选项给出意见，决定权在你' },
-  { key: 'run', label: '代跑', hint: '自己拍板推进；高危操作仍会问你' },
+type Translate = ReturnType<typeof useI18n>['t'];
+
+const MODES: { key: DirectorMode; labelKey: string; hintKey: string }[] = [
+  { key: 'observe', labelKey: 'director.page.mode.observe', hintKey: 'director.page.mode.observeHint' },
+  { key: 'suggest', labelKey: 'director.page.mode.suggest', hintKey: 'director.page.mode.suggestHint' },
+  { key: 'run', labelKey: 'director.page.mode.run', hintKey: 'director.page.mode.runHint' },
 ];
 
 type ListFilter = 'archives' | 'ledger';
 type ArchiveTab = 'chat' | 'ledger';
 
-const LIST_FILTERS: { key: ListFilter; label: string }[] = [
-  { key: 'archives', label: '对话存档' },
-  { key: 'ledger', label: '总监事务' },
+const LIST_FILTERS: { key: ListFilter; labelKey: string }[] = [
+  { key: 'archives', labelKey: 'director.page.records.archives' },
+  { key: 'ledger', labelKey: 'director.page.records.ledger' },
 ];
 
-const LIST_NOTE: Record<ListFilter, string> = {
-  archives:
-    '每一条是一个对话存档：装着这段对话和它期间总监的事务。存档同时是总监的记忆索引——删掉存档，总监也会忘掉这段。',
-  ledger: '所有存档里的总监事务汇总在这里；进某个存档也能单独看。',
+const LIST_NOTE_KEY: Record<ListFilter, string> = {
+  archives: 'director.page.records.archivesNote',
+  ledger: 'director.page.records.ledgerNote',
 };
 
 type RecordView =
@@ -96,33 +98,39 @@ function stamp(at: number): string {
     : `${date.getMonth() + 1}-${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function fullStamp(at: number): string {
+function fullStamp(at: number, locale: string): string {
   if (!at) return '';
-  return new Date(at).toLocaleString('zh-CN', { hour12: false });
+  return new Date(at).toLocaleString(locale, { hour12: false });
 }
 
-function costText(cost: number, unpriced: number): string {
+function costText(cost: number, unpriced: number, t: Translate): string {
   if (cost > 0) return `¥${cost >= 1 ? cost.toFixed(2) : cost.toFixed(4)}`;
-  return unpriced > 0 ? '未定价' : '¥0';
+  return unpriced > 0 ? t('director.page.cost.unpriced') : '¥0';
 }
 
 /** 审计里的时长：秒 / 分 / 小时，最多两级。 */
-function formatSpan(ms: number): string {
+function formatSpan(ms: number, t: Translate): string {
   const total = Math.max(0, Math.round((Number(ms) || 0) / 1000));
-  if (total < 60) return `${total} 秒`;
+  if (total < 60) return t('director.page.span.seconds', { count: total });
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
-  if (minutes < 60) return seconds ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分钟`;
+  if (minutes < 60) {
+    return seconds
+      ? t('director.page.span.minutesSeconds', { minutes, seconds })
+      : t('director.page.span.minutes', { count: minutes });
+  }
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest ? `${hours} 小时 ${rest} 分` : `${hours} 小时`;
+  return rest
+    ? t('director.page.span.hoursMinutes', { hours, minutes: rest })
+    : t('director.page.span.hours', { count: hours });
 }
 
 /**
  * 审计的两张图：重复投入的时间、重复投入的 token。
  * 数字只来自本地运行记录，模型没有参与算账；单序列条形图用同一色相。
  */
-function auditCharts(audit: DirectorAudit | null): VizChart[] {
+function auditCharts(audit: DirectorAudit | null, t: Translate): VizChart[] {
   const items: DirectorAuditItem[] = audit?.items ?? [];
   if (items.length === 0) return [];
   const charts: VizChart[] = [];
@@ -133,11 +141,11 @@ function auditCharts(audit: DirectorAudit | null): VizChart[] {
   if (timeItems.length > 0) {
     charts.push({
       type: 'horizontal-bar',
-      title: '重复投入的时间',
-      subtitle: '同类活重走的部分，第一次不算浪费',
-      unit: '分钟',
-      xLabel: '可回收时间',
-      source: '工作总监的本地运行记录',
+      title: t('director.page.chart.time.title'),
+      subtitle: t('director.page.chart.time.subtitle'),
+      unit: t('director.page.chart.time.unit'),
+      xLabel: t('director.page.chart.time.xLabel'),
+      source: t('director.page.chart.time.source'),
       items: timeItems.map(({ item, value }) => ({ label: item.title.slice(0, 12), value })),
     });
   }
@@ -148,11 +156,11 @@ function auditCharts(audit: DirectorAudit | null): VizChart[] {
   if (tokenItems.length > 0) {
     charts.push({
       type: 'horizontal-bar',
-      title: '重复投入的 token',
-      subtitle: '同类活重走的部分，第一次不算浪费',
+      title: t('director.page.chart.tokens.title'),
+      subtitle: t('director.page.chart.tokens.subtitle'),
       unit: 'tok',
-      xLabel: '可回收 token',
-      source: '工作总监的用量账本',
+      xLabel: t('director.page.chart.tokens.xLabel'),
+      source: t('director.page.chart.tokens.source'),
       items: tokenItems.map(({ item, value }) => ({ label: item.title.slice(0, 12), value })),
     });
   }
@@ -170,6 +178,7 @@ export function DirectorPage({
   usageRows = [],
   speed = null,
 }: Props) {
+  const { t, locale } = useI18n();
   const [notice, setNotice] = useState('');
   const [configOpen, setConfigOpen] = useState(false);
   const [maxDraft, setMaxDraft] = useState('4');
@@ -259,7 +268,7 @@ export function DirectorPage({
     [spaces, state],
   );
 
-  const auditChartList = useMemo(() => auditCharts(audit), [audit]);
+  const auditChartList = useMemo(() => auditCharts(audit, t), [audit, t]);
 
   const archives = useMemo(
     () => [...(history ?? [])].sort((a, b) => b.at - a.at),
@@ -301,7 +310,7 @@ export function DirectorPage({
   async function save(patch: DirectorPatch) {
     const result = await window.ezness?.directorSave?.(patch);
     if (!result?.ok) {
-      setNotice(result?.error ?? '保存失败');
+      setNotice(result?.error ?? t('director.page.saveFailed'));
       return false;
     }
     setNotice('');
@@ -334,11 +343,15 @@ export function DirectorPage({
         setHistoryError('');
       } else {
         setHistory([]);
-        setHistoryError(result?.error ?? '读取历史记录失败');
+        setHistoryError(result?.error ?? t('director.page.history.loadFailed'));
       }
     } catch (error) {
       setHistory([]);
-      setHistoryError(`读取历史记录失败：${error instanceof Error ? error.message : String(error)}`);
+      setHistoryError(
+        t('director.page.history.loadFailedDetail', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
     setHistoryLoading(false);
   }
@@ -352,7 +365,7 @@ export function DirectorPage({
   async function dedupeHistory() {
     if (deduping) return;
     if (!window.ezness?.directorHistoryDedupe) {
-      flashRecords('这个功能要重启应用后才生效');
+      flashRecords(t('director.page.restartRequired'));
       setConfirmDedupe(false);
       return;
     }
@@ -360,18 +373,22 @@ export function DirectorPage({
     try {
       const result = await window.ezness.directorHistoryDedupe();
       if (!result?.ok) {
-        flashRecords(result?.error ?? '清理失败');
+        flashRecords(result?.error ?? t('director.page.dedupe.failed'));
         return;
       }
       flashRecords(
         result.removed
-          ? `已清理 ${result.removed} 个重复存档`
-          : '没有发现重复存档',
+          ? t('director.page.dedupe.done', { count: result.removed })
+          : t('director.page.dedupe.none'),
       );
       cancelSelect();
       await loadHistory();
     } catch (error) {
-      flashRecords(`清理失败：${error instanceof Error ? error.message : String(error)}`);
+      flashRecords(
+        t('director.page.dedupe.failedDetail', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     } finally {
       setDeduping(false);
       setConfirmDedupe(false);
@@ -383,13 +400,17 @@ export function DirectorPage({
     try {
       const result = await window.ezness?.directorHistoryGet?.(entry.id);
       if (!result?.ok || !result.entry) {
-        setHistoryError(result?.error ?? '这条存档已经读不到了');
+        setHistoryError(result?.error ?? t('director.page.archive.unavailable'));
         return;
       }
       setHistoryError('');
       setView({ kind: 'folder', entry: result.entry, tab: 'chat' });
     } catch (error) {
-      setHistoryError(`这条存档已经读不到了：${error instanceof Error ? error.message : String(error)}`);
+      setHistoryError(
+        t('director.page.archive.unavailableDetail', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     } finally {
       setOpening(false);
     }
@@ -471,7 +492,7 @@ export function DirectorPage({
   async function deletePicked() {
     if (deleting || picked.size === 0) return;
     if (!window.ezness?.directorHistoryDelete) {
-      flashRecords('这个功能要重启应用后才生效');
+      flashRecords(t('director.page.restartRequired'));
       setConfirmDeletePicked(false);
       return;
     }
@@ -480,21 +501,28 @@ export function DirectorPage({
     try {
       const result = await window.ezness.directorHistoryDelete(ids);
       if (!result?.ok) {
-        flashRecords(result?.error ?? '删除失败');
+        flashRecords(result?.error ?? t('director.page.delete.failed'));
         return;
       }
       const tx = Number(result.transactions) || 0;
       flashRecords(
         result.removed
-          ? `已删除 ${result.removed} 个对话存档${tx > 0 ? `，连带 ${tx} 条总监事务` : ''}`
-          : '没有可删除的存档',
+          ? t(tx > 0 ? 'director.page.delete.doneWithTx' : 'director.page.delete.done', {
+              count: result.removed,
+              transactions: tx,
+            })
+          : t('director.page.delete.none'),
       );
       cancelSelect();
       await loadHistory();
       // 存档里的事务一起没了，事务列表也要跟着刷新。
       if (tx > 0) onRefreshLedger();
     } catch (error) {
-      flashRecords(`删除失败：${error instanceof Error ? error.message : String(error)}`);
+      flashRecords(
+        t('director.page.delete.failedDetail', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     } finally {
       setDeleting(false);
       setConfirmDeletePicked(false);
@@ -504,7 +532,7 @@ export function DirectorPage({
   async function loadAudit(announce = false) {
     const api = window.ezness?.directorAudit;
     if (!api) {
-      setAuditError('当前版本还没有审计能力，重启后再试。');
+      setAuditError(t('director.page.audit.unavailable'));
       return;
     }
     setAuditLoading(true);
@@ -512,7 +540,7 @@ export function DirectorPage({
     try {
       const result = await api({ announce });
       if (result?.ok) setAudit(result);
-      else setAuditError(result?.error || '审计读不出来，稍后再试。');
+      else setAuditError(result?.error || t('director.page.audit.readFailed'));
     } catch (cause) {
       setAuditError(String((cause as Error)?.message ?? cause));
     } finally {
@@ -542,7 +570,7 @@ export function DirectorPage({
     if (auditReviewing) return;
     const api = window.ezness?.directorReviewNow;
     if (!api) {
-      setAuditNote('当前版本还没有这个能力，重启后再试。');
+      setAuditNote(t('director.page.audit.reviewUnavailable'));
       return;
     }
     setAuditReviewing(true);
@@ -553,12 +581,12 @@ export function DirectorPage({
       if (result?.ok) {
         setAuditNoteKind('ok');
         setAuditNote(
-          `审计组已经把建议发到对话里：「${result.title || '未命名'}」。下面的清单里也能看到这条建议。`,
+          t('director.page.audit.reviewSent', { title: result.title || t('director.page.untitled') }),
         );
         await loadAudit();
       } else {
         setAuditNoteKind('fail');
-        setAuditNote(result?.error || '审计组这次没有给出可用的建议。');
+        setAuditNote(result?.error || t('director.page.audit.reviewFailed'));
       }
     } catch (cause) {
       setAuditNoteKind('fail');
@@ -583,41 +611,49 @@ export function DirectorPage({
   if (!state) {
     return (
       <section className="director">
-        <p className="director__empty">正在读取工作总监设置…</p>
+        <p className="director__empty">{t('director.page.loading')}</p>
       </section>
     );
   }
 
   const activeMode = MODES.find((item) => item.key === state.mode) ?? MODES[1];
+  const sideLabel = (side: string | undefined): string =>
+    side === 'director' ? t('director.page.side.director') : t('director.page.side.task');
   const detailTitle =
     view.kind === 'folder'
       ? view.entry.title
       : view.kind === 'ledger'
-        ? view.entry.title || view.entry.taskId || '总监事务'
-        : '对话历史';
+        ? view.entry.title || view.entry.taskId || t('director.page.records.ledger')
+        : t('director.page.history.title');
   const detailSubtitle =
     view.kind === 'folder'
-      ? `${view.entry.count} 条对话 · ${folderTransactions(view.entry).length} 条事务 · ${fullStamp(
-          view.entry.from || view.entry.at,
-        )}`
+      ? t('director.page.history.folderSubtitle', {
+          messages: view.entry.count,
+          transactions: folderTransactions(view.entry).length,
+          time: fullStamp(view.entry.from || view.entry.at, locale),
+        })
       : view.kind === 'ledger'
-        ? `${fullStamp(view.entry.at)} · ${view.entry.side === 'director' ? '总监' : '任务'} · ${
-            view.entry.label || view.entry.kind
-          }`
-        : '对话和它期间的总监事务装在一起。';
+        ? t('director.page.history.ledgerSubtitle', {
+            time: fullStamp(view.entry.at, locale),
+            side: sideLabel(view.entry.side),
+            label: view.entry.label || view.entry.kind,
+          })
+        : t('director.page.history.listSubtitle');
 
   return (
     <section className="director">
       <div className="director__head">
         <div className="director__title">
           <DirectorIcon size={18} />
-          <h2>工作总监</h2>
+          <h2>{t('director.page.title')}</h2>
           <button
             className={`switch ${state.enabled ? 'is-on' : ''}`}
             role="switch"
             aria-checked={state.enabled}
-            aria-label="启用工作总监"
-            title={state.enabled ? '关闭后总监不再巡视或分管任何空间' : '启用工作总监'}
+            aria-label={t('director.page.enable')}
+            title={
+              state.enabled ? t('director.page.disableTitle') : t('director.page.enable')
+            }
             onClick={() => void save({ enabled: !state.enabled })}
           >
             <span />
@@ -625,33 +661,37 @@ export function DirectorPage({
           <button
             type="button"
             className="director__config-btn"
-            title="配置：最多下发多少个任务同时执行"
-            aria-label="任务配置"
+            title={t('director.page.configButtonTitle')}
+            aria-label={t('director.page.config.title')}
             onClick={() => setConfigOpen(true)}
           >
             <SettingsIcon size={14} />
           </button>
         </div>
 
-        <div className="director__modes" role="group" aria-label="授权级别">
+        <div className="director__modes" role="group" aria-label={t('director.page.modeGroup')}>
           {MODES.map((mode) => (
             <button
               key={mode.key}
               type="button"
               className={`director__mode ${state.mode === mode.key ? 'is-active' : ''}`}
               disabled={!state.enabled}
-              title={mode.hint}
+              title={t(mode.hintKey)}
               onClick={() => void save({ mode: mode.key })}
             >
-              {mode.label}
+              {t(mode.labelKey)}
             </button>
           ))}
         </div>
 
-        <p className="director__hint" title={activeMode.hint}>
+        <p className="director__hint" title={t(activeMode.hintKey)}>
           {state.enabled
-            ? `分管 ${assigned.length} / ${spaces.length} 个空间 · ${activeMode.hint}`
-            : '未启用：总监不巡视任何空间，也不会推进任何任务'}
+            ? t('director.page.scopeSummary', {
+                assigned: assigned.length,
+                total: spaces.length,
+                hint: t(activeMode.hintKey),
+              })
+            : t('director.page.disabledHint')}
         </p>
       </div>
 
@@ -661,15 +701,16 @@ export function DirectorPage({
             type="button"
             className="director__usage-sum"
             aria-expanded={usageOpen}
-            title="当前正在执行的任务合计花费"
+            title={t('director.page.usage.title')}
             onClick={() => setUsageOpen((value) => !value)}
           >
             <BillingIcon size={13} />
-            <span>{usageRows.length} 个任务运行中</span>
+            <span>{t('director.page.usage.running', { count: usageRows.length })}</span>
             <span className="director__usage-cost">
               {costText(
                 usageRows.reduce((sum, row) => sum + row.cost, 0),
                 usageRows.reduce((sum, row) => sum + row.unpriced, 0),
+                t,
               )}
             </span>
             <span>
@@ -680,14 +721,18 @@ export function DirectorPage({
             )}
           </button>
           {usageOpen && (
-            <div className="director__usage-pop" role="dialog" aria-label="激活任务的用量">
+            <div
+              className="director__usage-pop"
+              role="dialog"
+              aria-label={t('director.page.usage.aria')}
+            >
               {usageRows.map((row) => (
                 <div key={row.taskId} className="director__usage-row">
                   <span className="director__usage-name" title={row.title}>
                     {row.title}
                   </span>
                   <span>{formatTokens(row.outputTokens)} tok</span>
-                  <span>{costText(row.cost, row.unpriced)}</span>
+                  <span>{costText(row.cost, row.unpriced, t)}</span>
                 </div>
               ))}
             </div>
@@ -701,36 +746,36 @@ export function DirectorPage({
           className="director__scope-btn"
           onClick={() => setScopeOpen(true)}
         >
-          分管范围
+          {t('director.page.scopeButton')}
           <span className="director__scope-count">
             {assigned.length} / {spaces.length}
           </span>
         </button>
         <div className="director__drawer-tabs">
           <button type="button" className="director__tab" onClick={openRecords}>
-            对话历史
+            {t('director.page.history.title')}
           </button>
           <button
             type="button"
             className="director__tab"
-            title="审计重复投入：查清浪费、给出可视化报告和预制建议；不会改动任何能力"
+            title={t('director.page.audit.buttonTitle')}
             onClick={openAudit}
             disabled={auditLoading}
           >
-            {auditLoading ? '审计中…' : '内容审计'}
+            {auditLoading ? t('director.page.auditing') : t('director.page.audit.title')}
           </button>
         </div>
         {spaces.length === 0 && (
-          <span className="director__spaces-sum">还没有工作空间</span>
+          <span className="director__spaces-sum">{t('director.page.noSpaces')}</span>
         )}
         <button
           type="button"
           className="director__clear"
           disabled={!canClear}
-          title={canClear ? '清空对话并留档，未处理的待确认事项会保留' : '总监正在回复，等这一轮结束再清空'}
+          title={canClear ? t('director.page.clearTitle') : t('director.page.clearDisabledTitle')}
           onClick={() => setConfirmClear(true)}
         >
-          清空对话
+          {t('director.page.clear')}
         </button>
       </div>
 
@@ -739,19 +784,19 @@ export function DirectorPage({
           <div
             className="director__modal director__modal--config"
             role="dialog"
-            aria-label="任务配置"
+            aria-label={t('director.page.config.title')}
             onClick={(event) => event.stopPropagation()}
           >
             <header className="director__modal-head">
-              <h3>任务配置</h3>
-              <span>派工的上限</span>
+              <h3>{t('director.page.config.title')}</h3>
+              <span>{t('director.page.config.subtitle')}</span>
               <button type="button" className="btn btn--tiny" onClick={() => setConfigOpen(false)}>
-                关闭
+                {t('director.common.close')}
               </button>
             </header>
             <div className="director__config-body">
               <label className="director__config-field">
-                <span>最多同时执行的下发任务数</span>
+                <span>{t('director.page.config.maxDispatch')}</span>
                 <input
                   type="number"
                   min={1}
@@ -760,11 +805,9 @@ export function DirectorPage({
                   onChange={(event) => setMaxDraft(event.target.value)}
                 />
               </label>
-              <p className="director__config-hint">
-                超出的员工会排队，等有空位再开始。验收员也占一个位置：一个人要么在编制，要么在验收。
-              </p>
+              <p className="director__config-hint">{t('director.page.config.maxDispatchHint')}</p>
               <label className="director__config-field">
-                <span>验收不通过时最多返工几轮</span>
+                <span>{t('director.page.config.rework')}</span>
                 <input
                   type="number"
                   min={0}
@@ -773,9 +816,7 @@ export function DirectorPage({
                   onChange={(event) => setReworkDraft(event.target.value)}
                 />
               </label>
-              <p className="director__config-hint">
-                默认 2 轮。到上限就停下来问你，不再自己反复重做。
-              </p>
+              <p className="director__config-hint">{t('director.page.config.reworkHint')}</p>
               {notice && <p className="director__config-error">{notice}</p>}
               <div className="director__config-actions">
                 <button
@@ -783,7 +824,7 @@ export function DirectorPage({
                   className="btn btn--ghost"
                   onClick={() => setDesignOpen(true)}
                 >
-                  查看总监设计思路
+                  {t('director.page.config.design')}
                 </button>
                 <button
                   type="button"
@@ -791,7 +832,7 @@ export function DirectorPage({
                   disabled={savingConfig}
                   onClick={() => void saveConfig()}
                 >
-                  {savingConfig ? '保存中…' : '保存'}
+                  {savingConfig ? t('director.common.saving') : t('director.common.save')}
                 </button>
               </div>
             </div>
@@ -804,123 +845,74 @@ export function DirectorPage({
           <div
             className="director__modal director__modal--design"
             role="dialog"
-            aria-label="总监设计思路"
+            aria-label={t('director.page.design.title')}
             onClick={(event) => event.stopPropagation()}
           >
             <header className="director__modal-head">
-              <h3>总监设计思路</h3>
-              <span>它是怎么接活、派人、验收和收尾的</span>
+              <h3>{t('director.page.design.title')}</h3>
+              <span>{t('director.page.design.subtitle')}</span>
               <button type="button" className="btn btn--tiny" onClick={() => setDesignOpen(false)}>
-                关闭
+                {t('director.common.close')}
               </button>
             </header>
             <div className="director__design-body">
               <section>
-                <h4>1. 先看授权，再动手</h4>
+                <h4>{t('director.page.design.s1.title')}</h4>
+                <p>{t('director.page.design.s1.body')}</p>
+              </section>
+              <section>
+                <h4>{t('director.page.design.s2.title')}</h4>
                 <p>
-                  观察级别只提醒、不派活；建议级别会先把分工写成一条建议等你点头；代跑级别才会直接派。
-                  分管范围之外的工作空间一律不碰。
+                  {t('director.page.design.s2.body1a')}
+                  <b>{t('director.page.design.s2.body1b')}</b>
+                  {t('director.page.design.s2.body1c')}
+                  <b>{t('director.page.design.s2.body1d')}</b>
+                  {t('director.page.design.s2.body1e')}
+                </p>
+                <p>{t('director.page.design.s2.body2')}</p>
+              </section>
+              <section>
+                <h4>{t('director.page.design.s3.title')}</h4>
+                <p>{t('director.page.design.s3.body')}</p>
+              </section>
+              <section>
+                <h4>{t('director.page.design.s4.title')}</h4>
+                <p>{t('director.page.design.s4.body1')}</p>
+                <p>
+                  {t('director.page.design.s4.body2a')}
+                  <b>{t('director.page.design.s4.body2b')}</b>
+                  {t('director.page.design.s4.body2c')}
                 </p>
               </section>
               <section>
-                <h4>2. 接活先建档，先说两个时间</h4>
-                <p>
-                  每件事都会建一个项目档案，记下目标、工作空间、涉及的任务和已经拍过的板。
-                  开工前它会给两个预计时间：<b>编制完成时间</b>和<b>验收完成时间</b>。
-                  这两个时间不是硬截止，是它自己检查进度的闹钟——到点会主动看一次，慢了就重新分配人手。
-                </p>
-                <p>
-                  默认只派一个员工。只有文件集互不重叠、又能各自独立启动的活才拆开；小项目、单文件、
-                  接口强耦合的活都走一个人。有先后依赖的（比如先有后端接口再做前端），
-                  后一个的验收会等前一个收口，不拿半截接口去判错。
-                </p>
+                <h4>{t('director.page.design.s5.title')}</h4>
+                <p>{t('director.page.design.s5.body1')}</p>
+                <p>{t('director.page.design.s5.body2')}</p>
+                <p>{t('director.page.design.s5.body3')}</p>
               </section>
               <section>
-                <h4>3. 一个任务占一个工位</h4>
-                <p>
-                  派工上限就是工位数。一个员工从编制到验收结束只占一个位置：编制完成、验收员接手时，
-                  位置直接转给验收员，不会多占。所以同时在场的人数永远不超过你设的上限。
-                </p>
+                <h4>{t('director.page.design.s6.title')}</h4>
+                <p>{t('director.page.design.s6.body')}</p>
               </section>
               <section>
-                <h4>4. 编制 → 先交给你 → 再验收</h4>
-                <p>
-                  员工一停，总监先把这一版交给你：单个文件给文件，整个项目给工作空间路径和入口，
-                  并标明这是阶段版。然后它才安排验收员。你不需要等验收结束才能看到东西。
-                </p>
-                <p>
-                  交付的定义是<b>能按真实入口跑起来的程序</b>，不是“文件写完了”。交过来之前，
-                  它会先自己核对一遍：有没有桩、模拟服务器、改 PYTHONPATH 或临时脚本顶替真实实现，
-                  有没有可启动的入口，工人的答复里有没有启动命令和实际输出。核对不过，
-                  交付消息里会直接标出来，这一版不会被当成完成。
-                </p>
+                <h4>{t('director.page.design.s7.title')}</h4>
+                <p>{t('director.page.design.s7.body')}</p>
               </section>
               <section>
-                <h4>5. 验收员只验不改</h4>
-                <p>
-                  验收员是单独的一次任务，不占用编制员工，也不改任何源码。它只盯 3–6 个关键点：
-                  交付是不是真实实现、交付文件在不在、核心功能能不能用、程序能不能启动。
-                  它必须按说明实际启动真实入口跑一次，把启动命令和看到的输出写进证据；只看文件存在不算通过。
-                  5–10 分钟内收口，结论只有三种：通过、不通过、未验证。
-                </p>
-                <p>
-                  没有证据就记“未验证”，不会算成通过；验收员说通过、但预检发现是桩或测试产物的，
-                  也不会算成通过——这种情况它会在返工额度内自动打回重做一次，不用你处理。
-                  验收员本身不再被验收，避免无限套娃。
-                  有前置依赖的任务，验收会等前置交付并收口后再开始，不拿半截接口判错。
-                </p>
-                <p>
-                  验收是它的活，不是你的：验收没给出结论，它会如实记“未验证”并说明原因，
-                  不会把“你来验一下”丢给你。要补验，跟它说一声就行。
-                </p>
+                <h4>{t('director.page.design.s8.title')}</h4>
+                <p>{t('director.page.design.s8.body')}</p>
               </section>
               <section>
-                <h4>6. 不通过就只补缺口</h4>
-                <p>
-                  验收没过，原员工只补没过的那几项，不重做已经通过的部分。默认最多返工 2 轮
-                  （可在上面的配置里改）；三件事自动做，不问你：验收不通过就返工、
-                  交付像测试产物就打回重做、验收员没给结论就记未验证。只有返工到上限还不过，
-                  才问你要不要再试一次。
-                </p>
+                <h4>{t('director.page.design.s9.title')}</h4>
+                <p>{t('director.page.design.s9.body')}</p>
               </section>
               <section>
-                <h4>7. 汇报按项目走，不刷屏</h4>
-                <p>
-                  单个任务完成：发一条交付消息，标明“验收中”。验收有结论：更新同一条，不另发。
-                  一个项目的编制全部结束、验收还没结束时：发一条“编制完毕，正在验收”，
-                  之后结论都往这条里补。返工、卡住、需要你拍板，才会单独提醒。
-                </p>
+                <h4>{t('director.page.design.s10.title')}</h4>
+                <p>{t('director.page.design.s10.body')}</p>
               </section>
               <section>
-                <h4>8. 员工卡住会先判断，再处理</h4>
-                <p>
-                  总监会旁听每个员工的状态、输出和工具调用，判断是模型报错、网络断了、
-                  还是长时间没有新内容/陷入重复。处理顺序是：先叫停重来，再换模型或换任务，
-                  都不行才向你报告，并说清卡在哪一步。
-                </p>
-              </section>
-              <section>
-                <h4>9. 你说的话优先级最高</h4>
-                <p>
-                  任何阶段你让它停、重开或改任务，它都照做。你直接进任务里改了东西并离开后，
-                  它会先看改了什么：已经按你的要求完成就收尾，还差东西就继续安排。
-                </p>
-              </section>
-              <section>
-                <h4>10. 空出来的位置去补位</h4>
-                <p>
-                  一个项目全部验收通过、位置空出来后，它会看别的项目谁偏慢、谁在等验收，
-                  把空位派过去帮忙。如果帮忙会跟别人写同一批文件，就不硬塞，改用接力或验收的方式。
-                  没有值得帮的活，位置就空着，不为了填满而派工。
-                </p>
-              </section>
-              <section>
-                <h4>11. 最后做一次整体检查</h4>
-                <p>
-                  所有项目都完工、验收都有结论后，它会对照验收结论检查接口和衔接处。
-                  有疑问会再派一次“只回答、不要开始编制”的询问任务给相关员工，
-                  确认后再给你最终结论。
-                </p>
+                <h4>{t('director.page.design.s11.title')}</h4>
+                <p>{t('director.page.design.s11.body')}</p>
               </section>
             </div>
           </div>
@@ -932,21 +924,19 @@ export function DirectorPage({
           <div
             className="director__modal director__modal--audit"
             role="dialog"
-            aria-label="内容审计"
+            aria-label={t('director.page.audit.title')}
             onClick={(event) => event.stopPropagation()}
           >
             <header className="director__modal-head">
-              <h3>内容审计</h3>
-              <span>
-                近 {audit?.windowDays ?? 30} 天 · 审计组出具只读审计报告，不会改动任何能力
-              </span>
+              <h3>{t('director.page.audit.title')}</h3>
+              <span>{t('director.page.audit.subtitle', { days: audit?.windowDays ?? 30 })}</span>
               <button type="button" className="btn btn--tiny" onClick={closeAudit}>
-                关闭
+                {t('director.common.close')}
               </button>
             </header>
 
             {auditLoading && !audit && (
-              <p className="director__empty">正在整理运行记录…</p>
+              <p className="director__empty">{t('director.page.audit.loading')}</p>
             )}
             {auditError && <p className="director__config-error">{auditError}</p>}
 
@@ -954,38 +944,42 @@ export function DirectorPage({
               <div className="director__audit-body">
                 {audit.report?.markdown && (
                   <details className="director__audit-report" open>
-                    <summary>审计报告</summary>
+                    <summary>{t('director.page.audit.report')}</summary>
                     <div className="director__audit-report-body">
                       <MarkdownView text={audit.report.markdown} />
                     </div>
                   </details>
                 )}
 
-                <h4 className="director__audit-subhead">统计明细</h4>
+                <h4 className="director__audit-subhead">{t('director.page.audit.stats')}</h4>
                 <div className="viz-kpis">
                   <div className="viz-kpi">
                     <strong className="viz-kpi__value">
-                      {formatSpan(audit.totals?.reclaimMs ?? 0)}
+                      {formatSpan(audit.totals?.reclaimMs ?? 0, t)}
                     </strong>
-                    <span className="viz-kpi__label">重复投入的时间</span>
-                    <span className="viz-kpi__note">第一次不算浪费</span>
+                    <span className="viz-kpi__label">{t('director.page.audit.kpi.time')}</span>
+                    <span className="viz-kpi__note">{t('director.page.audit.kpi.timeNote')}</span>
                   </div>
                   <div className="viz-kpi">
                     <strong className="viz-kpi__value">
                       {formatTokens(audit.totals?.reclaimTokens ?? 0)}
                     </strong>
-                    <span className="viz-kpi__label">可回收 token</span>
-                    <span className="viz-kpi__note">按每次平均消耗折算</span>
+                    <span className="viz-kpi__label">{t('director.page.audit.kpi.tokens')}</span>
+                    <span className="viz-kpi__note">{t('director.page.audit.kpi.tokensNote')}</span>
                   </div>
                   <div className="viz-kpi">
                     <strong className="viz-kpi__value">{audit.totals?.share ?? 0}%</strong>
-                    <span className="viz-kpi__label">重复投入占比</span>
-                    <span className="viz-kpi__note">按时间算</span>
+                    <span className="viz-kpi__label">{t('director.page.audit.kpi.share')}</span>
+                    <span className="viz-kpi__note">{t('director.page.audit.kpi.shareNote')}</span>
                   </div>
                   <div className="viz-kpi">
                     <strong className="viz-kpi__value">{audit.pending ?? 0}</strong>
-                    <span className="viz-kpi__label">已达到预制标准</span>
-                    <span className="viz-kpi__note">共 {audit.totals?.repeated ?? 0} 类重复</span>
+                    <span className="viz-kpi__label">{t('director.page.audit.kpi.ready')}</span>
+                    <span className="viz-kpi__note">
+                      {t('director.page.audit.kpi.readyNote', {
+                        count: audit.totals?.repeated ?? 0,
+                      })}
+                    </span>
                   </div>
                 </div>
 
@@ -999,64 +993,141 @@ export function DirectorPage({
                   <div className="director__audit-groups">
                     {(audit.projects ?? []).length > 0 && (
                       <details className="director__audit-advice" open>
-                        <summary>按项目看（{audit.projects?.length ?? 0}）</summary>
+                        <summary>
+                          {t('director.page.audit.group.projects', {
+                            count: audit.projects?.length ?? 0,
+                          })}
+                        </summary>
                         {(audit.projects ?? []).map((project) => (
                           <p key={project.id} className="director__audit-line">
                             <strong>{project.title}</strong> ·{' '}
-                            {project.status === 'done' ? '已收口' : '进行中'} ·{' '}
-                            {project.employees} 个员工 · 通过 {project.accepted}
-                            {project.unverified > 0 ? ` · 未验证 ${project.unverified}` : ''}
-                            {project.held > 0 ? ` · 等你确认 ${project.held}` : ''}
-                            {project.failed > 0 ? ` · 没通过 ${project.failed}` : ''} · 用时{' '}
-                            {formatSpan(project.elapsedMs)}
+                            {project.status === 'done'
+                              ? t('director.page.audit.project.done')
+                              : t('director.page.audit.project.active')}{' '}
+                            ·{' '}
+                            {t('director.page.audit.project.meta', {
+                              employees: project.employees,
+                              accepted: project.accepted,
+                            })}
+                            {project.unverified > 0
+                              ? ` · ${t('director.page.audit.unverified', {
+                                  count: project.unverified,
+                                })}`
+                              : ''}
+                            {project.held > 0
+                              ? ` · ${t('director.page.audit.project.held', {
+                                  count: project.held,
+                                })}`
+                              : ''}
+                            {project.failed > 0
+                              ? ` · ${t('director.page.audit.failedCount', {
+                                  count: project.failed,
+                                })}`
+                              : ''}{' '}
+                            · {t('director.page.audit.project.time', {
+                              time: formatSpan(project.elapsedMs, t),
+                            })}
                             {project.estimateMs > 0
-                              ? ` / 预估 ${formatSpan(project.estimateMs)}${
-                                  project.overMs > 0 ? `（超 ${formatSpan(project.overMs)}）` : ''
+                              ? `${t('director.page.audit.project.estimate', {
+                                  time: formatSpan(project.estimateMs, t),
+                                })}${
+                                  project.overMs > 0
+                                    ? t('director.page.audit.project.over', {
+                                        time: formatSpan(project.overMs, t),
+                                      })
+                                    : ''
                                 }`
-                              : ' / 未估时'}
+                              : t('director.page.audit.project.noEstimate')}
                           </p>
                         ))}
                       </details>
                     )}
                     {(audit.tasks ?? []).length > 0 && (
                       <details className="director__audit-advice">
-                        <summary>按任务看（{audit.tasks?.length ?? 0}）</summary>
+                        <summary>
+                          {t('director.page.audit.group.tasks', {
+                            count: audit.tasks?.length ?? 0,
+                          })}
+                        </summary>
                         {(audit.tasks ?? []).map((task) => (
                           <p key={task.taskId} className="director__audit-line">
-                            <strong>{task.title}</strong> · {task.instructions} 条指令 · 通过{' '}
-                            {task.accepted}
-                            {task.rework > 0 ? ` · 返工 ${task.rework}` : ''}
-                            {task.unverified > 0 ? ` · 未验证 ${task.unverified}` : ''}
-                            {task.failed > 0 ? ` · 没通过 ${task.failed}` : ''} ·{' '}
-                            {formatSpan(task.runMs)}
+                            <strong>{task.title}</strong> ·{' '}
+                            {t('director.page.audit.task.meta', {
+                              instructions: task.instructions,
+                              accepted: task.accepted,
+                            })}
+                            {task.rework > 0
+                              ? ` · ${t('director.page.audit.task.rework', { count: task.rework })}`
+                              : ''}
+                            {task.unverified > 0
+                              ? ` · ${t('director.page.audit.unverified', {
+                                  count: task.unverified,
+                                })}`
+                              : ''}
+                            {task.failed > 0
+                              ? ` · ${t('director.page.audit.failedCount', {
+                                  count: task.failed,
+                                })}`
+                              : ''}{' '}
+                            · {formatSpan(task.runMs, t)}
                             {task.tokens > 0 ? ` · ${formatTokens(task.tokens)} tok` : ''}
-                            {task.files > 0 ? ` · ${task.files} 个文件` : ''}
+                            {task.files > 0
+                              ? ` · ${t('director.page.audit.task.files', { count: task.files })}`
+                              : ''}
                           </p>
                         ))}
                       </details>
                     )}
                     {(audit.agents ?? []).length > 0 && (
                       <details className="director__audit-advice">
-                        <summary>按员工看（{audit.agents?.length ?? 0}）</summary>
+                        <summary>
+                          {t('director.page.audit.group.agents', {
+                            count: audit.agents?.length ?? 0,
+                          })}
+                        </summary>
                         {(audit.agents ?? []).map((agent) => (
                           <p key={agent.id || agent.name} className="director__audit-line">
-                            <strong>{agent.name}</strong> · {agent.tasks} 个任务 ·{' '}
-                            {agent.instructions} 条指令 · 通过 {agent.accepted}
-                            {agent.rework > 0 ? ` · 返工 ${agent.rework}` : ''}
-                            {agent.unverified > 0 ? ` · 未验证 ${agent.unverified}` : ''}
-                            {agent.failed > 0 ? ` · 没通过 ${agent.failed}` : ''} ·{' '}
-                            {formatSpan(agent.runMs)}
+                            <strong>{agent.name}</strong> ·{' '}
+                            {t('director.page.audit.agent.meta', {
+                              tasks: agent.tasks,
+                              instructions: agent.instructions,
+                              accepted: agent.accepted,
+                            })}
+                            {agent.rework > 0
+                              ? ` · ${t('director.page.audit.task.rework', {
+                                  count: agent.rework,
+                                })}`
+                              : ''}
+                            {agent.unverified > 0
+                              ? ` · ${t('director.page.audit.unverified', {
+                                  count: agent.unverified,
+                                })}`
+                              : ''}
+                            {agent.failed > 0
+                              ? ` · ${t('director.page.audit.failedCount', {
+                                  count: agent.failed,
+                                })}`
+                              : ''}{' '}
+                            · {formatSpan(agent.runMs, t)}
                           </p>
                         ))}
                       </details>
                     )}
                     {(audit.tools ?? []).length > 0 && (
                       <details className="director__audit-advice">
-                        <summary>按能力看（{audit.tools?.length ?? 0}）</summary>
+                        <summary>
+                          {t('director.page.audit.group.tools', {
+                            count: audit.tools?.length ?? 0,
+                          })}
+                        </summary>
                         {(audit.tools ?? []).map((tool) => (
                           <p key={tool.name} className="director__audit-line">
-                            <strong>{tool.name}</strong> · {tool.calls} 次 · {tool.runs} 轮 ·{' '}
-                            {tool.tasks} 个任务
+                            <strong>{tool.name}</strong> ·{' '}
+                            {t('director.page.audit.tool.meta', {
+                              calls: tool.calls,
+                              runs: tool.runs,
+                              tasks: tool.tasks,
+                            })}
                           </p>
                         ))}
                       </details>
@@ -1083,12 +1154,21 @@ export function DirectorPage({
                               item.candidate ? 'is-candidate' : ''
                             }`}
                           >
-                            {item.candidate ? '可预制' : '观察中'}
+                            {item.candidate
+                              ? t('director.page.audit.item.candidate')
+                              : t('director.page.audit.item.watching')}
                           </span>
-                          {item.muted && <span className="director__audit-badge">已静默</span>}
+                          {item.muted && (
+                            <span className="director__audit-badge">
+                              {t('director.page.audit.item.muted')}
+                            </span>
+                          )}
                           <span className="director__audit-meta">
-                            {item.runs} 次 · 跨 {item.tasks} 个任务 · 回收{' '}
-                            {formatSpan(item.reclaimMs)}
+                            {t('director.page.audit.item.meta', {
+                              count: item.runs,
+                              tasks: item.tasks,
+                              time: formatSpan(item.reclaimMs, t),
+                            })}
                             {item.reclaimTokens > 0
                               ? ` · ${formatTokens(item.reclaimTokens)} tok`
                               : ''}
@@ -1097,7 +1177,9 @@ export function DirectorPage({
                         <p className="director__audit-evidence">{item.evidence.join('\n')}</p>
                         {item.adviceBody && (
                           <details className="director__audit-advice">
-                            <summary>总监的建议（{stamp(item.adviceAt)}）</summary>
+                            <summary>
+                              {t('director.page.audit.item.advice', { time: stamp(item.adviceAt) })}
+                            </summary>
                             <p>{item.adviceBody}</p>
                           </details>
                         )}
@@ -1113,7 +1195,9 @@ export function DirectorPage({
                     disabled={auditLoading}
                     onClick={() => void loadAudit(true)}
                   >
-                    {auditLoading ? '审计组正在写…' : '刷新审计报告'}
+                    {auditLoading
+                      ? t('director.page.audit.writing')
+                      : t('director.page.audit.refresh')}
                   </button>
                   <button
                     type="button"
@@ -1121,12 +1205,12 @@ export function DirectorPage({
                     disabled={auditReviewing || (audit.items ?? []).length === 0}
                     title={
                       (audit.items ?? []).length === 0
-                        ? '同一类活至少出现 3 次、跨 2 个任务，才有可复盘的对象'
+                        ? t('director.page.audit.reviewEmptyTitle')
                         : undefined
                     }
                     onClick={() => void auditReview()}
                   >
-                    {auditReviewing ? '审计组正在看…' : '补充改进建议'}
+                    {auditReviewing ? t('director.page.audit.reviewing') : t('director.page.audit.review')}
                   </button>
                   <span
                     className={`director__audit-hint${auditNoteKind ? ` is-${auditNoteKind}` : ''}`}
@@ -1134,8 +1218,8 @@ export function DirectorPage({
                   >
                     {auditNote ||
                       (auditReviewing
-                        ? '模型正在看几类活的证据（最多三类）；答不上来会自动停，不会一直卡着。'
-                        : '审计报告会署名发到对话里；报告只读，需要执行时告诉总监，由他派人做。')}
+                        ? t('director.page.audit.reviewingHint')
+                        : t('director.page.audit.footerHint'))}
                   </span>
                 </footer>
               </div>
@@ -1149,19 +1233,19 @@ export function DirectorPage({
           <div
             className="director__modal director__modal--records"
             role="dialog"
-            aria-label="对话历史"
+            aria-label={t('director.page.history.title')}
             onClick={(event) => event.stopPropagation()}
           >
             <header className="director__modal-head">
               {view.kind !== 'list' && (
                 <button type="button" className="btn btn--tiny" onClick={goBack}>
-                  ← 返回
+                  ← {t('director.page.back')}
                 </button>
               )}
               <h3>{detailTitle}</h3>
               <span>{detailSubtitle}</span>
               <button type="button" className="btn btn--tiny" onClick={closeRecords}>
-                关闭
+                {t('director.common.close')}
               </button>
             </header>
 
@@ -1175,7 +1259,7 @@ export function DirectorPage({
                       className={`director__records-chip ${listFilter === item.key ? 'is-active' : ''}`}
                       onClick={() => switchFilter(item.key)}
                     >
-                      {item.label}
+                      {t(item.labelKey)}
                     </button>
                   ))}
                   {listFilter === 'archives' && (
@@ -1189,11 +1273,11 @@ export function DirectorPage({
                             onClick={pickAll}
                           >
                             {picked.size === archives.length && archives.length > 0
-                              ? '取消全选'
-                              : '全选'}
+                              ? t('director.page.records.deselectAll')
+                              : t('director.page.records.selectAll')}
                           </button>
                           <button type="button" className="btn btn--tiny" onClick={cancelSelect}>
-                            取消
+                            {t('director.common.cancel')}
                           </button>
                           <button
                             type="button"
@@ -1201,7 +1285,13 @@ export function DirectorPage({
                             disabled={picked.size === 0 || deleting}
                             onClick={() => setConfirmDeletePicked(true)}
                           >
-                            {deleting ? '删除中…' : `删除所选${picked.size ? ` (${picked.size})` : ''}`}
+                            {deleting
+                              ? t('director.page.records.deleting')
+                              : picked.size
+                                ? t('director.page.records.deleteSelectedCount', {
+                                    count: picked.size,
+                                  })
+                                : t('director.page.records.deleteSelected')}
                           </button>
                         </>
                       ) : (
@@ -1215,7 +1305,7 @@ export function DirectorPage({
                               setPicked(new Set());
                             }}
                           >
-                            多选
+                            {t('director.page.records.select')}
                           </button>
                           <button
                             type="button"
@@ -1223,24 +1313,26 @@ export function DirectorPage({
                             disabled={historyLoading || deduping}
                             onClick={() => setConfirmDedupe(true)}
                           >
-                            {deduping ? '清理中…' : '清理重复'}
+                            {deduping
+                              ? t('director.page.records.cleaning')
+                              : t('director.page.records.cleanDuplicates')}
                           </button>
                         </>
                       )}
                     </div>
                   )}
                 </div>
-                <p className="director__ledger-note">{LIST_NOTE[listFilter]}</p>
+                <p className="director__ledger-note">{t(LIST_NOTE_KEY[listFilter])}</p>
                 {recordsNote && (
                   <p className="director__records-note" role="status">
                     {recordsNote}
                   </p>
                 )}
 
-                {opening && <p className="director__empty">正在打开存档…</p>}
+                {opening && <p className="director__empty">{t('director.page.records.opening')}</p>}
 
                 {!opening && listFilter === 'archives' && historyLoading && (
-                  <p className="director__empty">正在读取对话存档…</p>
+                  <p className="director__empty">{t('director.page.records.loading')}</p>
                 )}
                 {!opening && listFilter === 'archives' && !historyLoading && historyError && (
                   <p className="director__empty">{historyError}</p>
@@ -1256,7 +1348,13 @@ export function DirectorPage({
                           className={`director__record-row ${selecting ? 'is-picking' : ''} ${
                             isPicked ? 'is-picked' : ''
                           }`}
-                          title={selecting ? (isPicked ? '取消选择' : '选中这条存档') : entry.title}
+                          title={
+                            selecting
+                              ? isPicked
+                                ? t('director.page.records.deselect')
+                                : t('director.page.records.selectItem')
+                              : entry.title
+                          }
                           aria-pressed={selecting ? isPicked : undefined}
                           onClick={() =>
                             selecting ? togglePick(entry.id) : void openArchive(entry)
@@ -1271,12 +1369,20 @@ export function DirectorPage({
                             </span>
                           )}
                           <span className="director__record-time">{stamp(entry.at)}</span>
-                          <span className="director__record-tag is-archive">对话存档</span>
+                          <span className="director__record-tag is-archive">
+                            {t('director.page.records.archives')}
+                          </span>
                           <span className="director__record-title">{entry.title}</span>
                           <span className="director__record-text">
                             {selecting
-                              ? `${entry.count} 条对话 · ${transactionCount(entry)} 条事务`
-                              : `${entry.count} 条对话 · ${transactionCount(entry)} 条事务 ›`}
+                              ? t('director.page.records.rowMeta', {
+                                  messages: entry.count,
+                                  transactions: transactionCount(entry),
+                                })
+                              : `${t('director.page.records.rowMeta', {
+                                  messages: entry.count,
+                                  transactions: transactionCount(entry),
+                                })} ›`}
                           </span>
                         </button>
                       );
@@ -1288,13 +1394,11 @@ export function DirectorPage({
                   !historyLoading &&
                   !historyError &&
                   archives.length === 0 && (
-                    <p className="director__empty">
-                      还没有对话存档。清空对话时会按话题分段留档，并把这段期间的总监事务一起装进去。
-                    </p>
+                    <p className="director__empty">{t('director.page.records.empty')}</p>
                   )}
 
                 {!opening && listFilter === 'ledger' && ledgerRows.length === 0 && (
-                  <p className="director__empty">还没有事务记录。</p>
+                  <p className="director__empty">{t('director.page.records.emptyLedger')}</p>
                 )}
                 {!opening && listFilter === 'ledger' && ledgerRows.length > 0 && (
                   <div className="director__records">
@@ -1309,7 +1413,7 @@ export function DirectorPage({
                         <span
                           className={`director__record-tag is-${entry.side === 'director' ? 'director' : 'task'}`}
                         >
-                          {entry.side === 'director' ? '总监' : '任务'} ·{' '}
+                          {sideLabel(entry.side)} ·{' '}
                           {entry.label || entry.kind}
                         </span>
                         <span className="director__record-title">
@@ -1331,14 +1435,16 @@ export function DirectorPage({
                     className={`director__records-chip ${view.tab === 'chat' ? 'is-active' : ''}`}
                     onClick={() => setView({ kind: 'folder', entry: view.entry, tab: 'chat' })}
                   >
-                    对话内容 {view.entry.messages.length}
+                    {t('director.page.history.chatTab', { count: view.entry.messages.length })}
                   </button>
                   <button
                     type="button"
                     className={`director__records-chip ${view.tab === 'ledger' ? 'is-active' : ''}`}
                     onClick={() => setView({ kind: 'folder', entry: view.entry, tab: 'ledger' })}
                   >
-                    总监事务 {folderTransactions(view.entry).length}
+                    {t('director.page.history.ledgerTab', {
+                      count: folderTransactions(view.entry).length,
+                    })}
                   </button>
                 </div>
 
@@ -1346,7 +1452,9 @@ export function DirectorPage({
                   <>
                     <div className="director__history-list">
                       {view.entry.messages.length === 0 && (
-                        <p className="director__empty">这段存档没有可显示的消息。</p>
+                        <p className="director__empty">
+                          {t('director.page.history.noMessages')}
+                        </p>
                       )}
                       {view.entry.messages.map((message, index) => (
                         <article
@@ -1356,10 +1464,10 @@ export function DirectorPage({
                           <header>
                             <span>
                               {message.director
-                                ? '工作总监 · 汇报'
+                                ? t('director.page.history.roleReport')
                                 : message.role === 'user'
-                                  ? '我'
-                                  : '工作总监'}
+                                  ? t('director.page.history.roleMe')
+                                  : t('director.page.title')}
                             </span>
                             <time>{stamp(message.createdAt)}</time>
                           </header>
@@ -1377,7 +1485,9 @@ export function DirectorPage({
                     {Array.isArray(view.entry.session) && view.entry.session.length > 0 && (
                       <details className="director__history-raw">
                         <summary>
-                          原始会话记录（{view.entry.session.length} 条，含工具调用）
+                          {t('director.page.history.rawSession', {
+                            count: view.entry.session.length,
+                          })}
                         </summary>
                         <pre>{JSON.stringify(view.entry.session, null, 2)}</pre>
                       </details>
@@ -1388,7 +1498,7 @@ export function DirectorPage({
                 {view.tab === 'ledger' && (
                   <div className="director__records-body">
                     {folderTransactions(view.entry).length === 0 ? (
-                      <p className="director__empty">这段对话期间，总监没有留下事务记录。</p>
+                      <p className="director__empty">{t('director.page.history.noTransactions')}</p>
                     ) : (
                       <div className="director__records">
                         {folderTransactions(view.entry).map((entry, index) => (
@@ -1402,7 +1512,7 @@ export function DirectorPage({
                             <span
                               className={`director__record-tag is-${entry.side === 'director' ? 'director' : 'task'}`}
                             >
-                              {entry.side === 'director' ? '总监' : '任务'} ·{' '}
+                              {sideLabel(entry.side)} ·{' '}
                               {entry.label || entry.kind}
                             </span>
                             <span className="director__record-title">
@@ -1422,23 +1532,22 @@ export function DirectorPage({
               <div className="director__record-detail">
                 <dl>
                   <div>
-                    <dt>时间</dt>
-                    <dd>{fullStamp(view.entry.at)}</dd>
+                    <dt>{t('director.page.ledger.time')}</dt>
+                    <dd>{fullStamp(view.entry.at, locale)}</dd>
                   </div>
                   <div>
-                    <dt>分类</dt>
+                    <dt>{t('director.page.ledger.category')}</dt>
                     <dd>
-                      {view.entry.side === 'director' ? '总监' : '任务'} ·{' '}
-                      {view.entry.label || view.entry.kind}
+                      {sideLabel(view.entry.side)} · {view.entry.label || view.entry.kind}
                     </dd>
                   </div>
                   <div>
-                    <dt>任务 / 事项</dt>
+                    <dt>{t('director.page.ledger.task')}</dt>
                     <dd>{view.entry.title || view.entry.taskId || '—'}</dd>
                   </div>
                   <div className="is-wide">
-                    <dt>内容</dt>
-                    <dd>{view.entry.text || '（没有更多细节）'}</dd>
+                    <dt>{t('director.page.ledger.content')}</dt>
+                    <dd>{view.entry.text || t('director.page.ledger.noDetail')}</dd>
                   </div>
                 </dl>
               </div>
@@ -1449,9 +1558,13 @@ export function DirectorPage({
 
       {confirmDedupe && (
         <ConfirmDialog
-          title="清理重复的对话存档？"
-          message="只删除对话内容完全相同的副本，每组保留时间范围最完整的一份；正常的存档不会动。"
-          confirmLabel={deduping ? '正在清理…' : '清理重复'}
+          title={t('director.page.dedupe.title')}
+          message={t('director.page.dedupe.message')}
+          confirmLabel={
+            deduping
+              ? t('director.page.records.cleaningConfirm')
+              : t('director.page.records.cleanDuplicates')
+          }
           danger
           raised
           busy={deduping}
@@ -1462,9 +1575,11 @@ export function DirectorPage({
 
       {confirmDeletePicked && (
         <ConfirmDialog
-          title={`彻底删除选中的 ${picked.size} 个对话存档？`}
-          message="这一步不可恢复：存档文件、对应的总监记忆、这段对话期间的事务记录会一起删掉，总监以后再也想不起来这段。其他存档、总监主动保存的长期记忆不受影响。"
-          confirmLabel={deleting ? '正在删除…' : '删除'}
+          title={t('director.page.deletePicked.title', { count: picked.size })}
+          message={t('director.page.deletePicked.message')}
+          confirmLabel={
+            deleting ? t('director.page.deletePicked.deleting') : t('director.page.deletePicked.delete')
+          }
           danger
           raised
           busy={deleting}
@@ -1475,9 +1590,11 @@ export function DirectorPage({
 
       {confirmClear && (
         <ConfirmDialog
-          title="清空历史对话？"
-          message="总监当前的对话记录和模型上下文会被清空，并按话题分段留档到「对话历史」：以后可以靠记忆匹配到摘要，再读回原话。没有处理过的待确认事项会保留在对话里；不想留档就在「对话历史」里彻底删除。"
-          confirmLabel={clearing ? '正在留档…' : '清空并留档'}
+          title={t('director.page.clearConfirm.title')}
+          message={t('director.page.clearConfirm.message')}
+          confirmLabel={
+            clearing ? t('director.page.clearConfirm.clearing') : t('director.page.clearConfirm.confirm')
+          }
           danger
           busy={clearing}
           onConfirm={() => void clearHistory()}
@@ -1510,6 +1627,7 @@ function ScopeDialog({
   onClose: () => void;
   onMove: (ids: string[], into: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [queryLeft, setQueryLeft] = useState('');
   const [queryRight, setQueryRight] = useState('');
   const [pickedLeft, setPickedLeft] = useState<Set<string>>(() => new Set());
@@ -1565,14 +1683,14 @@ function ScopeDialog({
       <div
         className="director__modal"
         role="dialog"
-        aria-label="分管范围"
+        aria-label={t('director.page.scopeButton')}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="director__modal-head">
-          <h3>分管范围</h3>
-          <span>右侧是总监分管的全部空间；拖动或点箭头调整。未分管的空间它看不到。</span>
+          <h3>{t('director.page.scopeButton')}</h3>
+          <span>{t('director.page.scope.subtitle')}</span>
           <button type="button" className="btn btn--tiny" onClick={onClose}>
-            完成
+            {t('director.page.scope.done')}
           </button>
         </header>
 
@@ -1587,19 +1705,21 @@ function ScopeDialog({
             onDrop={(event) => drop('left', event)}
           >
             <header className="director__scope-head">
-              <strong>未分管</strong>
+              <strong>{t('director.page.scope.unassigned')}</strong>
               <span>{available.length}</span>
             </header>
             <input
               className="input"
               value={queryLeft}
-              placeholder="搜索工作空间…"
+              placeholder={t('director.page.scope.searchAll')}
               onChange={(event) => setQueryLeft(event.target.value)}
             />
             <ul className="director__scope-list">
               {visibleLeft.length === 0 && (
                 <li className="director__scope-empty">
-                  {available.length === 0 ? '所有空间都已在右侧' : '没有匹配的空间'}
+                  {available.length === 0
+                    ? t('director.page.scope.allAssigned')
+                    : t('director.page.scope.noMatch')}
                 </li>
               )}
               {visibleLeft.map((space) => (
@@ -1619,7 +1739,7 @@ function ScopeDialog({
                   <button
                     type="button"
                     className="director__scope-arrow"
-                    aria-label={`分管 ${space.name}`}
+                    aria-label={t('director.page.scope.assign', { name: space.name })}
                     onClick={(event) => {
                       event.stopPropagation();
                       move([space.id], true);
@@ -1642,19 +1762,21 @@ function ScopeDialog({
             onDrop={(event) => drop('right', event)}
           >
             <header className="director__scope-head">
-              <strong>分管</strong>
+              <strong>{t('director.page.scope.assigned')}</strong>
               <span>{mine.length}</span>
             </header>
             <input
               className="input"
               value={queryRight}
-              placeholder="搜索分管空间…"
+              placeholder={t('director.page.scope.searchAssigned')}
               onChange={(event) => setQueryRight(event.target.value)}
             />
             <ul className="director__scope-list">
               {visibleRight.length === 0 && (
                 <li className="director__scope-empty">
-                  {mine.length === 0 ? '把左侧的工作空间拖进来' : '没有匹配的空间'}
+                  {mine.length === 0
+                    ? t('director.page.scope.dragIn')
+                    : t('director.page.scope.noMatch')}
                 </li>
               )}
               {visibleRight.map((space) => (
@@ -1672,7 +1794,7 @@ function ScopeDialog({
                   <button
                     type="button"
                     className="director__scope-arrow"
-                    aria-label={`移出 ${space.name}`}
+                    aria-label={t('director.page.scope.remove', { name: space.name })}
                     onClick={(event) => {
                       event.stopPropagation();
                       move([space.id], false);
@@ -1696,7 +1818,7 @@ function ScopeDialog({
               disabled={pickedLeft.size === 0}
               onClick={() => move([...pickedLeft], true)}
             >
-              → 纳入分管（{pickedLeft.size}）
+              {t('director.page.scope.assignPicked', { count: pickedLeft.size })}
             </button>
             <button
               type="button"
@@ -1704,7 +1826,7 @@ function ScopeDialog({
               disabled={pickedRight.size === 0}
               onClick={() => move([...pickedRight], false)}
             >
-              ← 移出分管（{pickedRight.size}）
+              {t('director.page.scope.removePicked', { count: pickedRight.size })}
             </button>
           </div>
           <div>
@@ -1714,7 +1836,7 @@ function ScopeDialog({
               disabled={available.length === 0}
               onClick={() => move(available.map((space) => space.id), true)}
             >
-              全部纳入
+              {t('director.page.scope.assignAll')}
             </button>
             <button
               type="button"
@@ -1722,7 +1844,7 @@ function ScopeDialog({
               disabled={mine.length === 0}
               onClick={() => move(mine.map((space) => space.id), false)}
             >
-              全部移出
+              {t('director.page.scope.removeAll')}
             </button>
           </div>
         </footer>

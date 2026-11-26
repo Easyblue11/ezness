@@ -7,6 +7,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const JSZip = require('jszip');
+const uiText = require('../ui-text');
 
 const PLAIN_TEXT = new Set([
   '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.log', '.yaml', '.yml',
@@ -289,7 +290,7 @@ function diagramLines(xml) {
 async function extractPresentation(filePath) {
   const zip = await JSZip.loadAsync(await fs.readFile(filePath));
   const slides = await slidePaths(zip);
-  if (slides.length === 0) throw new Error('这个演示文稿里没有找到幻灯片');
+  if (slides.length === 0) throw new Error(uiText.t('main.kb.error.noSlides'));
 
   const pages = [];
   for (const [index, slide] of slides.entries()) {
@@ -331,13 +332,13 @@ async function extract(filePath) {
   if (PRESENTATION.has(ext)) return extractPresentation(filePath);
 
   if (ext === '.xls') {
-    throw new Error('旧版 .xls 暂不支持，请另存为 .xlsx');
+    throw new Error(uiText.t('main.kb.error.legacyXls'));
   }
   if (ext === '.doc') {
-    throw new Error('旧版 .doc 暂不支持，请另存为 .docx');
+    throw new Error(uiText.t('main.kb.error.legacyDoc'));
   }
   if (ext === '.ppt' || ext === '.pps' || ext === '.pot') {
-    throw new Error('旧版 .ppt 暂不支持，请用 PowerPoint 另存为 .pptx 后再添加');
+    throw new Error(uiText.t('main.kb.error.legacyPpt'));
   }
 
   if (PLAIN_TEXT.has(ext)) {
@@ -346,7 +347,9 @@ async function extract(filePath) {
     return { pages: [{ page: null, text }] };
   }
 
-  throw new Error(`不支持的文件类型：${ext || '未知'}`);
+  throw new Error(
+    uiText.t('main.kb.error.unsupportedType', { ext: ext || uiText.t('main.kb.unknownExtension') }),
+  );
 }
 
 module.exports = { extract, isSupported, SUPPORTED };

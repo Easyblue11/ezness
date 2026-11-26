@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../i18n';
 import { formatDateTime } from '../lib/time';
 import { warehouseRefToken } from '../lib/warehouseRef';
 import type { WarehouseItem, WarehouseSnapshot, WarehouseUsage } from '../types';
@@ -42,24 +43,28 @@ interface RowProps {
   onDelete: (item: WarehouseItem) => void;
 }
 
-function usagePlace(entry: WarehouseUsage): string {
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+function usagePlace(entry: WarehouseUsage, t: Translate): string {
   return entry.kind === 'workspace'
-    ? `工作空间「${entry.workspaceName ?? '工作空间'}」`
-    : '对话';
+    ? t('warehouse.workspaceQuote', {
+        name: entry.workspaceName ?? t('warehouse.workspaceFallback'),
+      })
+    : t('warehouse.chat');
 }
 
-function sourceLabel(item: WarehouseItem, usages: WarehouseUsage[]): string {
+function sourceLabel(item: WarehouseItem, usages: WarehouseUsage[], t: Translate): string {
   if (usages.length === 1) {
     const only = usages[0];
     return only.kind === 'workspace'
-      ? `来自${usagePlace(only)}`
-      : `来自对话「${only.sessionTitle}」`;
+      ? t('warehouse.sourceFromWorkspace', { place: usagePlace(only, t) })
+      : t('warehouse.sourceFromChat', { title: only.sessionTitle });
   }
   if (usages.length > 1) {
     const count = usages.reduce((sum, entry) => sum + entry.count, 0);
-    return `被引用 ${count} 次`;
+    return t('warehouse.refCount', { count });
   }
-  return item.origin === 'chat' ? '来自对话' : '手动导入';
+  return item.origin === 'chat' ? t('warehouse.sourceChat') : t('warehouse.sourceManual');
 }
 
 function WarehouseRow({
@@ -74,15 +79,19 @@ function WarehouseRow({
   onReveal,
   onDelete,
 }: RowProps) {
+  const { t } = useI18n();
   const only = usages.length === 1 ? usages[0] : null;
   const jumpTitle =
     usages.length === 0
-      ? '这个文件还没有出现在任何对话中'
+      ? t('warehouse.jumpNoUsage')
       : only
         ? only.kind === 'workspace'
-          ? `跳转到工作空间「${only.workspaceName ?? '工作空间'}」的任务「${only.sessionTitle}」`
-          : `跳转到对话「${only.sessionTitle}」`
-        : `在 ${usages.length} 个对话中引用，点击选择`;
+          ? t('warehouse.jumpToWorkspace', {
+              name: only.workspaceName ?? t('warehouse.workspaceFallback'),
+              task: only.sessionTitle,
+            })
+          : t('warehouse.jumpToChat', { title: only.sessionTitle })
+        : t('warehouse.jumpChoose', { count: usages.length });
 
   return (
     <div
@@ -93,7 +102,7 @@ function WarehouseRow({
         type="checkbox"
         className="wh-row__check"
         checked={selected}
-        aria-label={`选择 ${item.name}`}
+        aria-label={t('warehouse.selectAria', { name: item.name })}
         onChange={() => onToggle(item.id)}
       />
       <span
@@ -112,13 +121,13 @@ function WarehouseRow({
           {item.name}
         </div>
         <div className="wh-row__meta">
-          {formatSize(item.size)} · {formatDateTime(item.addedAt)} · {sourceLabel(item, usages)}
+          {formatSize(item.size)} · {formatDateTime(item.addedAt)} · {sourceLabel(item, usages, t)}
         </div>
       </div>
 
       <button
         className="iconbtn"
-        title="复制引用，到对话框粘贴即可使用"
+        title={t('warehouse.copyRefTitle')}
         onClick={() => onReference(item)}
       >
         <QuoteIcon size={15} />
@@ -131,13 +140,13 @@ function WarehouseRow({
       >
         <JumpIcon size={15} />
       </button>
-      <button className="iconbtn" title="用默认程序打开" onClick={() => onOpen(item)}>
+      <button className="iconbtn" title={t('warehouse.openDefault')} onClick={() => onOpen(item)}>
         <EyeIcon size={15} />
       </button>
-      <button className="iconbtn" title="在文件夹中显示" onClick={() => onReveal(item)}>
+      <button className="iconbtn" title={t('warehouse.revealInFolder')} onClick={() => onReveal(item)}>
         <FolderIcon size={15} />
       </button>
-      <button className="iconbtn" title="从仓库删除" onClick={() => onDelete(item)}>
+      <button className="iconbtn" title={t('warehouse.removeFromWarehouse')} onClick={() => onDelete(item)}>
         <TrashIcon size={15} />
       </button>
     </div>
@@ -153,6 +162,7 @@ interface Props {
 }
 
 export function WarehousePage({ usage, onJump, focus }: Props) {
+  const { t } = useI18n();
   const api = window.ezness;
   const bodyRef = useRef<HTMLElement>(null);
   const focusDone = useRef(0);
@@ -197,8 +207,8 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
     const ok = await api?.copyText(warehouseRefToken(item.id));
     flash(
       ok === false
-        ? '复制失败，请检查剪贴板权限'
-        : `已复制「${item.name}」的引用，到对话框里粘贴即可使用`,
+        ? t('warehouse.toast.copyFailed')
+        : t('warehouse.toast.copied', { name: item.name }),
     );
   }
 
@@ -273,11 +283,11 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
     const query = jumpQuery.trim().toLowerCase();
     if (!query) return jumpEntries;
     return jumpEntries.filter((entry) =>
-      `${entry.sessionTitle} ${entry.workspaceName ?? ''} ${usagePlace(entry)}`
+      `${entry.sessionTitle} ${entry.workspaceName ?? ''} ${usagePlace(entry, t)}`
         .toLowerCase()
         .includes(query),
     );
-  }, [jumpEntries, jumpQuery]);
+  }, [jumpEntries, jumpQuery, t]);
 
   // Files can disappear through a single delete or another window; drop their
   // ticks so the batch count never counts ghosts.
@@ -310,7 +320,7 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
     if (!snapshot) return;
     if (!items.some((item) => item.id === focus.id)) {
       focusDone.current = focus.nonce;
-      flash('引文文件不存在，可能已从仓库删除');
+      flash(t('warehouse.toast.missingReference'));
       return;
     }
     const row = bodyRef.current?.querySelector<HTMLElement>(
@@ -344,18 +354,18 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
     setImporting(false);
     if (result?.snapshot) setSnapshot(result.snapshot);
     if (result?.errors && result.errors.length > 0) {
-      flash(`导入失败：${result.errors[0]}`);
+      flash(t('warehouse.toast.importFailed', { error: result.errors[0] }));
       return;
     }
 
     const added = result?.added.length ?? 0;
     const duplicates = result?.duplicates?.length ?? 0;
     if (added > 0 && duplicates > 0) {
-      flash(`已导入 ${added} 个文件，${duplicates} 个内容相同已跳过`);
+      flash(t('warehouse.toast.importedSome', { added, duplicates }));
     } else if (added > 0) {
-      flash(`已导入 ${added} 个文件`);
+      flash(t('warehouse.toast.imported', { added }));
     } else if (duplicates > 0) {
-      flash('文件已在仓库里，没有重复保存');
+      flash(t('warehouse.toast.duplicatesOnly'));
     }
   }
 
@@ -376,12 +386,12 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
 
   async function openItem(item: WarehouseItem) {
     const result = await api?.warehouseOpen(item.id);
-    if (result && !result.ok) flash(result.error ?? '打不开这个文件');
+    if (result && !result.ok) flash(result.error ?? t('warehouse.toast.openFailed'));
   }
 
   async function revealItem(item: WarehouseItem) {
     const result = await api?.warehouseReveal(item.id);
-    if (result && !result.ok) flash(result.error ?? '找不到这个文件');
+    if (result && !result.ok) flash(result.error ?? t('warehouse.toast.revealFailed'));
   }
 
   async function confirmDelete() {
@@ -402,7 +412,11 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
       return rest;
     });
     setDeleteTargets(null);
-    flash(ids.length > 1 ? `已从仓库删除 ${ids.length} 个文件` : '已从仓库删除');
+    flash(
+      ids.length > 1
+        ? t('warehouse.toast.deletedMany', { count: ids.length })
+        : t('warehouse.toast.deleted'),
+    );
   }
 
   async function openRoot() {
@@ -413,13 +427,20 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
     <div className="wh">
       <header className="wh__head">
         <div className="wh__title">
-          <span>仓库</span>
+          <span>{t('warehouse.title')}</span>
           <span className="wh__count">
             {snapshot
-              ? `${
-                  filter.trim() ? `${visibleItems.length} / ${snapshot.count}` : snapshot.count
-                } 个文件 · ${formatSize(snapshot.totalBytes)}`
-              : '正在读取…'}
+              ? filter.trim()
+                ? t('warehouse.countFiltered', {
+                    shown: visibleItems.length,
+                    total: snapshot.count,
+                    size: formatSize(snapshot.totalBytes),
+                  })
+                : t('warehouse.count', {
+                    count: snapshot.count,
+                    size: formatSize(snapshot.totalBytes),
+                  })
+              : t('warehouse.loading')}
           </span>
         </div>
         <div className="wh__actions">
@@ -427,41 +448,47 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
             <SearchIcon size={14} />
             <input
               value={filter}
-              placeholder="搜索文件名"
-              aria-label="搜索仓库文件"
+              placeholder={t('warehouse.searchPlaceholder')}
+              aria-label={t('warehouse.searchAria')}
               onChange={(event) => setFilter(event.target.value)}
             />
             {filter !== '' && (
               <button
                 className="wh__search-clear"
-                title="清除搜索"
-                aria-label="清除搜索"
+                title={t('warehouse.clearSearch')}
+                aria-label={t('warehouse.clearSearch')}
                 onClick={() => setFilter('')}
               >
                 <CloseIcon size={12} />
               </button>
             )}
           </div>
-          <button className="btn btn--ghost" title="刷新列表" onClick={() => void refresh()}>
+          <button className="btn btn--ghost" title={t('warehouse.refreshTitle')} onClick={() => void refresh()}>
             <RefreshIcon size={14} />
-            刷新
+            {t('warehouse.refresh')}
           </button>
           <button className="btn btn--ghost" onClick={() => void openRoot()}>
             <FolderIcon size={14} />
-            打开目录
+            {t('warehouse.openFolder')}
           </button>
           <button
             className="btn btn--danger"
             disabled={selected.size === 0 || deleting}
-            title={selected.size === 0 ? '先勾选要删除的文件' : `删除已选的 ${selected.size} 个文件`}
+            title={
+              selected.size === 0
+                ? t('warehouse.selectFirstTitle')
+                : t('warehouse.deleteSelectedTitle', { count: selected.size })
+            }
             onClick={() => setDeleteTargets(selectedItems)}
           >
             <TrashIcon size={14} />
-            {selected.size > 0 ? `删除所选 ${selected.size}` : '批量删除'}
+            {selected.size > 0
+              ? t('warehouse.deleteSelected', { count: selected.size })
+              : t('warehouse.bulkDelete')}
           </button>
           <button className="btn btn--primary" onClick={() => void importFiles()} disabled={importing}>
             <UploadIcon size={14} />
-            {importing ? '导入中…' : '导入文件'}
+            {importing ? t('warehouse.importing') : t('warehouse.import')}
           </button>
         </div>
       </header>
@@ -482,21 +509,19 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
             <div className="wh-empty__icon">
               <WarehouseIcon size={24} />
             </div>
-            <h2>仓库还是空的</h2>
-            <p>
-              对话里粘贴的图片和文件会收进这里，也可以直接把文件拖进来。仓库只负责存放原文件，不解析、不切分、不做向量检索，和知识库完全独立。
-            </p>
+            <h2>{t('warehouse.emptyTitle')}</h2>
+            <p>{t('warehouse.emptyBody')}</p>
             <button className="btn btn--primary" onClick={() => void importFiles()}>
-              导入文件
+              {t('warehouse.import')}
             </button>
             {snapshot?.root && (
               <span className="wh-empty__hint" title={snapshot.root}>
-                存储位置：{snapshot.root}
+                {t('warehouse.storageLocation', { path: snapshot.root })}
               </span>
             )}
           </div>
         ) : visibleItems.length === 0 ? (
-          <div className="kb-empty">没有匹配「{filter.trim()}」的文件</div>
+          <div className="kb-empty">{t('warehouse.noMatches', { query: filter.trim() })}</div>
         ) : (
           <div className="wh-list">
             {visibleItems.map((item) => (
@@ -520,7 +545,7 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
         {dragging && (
           <div className="wh__dropmask">
             <UploadIcon size={22} />
-            松开即可放进仓库
+            {t('warehouse.dropRelease')}
           </div>
         )}
       </section>
@@ -534,23 +559,25 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
             role="menu"
           >
             <div className="wh-jump__title">
-              选择要跳转的对话
-              <span className="wh-jump__count">{jumpEntries.length} 处引用</span>
+              {t('warehouse.jumpTitle')}
+              <span className="wh-jump__count">
+                {t('warehouse.jumpCount', { count: jumpEntries.length })}
+              </span>
             </div>
             <div className="wh-jump__search">
               <SearchIcon size={13} />
               <input
                 autoFocus
                 value={jumpQuery}
-                placeholder="搜索对话或工作空间"
-                aria-label="搜索引用"
+                placeholder={t('warehouse.jumpSearchPlaceholder')}
+                aria-label={t('warehouse.jumpSearchAria')}
                 onChange={(event) => setJumpQuery(event.target.value)}
               />
               {jumpQuery !== '' && (
                 <button
                   className="wh-jump__clear"
-                  title="清除搜索"
-                  aria-label="清除搜索"
+                  title={t('warehouse.clearSearch')}
+                  aria-label={t('warehouse.clearSearch')}
                   onClick={() => setJumpQuery('')}
                 >
                   <CloseIcon size={11} />
@@ -558,7 +585,9 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
               )}
             </div>
             {jumpMatches.length === 0 ? (
-              <div className="wh-jump__empty">没有匹配「{jumpQuery.trim()}」的引用</div>
+              <div className="wh-jump__empty">
+                {t('warehouse.jumpEmpty', { query: jumpQuery.trim() })}
+              </div>
             ) : (
               jumpMatches.map((entry) => (
                 <button
@@ -579,8 +608,10 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
                       className={`wh-jump__scope ${entry.kind === 'workspace' ? 'is-workspace' : ''}`}
                     >
                       {entry.kind === 'workspace'
-                        ? `工作空间 · ${entry.workspaceName ?? '工作空间'}`
-                        : '对话'}
+                        ? t('warehouse.jumpWorkspace', {
+                            name: entry.workspaceName ?? t('warehouse.workspaceFallback'),
+                          })
+                        : t('warehouse.chat')}
                     </span>
                     <span className="wh-jump__time">{formatDateTime(entry.at)}</span>
                   </span>
@@ -595,13 +626,13 @@ export function WarehousePage({ usage, onJump, focus }: Props) {
 
       {deleteTargets && (
         <ConfirmDialog
-          title="从仓库删除"
+          title={t('warehouse.deleteTitle')}
           message={
             deleteTargets.length === 1
-              ? `删除「${deleteTargets[0].name}」？文件会从仓库目录里移除，此操作不可撤销。`
-              : `删除选中的 ${deleteTargets.length} 个文件？文件会从仓库目录里移除，此操作不可撤销。`
+              ? t('warehouse.deleteOneMessage', { name: deleteTargets[0].name })
+              : t('warehouse.deleteManyMessage', { count: deleteTargets.length })
           }
-          confirmLabel={deleting ? '删除中…' : '删除'}
+          confirmLabel={deleting ? t('warehouse.deleting') : t('warehouse.delete')}
           danger
           onConfirm={() => void confirmDelete()}
           onCancel={() => {

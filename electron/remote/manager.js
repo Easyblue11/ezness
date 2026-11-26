@@ -16,6 +16,7 @@ const crypto = require('node:crypto');
 const { safeStorage } = require('electron');
 const { SshBridge } = require('./bridge');
 const { RemoteWorkspaceFs } = require('./remote-fs');
+const uiText = require('../ui-text');
 
 const SECRETS_FILE = 'remote-secrets.json';
 
@@ -61,7 +62,7 @@ class RemoteManager {
 
   #encrypt(values) {
     if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error('系统加密不可用，无法安全保存远程登录凭据。');
+      throw new Error(uiText.t('main.remote.error.noSafeStorage'));
     }
     return safeStorage
       .encryptString(JSON.stringify(values))
@@ -112,10 +113,10 @@ class RemoteManager {
   /** Start a connection that only exists while the user picks a folder. */
   async connect(input) {
     const config = cleanConfig(input);
-    if (!config.host) throw new Error('请填写主机地址。');
-    if (!config.username) throw new Error('请填写用户名。');
+    if (!config.host) throw new Error(uiText.t('main.remote.error.hostRequired'));
+    if (!config.username) throw new Error(uiText.t('main.remote.error.userRequired'));
     if (!config.password && !config.privateKeyPath) {
-      throw new Error('请填写密码，或选择私钥文件。');
+      throw new Error(uiText.t('main.remote.error.passwordOrKey'));
     }
 
     const bridge = new SshBridge();
@@ -147,7 +148,7 @@ class RemoteManager {
 
   #pendingSession(sessionId) {
     const session = this.pending.get(String(sessionId ?? ''));
-    if (!session) throw new Error('这次连接已经过期，请重新输入地址和凭据。');
+    if (!session) throw new Error(uiText.t('main.remote.error.sessionExpired'));
     return session;
   }
 
@@ -183,10 +184,10 @@ class RemoteManager {
     const resolved = await session.bridge.request('resolve', { path: target });
     const root = String(resolved?.path ?? target);
     const info = await session.bridge.request('stat', { path: root });
-    if (!info?.isDir) throw new Error('这个位置不是文件夹，不能作为工作空间。');
+    if (!info?.isDir) throw new Error(uiText.t('main.remote.error.notFolder'));
 
     const id = String(workspaceId ?? '').trim();
-    if (!id) throw new Error('缺少工作空间 ID。');
+    if (!id) throw new Error(uiText.t('main.remote.error.missingWorkspaceId'));
 
     // Remember the credentials first: a failed save must not leave an
     // unreachable workspace behind.
@@ -241,7 +242,7 @@ class RemoteManager {
     const id = String(workspaceId ?? '');
     const config = cleanConfig(remote);
     const root = String(remote.root ?? '');
-    if (!root) throw new Error('远程工作空间缺少根目录。');
+    if (!root) throw new Error(uiText.t('main.remote.error.noRoot'));
 
     let entry = this.workspaces.get(id);
     if (entry && !entry.bridge.closed && entry.root === root) {
@@ -260,9 +261,7 @@ class RemoteManager {
       privateKeyPassphrase: config.privateKeyPassphrase || stored.privateKeyPassphrase || '',
     };
     if (!merged.password && !merged.privateKeyPath) {
-      throw new Error(
-        '远程工作空间没有可用的登录凭据（可能是在另一台机器或另一个系统账户下保存的），请重新添加这个远程地址。',
-      );
+      throw new Error(uiText.t('main.remote.error.noCredentials'));
     }
 
     const bridge = new SshBridge();
@@ -296,7 +295,7 @@ class RemoteManager {
       const info = await fs.stat(fs.root);
       return info.isDirectory
         ? { ok: true }
-        : { ok: false, phase: 'stat', error: '远程根目录不是文件夹。' };
+        : { ok: false, phase: 'stat', error: uiText.t('main.remote.error.rootNotFolder') };
     } catch (error) {
       // Drop the connection as well: a stat can fail because the bridge died
       // quietly, and the next check should start from a fresh one.

@@ -15,6 +15,7 @@ import {
   snapshotOf,
   uid,
 } from '../data/prompts';
+import { useI18n } from '../i18n';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   CheckIcon,
@@ -29,6 +30,9 @@ import {
 const HISTORY_LIMIT = 60;
 const SAVE_IDLE = 400;
 const GENERATE_TIMEOUT = 90_000;
+
+/** Internal id for the "all tags" pill; its label comes from i18n. */
+const ALL_TAG = '__all__';
 
 type GenerationKind = 'nameEn' | 'descriptionEn' | 'bodyEn';
 
@@ -77,9 +81,10 @@ function translateToEnglish(
   kind: GenerationKind,
   source: string,
   requestId: string,
+  translate: (key: string) => string,
 ): Promise<string> {
   const api = window.ezness;
-  if (!api) return Promise.reject(new Error('窗口接口不可用'));
+  if (!api) return Promise.reject(new Error(translate('prompts.error.windowUnavailable')));
 
   return new Promise((resolve, reject) => {
     let text = '';
@@ -98,7 +103,7 @@ function translateToEnglish(
 
     timer = window.setTimeout(() => {
       void api.chatAbort?.(requestId);
-      finish(new Error('生成超时'));
+      finish(new Error(translate('prompts.error.timeout')));
     }, GENERATE_TIMEOUT);
 
     unsubscribe = api.onChatEvent?.((event: ChatStreamEvent) => {
@@ -109,8 +114,8 @@ function translateToEnglish(
       }
       if (event.type === 'thinking') return;
       if (event.type === 'done') finish(null, text);
-      else if (event.type === 'aborted') finish(new Error('生成已中断'));
-      else finish(new Error(event.error || '未知错误'));
+      else if (event.type === 'aborted') finish(new Error(translate('prompts.error.aborted')));
+      else finish(new Error(event.error || translate('prompts.error.unknown')));
     });
 
     api
@@ -126,7 +131,7 @@ function translateToEnglish(
         ],
       })
       .then((ok) => {
-        if (!ok) finish(new Error('请求没有发出'));
+        if (!ok) finish(new Error(translate('prompts.error.notSent')));
       })
       .catch((error: unknown) =>
         finish(error instanceof Error ? error : new Error(String(error))),
@@ -148,13 +153,14 @@ interface Props {
 }
 
 export function PromptsPage({ translationTarget }: Props) {
+  const { t } = useI18n();
   const api = window.ezness;
 
   // 模板库只来自数据目录里的 prompts.json：没有就是空的，不带任何出厂模板。
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [activeId, setActiveId] = useState('');
   const [query, setQuery] = useState('');
-  const [filterTag, setFilterTag] = useState('全部');
+  const [filterTag, setFilterTag] = useState(ALL_TAG);
   const [tagDraft, setTagDraft] = useState({ id: '', text: '' });
   const [ready, setReady] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -195,17 +201,17 @@ export function PromptsPage({ translationTarget }: Props) {
         if (!seen.includes(tag)) seen.push(tag);
       }
     }
-    return ['全部', ...seen];
+    return [ALL_TAG, ...seen];
   }, [templates]);
 
   useEffect(() => {
-    if (filterTag !== '全部' && !tagOptions.includes(filterTag)) setFilterTag('全部');
+    if (filterTag !== ALL_TAG && !tagOptions.includes(filterTag)) setFilterTag(ALL_TAG);
   }, [filterTag, tagOptions]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return templates.filter((template) => {
-      if (filterTag !== '全部' && !template.tags.includes(filterTag)) return false;
+      if (filterTag !== ALL_TAG && !template.tags.includes(filterTag)) return false;
       if (!needle) return true;
       return [template.name, template.nameEn, ...template.tags].some((value) =>
         value.toLowerCase().includes(needle),
@@ -243,7 +249,7 @@ export function PromptsPage({ translationTarget }: Props) {
       loadedExisting.current = Array.isArray(stored);
       if (Array.isArray(stored)) {
         const loaded = stored
-          .map((entry) => normalizeTemplate(entry))
+          .map((entry) => normalizeTemplate(entry, t('prompts.untitled')))
           .filter((template): template is PromptTemplate => template !== null);
         setSavedBases({});
         setTemplates(loaded);
@@ -308,7 +314,7 @@ export function PromptsPage({ translationTarget }: Props) {
     if (!active || !dirty) return;
     pushVersion(active.id, activeKey);
     setSavedBases((current) => ({ ...current, [active.id]: activeKey }));
-    showToast('已保存为新版本');
+    showToast(t('prompts.toast.saved'));
   }
 
   function deleteVersion(versionId: string) {
@@ -324,7 +330,7 @@ export function PromptsPage({ translationTarget }: Props) {
           : template,
       ),
     );
-    showToast('已删除该版本');
+    showToast(t('prompts.toast.versionDeleted'));
   }
 
   const patchActive = useCallback(
@@ -348,13 +354,13 @@ export function PromptsPage({ translationTarget }: Props) {
   }
 
   function createTemplate() {
-    const template = createBlankTemplate();
+    const template = createBlankTemplate(t('prompts.untitled'));
     setTemplates((current) => [template, ...current]);
     setActiveId(template.id);
     setTagDraft({ id: '', text: '' });
-    setFilterTag('全部');
+    setFilterTag(ALL_TAG);
     setQuery('');
-    showToast('已创建空白模板');
+    showToast(t('prompts.toast.created'));
   }
 
   function confirmDelete() {
@@ -365,7 +371,7 @@ export function PromptsPage({ translationTarget }: Props) {
     setTemplates(rest);
     if (template.id === activeId) setActiveId(rest[0]?.id ?? '');
     setTagDraft({ id: '', text: '' });
-    showToast('已删除模板');
+    showToast(t('prompts.toast.templateDeleted'));
   }
 
   function updateTags(text: string) {
@@ -414,7 +420,7 @@ export function PromptsPage({ translationTarget }: Props) {
         template.id === active.id ? { ...template, ...snapshot, updatedAt: Date.now() } : template,
       ),
     );
-    showToast('已恢复到该历史版本');
+    showToast(t('prompts.toast.restored'));
   }
 
   async function generateEnglish(kind: GenerationKind) {
@@ -423,7 +429,7 @@ export function PromptsPage({ translationTarget }: Props) {
     const source =
       kind === 'nameEn' ? active.name : kind === 'descriptionEn' ? active.description : active.body;
     if (!source.trim()) {
-      showToast('先填写中文内容');
+      showToast(t('prompts.toast.needChinese'));
       return;
     }
 
@@ -431,14 +437,18 @@ export function PromptsPage({ translationTarget }: Props) {
     generation.current = { requestId };
     setGenerating(kind);
     try {
-      const raw = await translateToEnglish(translationTarget, kind, source, requestId);
+      const raw = await translateToEnglish(translationTarget, kind, source, requestId, t);
       const text = tidyTranslation(raw, kind);
-      if (!text) throw new Error('模型没有返回内容');
+      if (!text) throw new Error(t('prompts.error.emptyModel'));
       if (kind === 'bodyEn') {
         const got = placeholderNames(text);
         const missing = [...placeholderNames(source)].filter((name) => !got.has(name));
         if (missing.length > 0) {
-          throw new Error(`生成的英文缺少变量标记 ${missing.map((name) => `{{${name}}}`).join('、')}，请重试`);
+          throw new Error(
+            t('prompts.error.missingVars', {
+              vars: missing.map((name) => `{{${name}}}`).join(', '),
+            }),
+          );
         }
       }
       const patch: Partial<PromptSnapshot> =
@@ -453,9 +463,13 @@ export function PromptsPage({ translationTarget }: Props) {
           template.id === templateId ? { ...template, ...patch, updatedAt: Date.now() } : template,
         ),
       );
-      showToast('已生成英文');
+      showToast(t('prompts.toast.generated'));
     } catch (error) {
-      showToast(`生成失败：${error instanceof Error ? error.message : String(error)}`);
+      showToast(
+        t('prompts.toast.generatedError', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     } finally {
       generation.current = null;
       setGenerating(null);
@@ -474,15 +488,15 @@ export function PromptsPage({ translationTarget }: Props) {
         disabled={disabled}
         title={
           !translationTarget
-            ? '先在「设置 → 默认模型」里配置翻译模型'
+            ? t('prompts.gen.noModel')
             : !source.trim()
-              ? '先填写中文内容'
-              : '用翻译模型生成英文（会覆盖现有内容）'
+              ? t('prompts.gen.needSource')
+              : t('prompts.gen.hint')
         }
         onClick={() => void generateEnglish(kind)}
       >
         <SparkleIcon size={12} />
-        {busy ? '生成中…' : '生成英文'}
+        {busy ? t('prompts.gen.busy') : t('prompts.gen.label')}
       </button>
     );
   }
@@ -490,43 +504,54 @@ export function PromptsPage({ translationTarget }: Props) {
   async function exportActive() {
     if (!active) return;
     if (!api?.promptsExport) {
-      showToast('当前环境不支持导出');
+      showToast(t('prompts.toast.exportUnsupported'));
       return;
     }
     const result = await api.promptsExport({ template: active });
-    if (result.ok) showToast(`已导出到 ${result.path ?? '文件'}`);
-    else if (!result.canceled) showToast(`导出失败：${result.error ?? '未知错误'}`);
+    if (result.ok) {
+      showToast(
+        t('prompts.toast.exported', { path: result.path ?? t('prompts.fileFallback') }),
+      );
+    } else if (!result.canceled) {
+      showToast(
+        t('prompts.toast.exportFailed', { error: result.error ?? t('prompts.error.unknown') }),
+      );
+    }
   }
 
   async function importTemplate() {
     if (!api?.promptsImport) {
-      showToast('当前环境不支持导入');
+      showToast(t('prompts.toast.importUnsupported'));
       return;
     }
     const result = await api.promptsImport();
     if (!result.ok) {
-      if (!result.canceled) showToast(`导入失败：${result.error ?? '未知错误'}`);
+      if (!result.canceled) {
+        showToast(
+          t('prompts.toast.importFailed', { error: result.error ?? t('prompts.error.unknown') }),
+        );
+      }
       return;
     }
 
-    const template = normalizeTemplate(result.data);
+    const template = normalizeTemplate(result.data, t('prompts.untitled'));
     if (!template) {
-      showToast('文件里没有可导入的模板');
+      showToast(t('prompts.toast.importEmpty'));
       return;
     }
     // A file exported from this machine carries its original id; importing it
     // back should add a copy rather than silently shadow the existing template.
     if (templates.some((entry) => entry.id === template.id)) {
       template.id = uid();
-      template.name = `${template.name}（导入）`;
+      template.name = t('prompts.importedName', { name: template.name });
     }
 
     setTemplates((current) => [template, ...current]);
     setActiveId(template.id);
     setTagDraft({ id: '', text: '' });
-    setFilterTag('全部');
+    setFilterTag(ALL_TAG);
     setQuery('');
-    showToast(`已导入「${template.name || '未命名模板'}」`);
+    showToast(t('prompts.toast.imported', { name: template.name || t('prompts.untitled') }));
   }
 
   const tagsText = active
@@ -540,12 +565,12 @@ export function PromptsPage({ translationTarget }: Props) {
       <aside className="prompts__list">
         <header className="prompts__list-head">
           <h1>
-            提示词 <span>Prompt Templates</span>
+            {t('prompts.title')} <span>Prompt Templates</span>
           </h1>
-          <p>在这里维护模板库；在对话输入框左下角选择模板后，该会话的每次请求都按模板执行。</p>
+          <p>{t('prompts.subtitle')}</p>
 
           <button className="btn btn--primary prompts__new" onClick={createTemplate}>
-            <PlusIcon size={13} /> 新建模板
+            <PlusIcon size={13} /> {t('prompts.new')}
           </button>
 
           <div className="prompts__search">
@@ -553,7 +578,7 @@ export function PromptsPage({ translationTarget }: Props) {
             <input
               className="input"
               value={query}
-              placeholder="搜索名称 / 标签"
+              placeholder={t('prompts.searchPlaceholder')}
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
@@ -565,7 +590,7 @@ export function PromptsPage({ translationTarget }: Props) {
                 className={`prompts__tag ${filterTag === tag ? 'is-on' : ''}`}
                 onClick={() => setFilterTag(tag)}
               >
-                {tag}
+                {tag === ALL_TAG ? t('prompts.allTag') : tag}
               </button>
             ))}
           </div>
@@ -588,20 +613,24 @@ export function PromptsPage({ translationTarget }: Props) {
               }}
             >
               <div className="prompt-row__top">
-                <span className="prompt-row__name">{template.name || '未命名模板'}</span>
+                <span className="prompt-row__name">
+                  {template.name || t('prompts.untitled')}
+                </span>
                 <span className={`prompt-row__kind ${template.wrap ? 'is-wrap' : ''}`}>
-                  {template.wrap ? '包装' : '系统'}
+                  {template.wrap ? t('prompts.kind.wrap') : t('prompts.kind.system')}
                 </span>
               </div>
               <div className="prompt-row__meta">
                 <span className="prompt-row__en">{template.nameEn || '—'}</span>
                 {template.tags.length > 0 && (
-                  <span className="prompt-row__tags">{template.tags.join('、')}</span>
+                  <span className="prompt-row__tags">
+                    {template.tags.join(t('prompts.tagSeparator'))}
+                  </span>
                 )}
               </div>
               <button
                 className="prompt-row__del"
-                title="删除模板"
+                title={t('prompts.delete')}
                 onClick={(event) => {
                   event.stopPropagation();
                   setPendingDelete(template);
@@ -611,10 +640,14 @@ export function PromptsPage({ translationTarget }: Props) {
               </button>
             </div>
           ))}
-          {visible.length === 0 && <p className="prompts__empty">没有匹配的模板</p>}
+          {visible.length === 0 && (
+            <p className="prompts__empty">{t('prompts.empty')}</p>
+          )}
         </div>
 
-        <div className="prompts__list-foot">{visible.length} 个模板</div>
+        <div className="prompts__list-foot">
+          {t('prompts.count', { count: visible.length })}
+        </div>
       </aside>
 
       {active ? (
@@ -622,17 +655,17 @@ export function PromptsPage({ translationTarget }: Props) {
           <div className="prompts__form">
             <div className="field-grid">
               <label className="field">
-                <span className="field__label">名称 Name</span>
+                <span className="field__label">{t('prompts.nameLabel')}</span>
                 <input
                   className="input"
                   value={active.name}
-                  placeholder="模板名称"
+                  placeholder={t('prompts.namePlaceholder')}
                   onChange={(event) => patchActive({ name: event.target.value })}
                 />
               </label>
               <div className="field">
                 <span className="field__label">
-                  <span>英文名 Name (EN)</span>
+                  <span>{t('prompts.nameEnLabel')}</span>
                   {generateButton('nameEn')}
                 </span>
                 <input
@@ -646,17 +679,17 @@ export function PromptsPage({ translationTarget }: Props) {
 
             <div className="field-grid">
               <label className="field">
-                <span className="field__label">描述 Description</span>
+                <span className="field__label">{t('prompts.descLabel')}</span>
                 <input
                   className="input"
                   value={active.description}
-                  placeholder="一句话说明这个模板做什么"
+                  placeholder={t('prompts.descPlaceholder')}
                   onChange={(event) => patchActive({ description: event.target.value })}
                 />
               </label>
               <div className="field">
                 <span className="field__label">
-                  <span>英文描述 Description (EN)</span>
+                  <span>{t('prompts.descEnLabel')}</span>
                   {generateButton('descriptionEn')}
                 </span>
                 <input
@@ -670,15 +703,15 @@ export function PromptsPage({ translationTarget }: Props) {
 
             <div className="field-grid">
               <div className="field">
-                <span className="field__label">生效方式 Mode</span>
+                <span className="field__label">{t('prompts.modeLabel')}</span>
                 <div className="input-row">
                   <select
                     className="select prompts__mode"
                     value={active.wrap ? 'wrap' : 'system'}
                     onChange={(event) => patchActive({ wrap: event.target.value === 'wrap' })}
                   >
-                    <option value="system">系统指令 system</option>
-                    <option value="wrap">包装消息 wrap</option>
+                    <option value="system">{t('prompts.mode.systemOption')}</option>
+                    <option value="wrap">{t('prompts.mode.wrapOption')}</option>
                   </select>
                   <label className="prompts__check">
                     <input
@@ -686,18 +719,19 @@ export function PromptsPage({ translationTarget }: Props) {
                       checked={active.wrap}
                       onChange={(event) => patchActive({ wrap: event.target.checked })}
                     />
-                    <span>包装消息 wrap</span>
+                    <span>{t('prompts.mode.wrapCheck')}</span>
                   </label>
                 </div>
               </div>
               <label className="field">
                 <span className="field__label">
-                  标签 Tags <span className="field__hint">英文逗号分隔</span>
+                  {t('prompts.tagsLabel')}{' '}
+                  <span className="field__hint">{t('prompts.tagsHint')}</span>
                 </span>
                 <input
                   className="input"
                   value={tagsText}
-                  placeholder="写作, 协作"
+                  placeholder={t('prompts.tagsPlaceholder')}
                   onChange={(event) => updateTags(event.target.value)}
                 />
               </label>
@@ -705,15 +739,18 @@ export function PromptsPage({ translationTarget }: Props) {
 
             <label className="field">
               <span className="field__label">
-                正文 Body
+                {t('prompts.bodyLabel')}
                 <span className="field__hint">
-                  {rendered.length} 字符～{renderedTokens} tokens
+                  {t('prompts.bodyMeta', {
+                    chars: rendered.length,
+                    tokens: renderedTokens,
+                  })}
                 </span>
               </span>
               <textarea
                 className="input prompts__body"
                 value={active.body}
-                placeholder="在这里写提示词，用 {{变量名}} 引用变量"
+                placeholder={t('prompts.bodyPlaceholder')}
                 spellCheck={false}
                 onChange={(event) => patchActive({ body: event.target.value })}
               />
@@ -721,9 +758,9 @@ export function PromptsPage({ translationTarget }: Props) {
 
             <div className="field">
               <span className="field__label">
-                <span>英文正文（可选）Body (EN, optional)</span>
+                <span>{t('prompts.bodyEnLabel')}</span>
                 <span className="prompts__label-right">
-                  <span className="field__hint">留空则回落到中文正文</span>
+                  <span className="field__hint">{t('prompts.bodyEnHint')}</span>
                   {generateButton('bodyEn')}
                 </span>
               </span>
@@ -738,8 +775,8 @@ export function PromptsPage({ translationTarget }: Props) {
 
             <div className="field">
               <span className="field__label">
-                变量 Variables
-                <span className="field__hint">{'写入 {{name}} 时按此处取值'}</span>
+                {t('prompts.varsLabel')}
+                <span className="field__hint">{t('prompts.varsHint')}</span>
               </span>
               <div className="prompts__vars">
                 {active.variables.map((variable, index) => (
@@ -747,20 +784,20 @@ export function PromptsPage({ translationTarget }: Props) {
                     <input
                       className="input"
                       value={variable.name}
-                      placeholder="变量名"
+                      placeholder={t('prompts.varNamePlaceholder')}
                       spellCheck={false}
                       onChange={(event) => updateVariable(index, { name: event.target.value })}
                     />
                     <input
                       className="input"
                       value={variable.value}
-                      placeholder="默认值"
+                      placeholder={t('prompts.varValuePlaceholder')}
                       spellCheck={false}
                       onChange={(event) => updateVariable(index, { value: event.target.value })}
                     />
                     <button
                       className="prompts__var-del"
-                      title="删除变量"
+                      title={t('prompts.removeVar')}
                       onClick={() => removeVariable(index)}
                     >
                       ×
@@ -768,7 +805,7 @@ export function PromptsPage({ translationTarget }: Props) {
                   </div>
                 ))}
                 <button className="btn btn--ghost prompts__var-add" onClick={addVariable}>
-                  <PlusIcon size={13} /> 添加变量
+                  <PlusIcon size={13} /> {t('prompts.addVar')}
                 </button>
               </div>
             </div>
@@ -776,9 +813,9 @@ export function PromptsPage({ translationTarget }: Props) {
         </section>
       ) : (
         <section className="prompts__editor prompts__editor--empty">
-          <p>还没有模板。</p>
+          <p>{t('prompts.editorEmpty')}</p>
           <button className="btn btn--primary" onClick={createTemplate}>
-            <PlusIcon size={13} /> 新建模板
+            <PlusIcon size={13} /> {t('prompts.new')}
           </button>
         </section>
       )}
@@ -789,15 +826,15 @@ export function PromptsPage({ translationTarget }: Props) {
             className="btn btn--primary"
             onClick={saveVersion}
             disabled={!dirty}
-            title={dirty ? '把当前内容保存为一个新版本' : '没有未保存的修改'}
+            title={dirty ? t('prompts.saveTitle') : t('prompts.saveClean')}
           >
-            <CheckIcon size={13} /> 保存
+            <CheckIcon size={13} /> {t('prompts.save')}
           </button>
           <button className="btn btn--ghost" onClick={() => void exportActive()} disabled={!active}>
-            <DownloadIcon size={13} /> 导出
+            <DownloadIcon size={13} /> {t('prompts.export')}
           </button>
           <button className="btn btn--ghost" onClick={() => void importTemplate()}>
-            <UploadIcon size={13} /> 导入
+            <UploadIcon size={13} /> {t('prompts.import')}
           </button>
         </div>
 
@@ -805,37 +842,43 @@ export function PromptsPage({ translationTarget }: Props) {
           <>
             <section className="prompts__card">
               <h3 className="prompts__card-title">
-                注入预览 <span>PREVIEW</span>
+                {t('prompts.previewTitle')} <span>PREVIEW</span>
               </h3>
-              <pre className="prompts__preview">{rendered || '（正文为空）'}</pre>
+              <pre className="prompts__preview">
+                {rendered || t('prompts.previewEmpty')}
+              </pre>
             </section>
 
             <section className="prompts__card">
               <h3 className="prompts__card-title">
-                详情 <span>DETAILS</span>
+                {t('prompts.detailsTitle')} <span>DETAILS</span>
               </h3>
               <dl className="prompts__details">
                 <div>
-                  <dt>模式 Mode</dt>
-                  <dd>{active.wrap ? '包装消息 wrap' : '系统指令 system'}</dd>
+                  <dt>{t('prompts.detailsMode')}</dt>
+                  <dd>
+                    {active.wrap
+                      ? t('prompts.detailsModeValue.wrap')
+                      : t('prompts.detailsModeValue.system')}
+                  </dd>
                 </div>
                 <div className="prompts__mode-note">
                   <p>
                     {active.wrap
-                      ? '模板和你的输入拼成一条 user 消息发出，每条消息单独生效；适合「把下面内容加工成…」这类一次性任务。'
-                      : '模板作为独立的 system 消息发出，对话每一轮都带着它；你的输入保持原样。适合角色、规则和输出格式。'}
+                      ? t('prompts.modeNote.wrap')
+                      : t('prompts.modeNote.system')}
                   </p>
                 </div>
                 <div>
-                  <dt>估算 Tokens</dt>
+                  <dt>{t('prompts.detailsTokens')}</dt>
                   <dd>{renderedTokens}</dd>
                 </div>
-                <div title="模板还没有接入对话请求">
-                  <dt>使用会话 Sessions</dt>
+                <div title={t('prompts.sessionsHint')}>
+                  <dt>{t('prompts.detailsSessions')}</dt>
                   <dd>0</dd>
                 </div>
                 <div>
-                  <dt>更新 Updated</dt>
+                  <dt>{t('prompts.detailsUpdated')}</dt>
                   <dd>{formatTime(active.updatedAt)}</dd>
                 </div>
               </dl>
@@ -843,10 +886,10 @@ export function PromptsPage({ translationTarget }: Props) {
 
             <section className="prompts__card">
               <h3 className="prompts__card-title">
-                版本 <span>HISTORY</span>
+                {t('prompts.historyTitle')} <span>HISTORY</span>
               </h3>
               {active.history.length === 0 ? (
-                <p className="prompts__hint">修改内容后点右上角「保存」，会把当前内容记为一个版本。</p>
+                <p className="prompts__hint">{t('prompts.historyEmpty')}</p>
               ) : (
                 <ul className="prompts__history">
                   {active.history.map((version) => (
@@ -857,11 +900,11 @@ export function PromptsPage({ translationTarget }: Props) {
                           className="prompts__restore"
                           onClick={() => restoreVersion(version.id)}
                         >
-                          恢复
+                          {t('prompts.restore')}
                         </button>
                         <button
                           className="prompts__ver-del"
-                          title="删除该版本"
+                          title={t('prompts.deleteVersion')}
                           onClick={() => deleteVersion(version.id)}
                         >
                           <TrashIcon size={11} />
@@ -874,7 +917,7 @@ export function PromptsPage({ translationTarget }: Props) {
             </section>
           </>
         ) : (
-          <p className="prompts__hint">左侧选择或新建一个模板。</p>
+          <p className="prompts__hint">{t('prompts.sideHint')}</p>
         )}
       </aside>
 
@@ -882,9 +925,11 @@ export function PromptsPage({ translationTarget }: Props) {
 
       {pendingDelete && (
         <ConfirmDialog
-          title="删除模板"
-          message={`确定删除「${pendingDelete.name || '未命名模板'}」？模板和它的版本历史都会被移除，无法恢复。`}
-          confirmLabel="删除"
+          title={t('prompts.confirm.deleteTitle')}
+          message={t('prompts.confirm.deleteMessage', {
+            name: pendingDelete.name || t('prompts.untitled'),
+          })}
+          confirmLabel={t('prompts.confirm.deleteLabel')}
           danger
           onCancel={() => setPendingDelete(null)}
           onConfirm={confirmDelete}

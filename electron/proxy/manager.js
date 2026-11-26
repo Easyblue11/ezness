@@ -17,6 +17,7 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const customTools = require('../agent/custom-tools');
+const uiText = require('../ui-text');
 const { AuthRelay } = require('./auth-relay');
 
 const SCRIPT = path.join(__dirname, 'ssh_proxy.py');
@@ -78,19 +79,23 @@ function normalize(raw) {
 function problemOf(settings) {
   const { mode, server } = settings;
   if (!settings.enabled || mode === 'direct' || mode === 'system') return null;
-  if (!server.host) return '请填写代理服务器地址。';
-  if (!HOST_PATTERN.test(server.host)) return '代理服务器地址不合法。';
+  if (!server.host) return uiText.t('main.proxy.error.hostRequired');
+  if (!HOST_PATTERN.test(server.host)) return uiText.t('main.proxy.error.hostInvalid');
   if (!Number.isInteger(server.port) || server.port < 1 || server.port > 65535) {
-    return '端口需要在 1–65535 之间。';
+    return uiText.t('main.proxy.error.portRange');
   }
   if (server.scheme === 'ssh') {
-    if (!server.username) return '请填写 SSH 登录用户名。';
-    if (server.sshAuth === 'password' && !server.password) return '请填写 SSH 密码。';
-    if (server.sshAuth === 'key' && !server.privateKeyPath) return '请选择私钥文件。';
+    if (!server.username) return uiText.t('main.proxy.error.sshUser');
+    if (server.sshAuth === 'password' && !server.password) {
+      return uiText.t('main.proxy.error.sshPassword');
+    }
+    if (server.sshAuth === 'key' && !server.privateKeyPath) {
+      return uiText.t('main.proxy.error.sshKey');
+    }
   }
   if (mode === 'auto') {
     const broken = settings.rules.find((rule) => rule.pattern && !RULE_PATTERN.test(rule.pattern));
-    if (broken) return `规则「${broken.pattern}」不合法。`;
+    if (broken) return uiText.t('main.proxy.error.ruleInvalid', { pattern: broken.pattern });
   }
   return null;
 }
@@ -116,12 +121,18 @@ function displayScheme(scheme) {
 }
 
 function summary(settings) {
-  if (!settings.enabled) return '已关闭';
-  if (settings.mode === 'direct') return '直接连接';
-  if (settings.mode === 'system') return '系统代理';
+  if (!settings.enabled) return uiText.t('main.proxy.summary.off');
+  if (settings.mode === 'direct') return uiText.t('main.proxy.summary.direct');
+  if (settings.mode === 'system') return uiText.t('main.proxy.summary.system');
   const scheme = displayScheme(settings.server.scheme);
-  if (settings.mode === 'auto') return `自动切换 · ${settings.rules.length} 条规则`;
-  return `固定代理 · ${scheme} ${settings.server.host}:${settings.server.port}`;
+  if (settings.mode === 'auto') {
+    return uiText.t('main.proxy.summary.auto', { count: settings.rules.length });
+  }
+  return uiText.t('main.proxy.summary.fixed', {
+    scheme,
+    host: settings.server.host,
+    port: settings.server.port,
+  });
 }
 
 /**
@@ -189,7 +200,7 @@ class ProxyManager {
       applied: false,
       enabled: this.settings.enabled,
       mode: 'direct',
-      detail: '直接连接',
+      detail: uiText.t('main.proxy.summary.direct'),
     };
     this.appliedKey = '';
     this.tunnel = null;
@@ -238,7 +249,12 @@ class ProxyManager {
   async test(rawUrl) {
     const custom = typeof rawUrl === 'string' ? rawUrl.trim().slice(0, 2000) : '';
     if (custom && !/^https?:\/\//i.test(custom)) {
-      return { ok: false, latencyMs: 0, detail: '连接失败', error: '测试地址必须是 http(s) 链接。' };
+      return {
+        ok: false,
+        latencyMs: 0,
+        detail: uiText.t('main.proxy.error.connect'),
+        error: uiText.t('main.proxy.error.testUrl'),
+      };
     }
     const targets = custom ? [custom] : TEST_TARGETS;
     let lastError = '';
@@ -256,12 +272,21 @@ class ProxyManager {
         } catch {
           /* body errors do not change reachability */
         }
-        return { ok: true, latencyMs, detail: `已连接 · ${latencyMs} ms` };
+        return {
+          ok: true,
+          latencyMs,
+          detail: uiText.t('main.proxy.test.connected', { latencyMs }),
+        };
       } catch (error) {
         lastError = error?.cause?.message || error?.message || String(error);
       }
     }
-    return { ok: false, latencyMs: 0, detail: '连接失败', error: lastError };
+    return {
+      ok: false,
+      latencyMs: 0,
+      detail: uiText.t('main.proxy.error.connect'),
+      error: lastError,
+    };
   }
 
   /** Serialize applications so two quick saves cannot race the tunnel. */
@@ -339,7 +364,9 @@ class ProxyManager {
             enabled: settings.enabled,
             mode: settings.mode,
             detail: summary(settings),
-            error: `SSH 隧道启动失败：${error?.message || String(error)}`,
+            error: uiText.t('main.proxy.error.tunnelFailed', {
+              error: error?.message || String(error),
+            }),
           };
           return this.status();
         }
@@ -363,7 +390,9 @@ class ProxyManager {
             enabled: settings.enabled,
             mode: settings.mode,
             detail: summary(settings),
-            error: `代理认证转发启动失败：${error?.message || String(error)}`,
+            error: uiText.t('main.proxy.error.relayFailed', {
+              error: error?.message || String(error),
+            }),
           };
           return this.status();
         }
@@ -502,7 +531,7 @@ class ProxyManager {
     try {
       const answer = await this.#readPort(child, () => tunnel.stderr);
       if (!answer?.ok || !answer.port) {
-        throw new Error(answer?.error || '没有拿到本地隧道端口。');
+        throw new Error(answer?.error || uiText.t('main.proxy.error.noTunnelPort'));
       }
       tunnel.port = Number(answer.port);
       return tunnel.port;
@@ -532,20 +561,23 @@ class ProxyManager {
         try {
           finish(resolve, JSON.parse(buffer.slice(0, index)));
         } catch {
-          finish(reject, new Error('SSH 隧道返回了无法识别的内容。'));
+          finish(reject, new Error(uiText.t('main.proxy.error.tunnelBadReply')));
         }
       };
       const onExit = (code) => {
         finish(
           reject,
           new Error(
-            `SSH 隧道进程退出（代码 ${code}）。${stderrText() ? `\n${stderrText().trim().slice(-600)}` : ''}`,
+            uiText.t('main.proxy.error.tunnelExited', {
+              code,
+              detail: stderrText() ? `\n${stderrText().trim().slice(-600)}` : '',
+            }),
           ),
         );
       };
       const onError = (error) => finish(reject, error);
       const timer = setTimeout(() => {
-        finish(reject, new Error('SSH 隧道连接超时，请检查地址、端口和凭据。'));
+        finish(reject, new Error(uiText.t('main.proxy.error.tunnelTimeout')));
       }, TUNNEL_TIMEOUT);
 
       child.stdout.setEncoding('utf8');

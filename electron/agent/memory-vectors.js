@@ -11,6 +11,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const uiText = require('../ui-text');
 
 const VERSION = 1;
 // Long memories are summarized anyway; embedding beyond this only adds cost.
@@ -101,8 +102,8 @@ function decodeVector(record) {
  * to keyword search instead of serving a half-built index.
  */
 async function ensureVectors(index, entries, { model, embed, batchSize = 8 } = {}) {
-  if (!model) throw new Error('还没有配置向量模型');
-  if (typeof embed !== 'function') throw new Error('embed 未注入');
+  if (!model) throw new Error(uiText.t('main.memory.vector.noModel'));
+  if (typeof embed !== 'function') throw new Error(uiText.t('main.memory.vector.embedMissing'));
 
   const usable = Array.isArray(entries) ? entries : [];
   let changed = false;
@@ -131,7 +132,7 @@ async function ensureVectors(index, entries, { model, embed, batchSize = 8 } = {
     );
     const vectors = await embed(texts);
     if (!Array.isArray(vectors) || vectors.length !== batch.length) {
-      throw new Error('向量数量与记忆条数不一致');
+      throw new Error(uiText.t('main.memory.vector.countMismatch'));
     }
     vectors.forEach((vector, offset) => {
       const entry = batch[offset];

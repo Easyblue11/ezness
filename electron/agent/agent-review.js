@@ -13,6 +13,7 @@
  */
 
 const { streamChat } = require('../chat');
+const uiText = require('../ui-text');
 const { MAX_TEXT } = require('./agents');
 
 const REVIEW_TIMEOUT_MS = 90000;
@@ -367,7 +368,7 @@ async function reviewAgents({ provider, agents, catalog, signal }) {
       );
       const parsed = parseReview(text);
       if (!parsed) {
-        return { ...base, verdict: 'error', error: '审查结果无法解析，请重试。', usage };
+        return { ...base, verdict: 'error', error: uiText.t('main.review.parseFailed'), usage };
       }
       const changes = sanitizeChanges(parsed.changes, agent, safeCatalog);
       return {
@@ -375,7 +376,9 @@ async function reviewAgents({ provider, agents, catalog, signal }) {
         verdict: changes.length > 0 ? 'adjust' : 'ok',
         summary:
           parsed.summary ||
-          (changes.length > 0 ? `有 ${changes.length} 条整改建议。` : '配置合理，不需要整改。'),
+          (changes.length > 0
+            ? uiText.t('main.review.changeCount', { count: changes.length })
+            : uiText.t('main.review.configOk')),
         changes,
         usage,
       };
@@ -384,7 +387,7 @@ async function reviewAgents({ provider, agents, catalog, signal }) {
       return {
         ...base,
         verdict: 'error',
-        error: `审查没有完成（${error?.message || String(error)}）。`,
+        error: uiText.t('main.review.incomplete', { error: error?.message || String(error) }),
         usage: error?.usage ?? null,
       };
     }

@@ -9,6 +9,7 @@ import type {
   ToolCategory,
 } from '../types';
 import { buildReviewCatalog, mergeChanges } from './agentReview';
+import { useI18n } from '../i18n';
 
 /**
  * Review state for the Agent page.
@@ -53,6 +54,7 @@ export function useAgentReview({
   onAgentsChange,
 }: Options): AgentReviewState {
   const api = window.ezness;
+  const { t } = useI18n();
   const [phase, setPhase] = useState<AgentReviewPhase>('idle');
   const [results, setResults] = useState<AgentReviewResult[]>([]);
   const [error, setError] = useState('');
@@ -88,19 +90,19 @@ export function useAgentReview({
     if (!api?.agentsReview) {
       runningRef.current = false;
       setPhase('error');
-      setError('桌面接口不可用，请从 Ezness 应用里打开。');
+      setError(t('director.review.error.desktopOnly'));
       return;
     }
     if (!target) {
       runningRef.current = false;
       setPhase('error');
-      setError('当前没有可用的模型，请先在设置里接入一个对话模型。');
+      setError(t('director.review.error.noModel'));
       return;
     }
     if (agents.length === 0) {
       runningRef.current = false;
       setPhase('error');
-      setError('还没有 Agent 可以审查。');
+      setError(t('director.review.error.noAgents'));
       return;
     }
 
@@ -113,7 +115,7 @@ export function useAgentReview({
       if (runRef.current !== runId) return;
       if (!response?.ok || !response.results) {
         setPhase('error');
-        setError(response?.error || '审查失败。');
+        setError(response?.error || t('director.review.error.failed'));
         return;
       }
       setResults(response.results);
@@ -172,13 +174,13 @@ export function useAgentReview({
       for (const [agentId, changes] of byAgent) {
         const current = agentsRef.current.find((agent) => agent.id === agentId);
         if (!current) {
-          setError('这个 Agent 已经不在了，刷新后再试。');
+          setError(t('director.review.error.agentGone'));
           continue;
         }
         const next = mergeChanges(current, changes, catalogRef.current);
         const saved = await api.agentsSave(next);
         if (!saved?.ok) {
-          setError(saved?.error || '保存失败。');
+          setError(saved?.error || t('director.review.error.saveFailed'));
           continue;
         }
         agentsRef.current = saved.agents ?? agentsRef.current;
@@ -191,7 +193,7 @@ export function useAgentReview({
         });
         done += changes.length;
       }
-      if (done > 0) setNotice(`已应用 ${done} 条整改建议。`);
+      if (done > 0) setNotice(t('director.review.notice.applied', { count: done }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

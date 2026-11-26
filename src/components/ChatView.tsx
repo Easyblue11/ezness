@@ -6,6 +6,8 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useI18n, type LanguageVars } from '../i18n';
+import { sessionTitle } from '../lib/sessionTitle';
 import type {
   AgentActivity,
   AgentDefinition,
@@ -49,7 +51,10 @@ import { SessionStats } from './SessionStats';
 import { formatTokens } from './ContextRing';
 import { conversationTokens, isVisible } from '../lib/compression';
 
-const SUGGESTIONS = ['帮我梳理这个项目的结构', '解释一下这段代码', '把刚才的结论整理成要点'];
+/** Suggestion chips on the empty screen; resolved through `t` when rendered. */
+const SUGGESTION_KEYS = ['chat.suggestion.1', 'chat.suggestion.2', 'chat.suggestion.3'] as const;
+
+type Translate = (key: string, vars?: LanguageVars) => string;
 
 /**
  * How many messages stay mounted. Every rendered row is real DOM plus a
@@ -188,6 +193,7 @@ interface Props {
 }
 
 function CopyButton({ text }: { text: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -202,44 +208,44 @@ function CopyButton({ text }: { text: string }) {
   }
 
   return (
-    <button className="msg__copy" title="复制内容" onClick={copy}>
+    <button className="msg__copy" title={t('chat.copy.title')} onClick={copy}>
       {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
-      {copied ? '已复制' : '复制'}
+      {copied ? t('chat.copy.copied') : t('chat.copy.label')}
     </button>
   );
 }
 
-function formatClock(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+function formatClock(timestamp: number, locale: string): string {
+  return new Date(timestamp).toLocaleTimeString(locale, {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   });
 }
 
-const DIRECTOR_KIND_LABEL: Record<DirectorMessageReport['kind'], string> = {
-  report: '汇报',
-  alert: '提醒',
-  confirm: '待确认',
-  question: '问题',
-  advice: '建议',
-  audit: '审计结论',
+const DIRECTOR_KIND_KEYS: Record<DirectorMessageReport['kind'], string> = {
+  report: 'chat.director.kind.report',
+  alert: 'chat.director.kind.alert',
+  confirm: 'chat.director.kind.confirm',
+  question: 'chat.director.kind.question',
+  advice: 'chat.director.kind.advice',
+  audit: 'chat.director.kind.audit',
 };
 
 /** 用户处理过之后的落款；没有它就说“已处理”。 */
-const DIRECTOR_DONE_LABEL: Record<string, string> = {
-  dismiss: '已了解',
-  allow: '已确认',
-  deny: '已拒绝',
-  answer: '已回答',
-  approve: '已确认',
-  rework: '已要求返工',
-  accept: '已按现状收尾',
-  abandon: '已放弃',
-  choose: '已选工作空间',
-  'choose-model': '已换模型',
-  ack: '已读',
-  ignore: '已忽略',
+const DIRECTOR_DONE_KEYS: Record<string, string> = {
+  dismiss: 'chat.director.done.dismiss',
+  allow: 'chat.director.done.confirmed',
+  deny: 'chat.director.done.denied',
+  answer: 'chat.director.done.answered',
+  approve: 'chat.director.done.confirmed',
+  rework: 'chat.director.done.rework',
+  accept: 'chat.director.done.accept',
+  abandon: 'chat.director.done.abandon',
+  choose: 'chat.director.done.choose',
+  'choose-model': 'chat.director.done.model',
+  ack: 'chat.director.done.ack',
+  ignore: 'chat.director.done.ignore',
 };
 
 /**
@@ -253,6 +259,7 @@ function DirectorFileList({
   files: DirectorDeliveredFile[];
   onOpened?: () => void;
 }) {
+  const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
   if (files.length === 0) return null;
 
@@ -262,7 +269,7 @@ function DirectorFileList({
       ?.workspaceOpenFile?.({ workspaceId: file.workspaceId, path: file.path || '.' })
       .catch((cause) => ({ ok: false, error: String(cause?.message ?? cause) }));
     if (!result?.ok) {
-      setError(result?.error || '这个位置打不开了，可能已经移动或删除。');
+      setError(result?.error || t('chat.dirCard.openError'));
       return;
     }
     onOpened?.();
@@ -277,8 +284,8 @@ function DirectorFileList({
           className={`dir-file ${file.kind === 'directory' ? 'is-folder' : ''}`}
           title={
             file.kind === 'directory'
-              ? `在文件管理器里打开：${file.name}`
-              : `打开：${file.name}`
+              ? t('chat.dirCard.openFolderTitle', { name: file.name })
+              : t('chat.dirCard.openTitle', { name: file.name })
           }
           onClick={() => void open(file)}
         >
@@ -291,7 +298,7 @@ function DirectorFileList({
           </span>
           <span className="dir-file__name">{file.name}</span>
           <span className="dir-file__meta">
-            {file.kind === 'directory' ? '打开项目' : formatSize(file.size)}
+            {file.kind === 'directory' ? t('chat.dirCard.openProject') : formatSize(file.size)}
           </span>
         </button>
       ))}
@@ -302,6 +309,7 @@ function DirectorFileList({
 
 /** 总监在对话里调用发送工具时显示的文件卡片（不占普通工具行）。 */
 function DirectorShareCard({ step }: { step: ToolStep }) {
+  const { t } = useI18n();
   let data: { note?: string; files?: DirectorDeliveredFile[]; skipped?: string[] } = {};
   try {
     data = JSON.parse(step.result || '{}');
@@ -316,7 +324,7 @@ function DirectorShareCard({ step }: { step: ToolStep }) {
     <div className={`dir-share ${failed ? 'is-error' : ''}`}>
       <div className="dir-share__head">
         <span className="dir-share__title">
-          {failed ? '文件没有发出去' : '发给你的文件'}
+          {failed ? t('chat.share.failedTitle') : t('chat.share.title')}
         </span>
         {note && <span className="dir-share__note">{note}</span>}
       </div>
@@ -325,14 +333,16 @@ function DirectorShareCard({ step }: { step: ToolStep }) {
       ) : (
         <p className="dir-share__empty">
           {failed
-            ? step.result || '发送失败'
+            ? step.result || t('chat.share.failed')
             : step.status === 'running'
-              ? '正在发送…'
-              : '没有可发送的文件'}
+              ? t('chat.share.sending')
+              : t('chat.share.none')}
         </p>
       )}
       {skipped.length > 0 && (
-        <p className="dir-share__skipped">没发：{skipped.join('；')}</p>
+        <p className="dir-share__skipped">
+          {t('chat.share.skipped', { files: skipped.join(t('chat.share.separator')) })}
+        </p>
       )}
     </div>
   );
@@ -356,6 +366,7 @@ function DirectorSpacePicker({
   onAddSpace?: (kind: 'local' | 'remote', itemId: string) => void;
   onDeleteSpace?: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const needle = query.trim().toLowerCase();
   const list = useMemo(() => {
@@ -374,14 +385,14 @@ function DirectorSpacePicker({
         <SearchIcon size={13} />
         <input
           value={query}
-          placeholder="搜索名称、路径或主机"
+          placeholder={t('chat.space.searchPlaceholder')}
           onChange={(event) => setQuery(event.target.value)}
         />
       </label>
-      <div className="dir-space__list" role="listbox" aria-label="工作空间">
+      <div className="dir-space__list" role="listbox" aria-label={t('chat.space.listAria')}>
         {list.length === 0 && (
           <p className="dir-space__empty">
-            {spaces.length > 0 ? '没有匹配的工作空间' : '还没有工作空间，先添加一个'}
+            {spaces.length > 0 ? t('chat.space.noMatch') : t('chat.space.empty')}
           </p>
         )}
         {list.map((space) => {
@@ -393,7 +404,7 @@ function DirectorSpacePicker({
               <button
                 type="button"
                 className="dir-space__pick"
-                title={`用「${space.name}」派工`}
+                title={t('chat.space.useTitle', { name: space.name })}
                 onClick={() => onAct?.(itemId, 'choose', space.id)}
               >
                 <span className="dir-space__icon">
@@ -402,7 +413,9 @@ function DirectorSpacePicker({
                 <span className="dir-space__text">
                   <span className="dir-space__name">
                     {space.name}
-                    {space.kind === 'remote' && <em className="dir-space__tag">在线</em>}
+                    {space.kind === 'remote' && (
+                      <em className="dir-space__tag">{t('chat.space.online')}</em>
+                    )}
                   </span>
                   <span className="dir-space__path" title={address}>
                     {address}
@@ -412,8 +425,8 @@ function DirectorSpacePicker({
               <button
                 type="button"
                 className="dir-space__del"
-                title="删除这个工作空间"
-                aria-label={`删除工作空间 ${space.name}`}
+                title={t('chat.space.deleteTitle')}
+                aria-label={t('chat.space.deleteAria', { name: space.name })}
                 onClick={() => onDeleteSpace?.(space.id)}
               >
                 <TrashIcon size={12} />
@@ -428,24 +441,24 @@ function DirectorSpacePicker({
           className="btn btn--tiny"
           onClick={() => onAddSpace?.('local', itemId)}
         >
-          添加本地文件夹
+          {t('chat.space.addLocal')}
         </button>
         <button
           type="button"
           className="btn btn--tiny"
           onClick={() => onAddSpace?.('remote', itemId)}
         >
-          添加在线空间
+          {t('chat.space.addRemote')}
         </button>
         <button
           type="button"
           className="btn btn--tiny dir-space__cancel"
           onClick={() => onAct?.(itemId, 'dismiss')}
         >
-          先不派
+          {t('chat.space.cancel')}
         </button>
       </div>
-      <p className="dir-space__hint">选中的空间会交给总监写入，之后能在「分管范围」里收回。</p>
+      <p className="dir-space__hint">{t('chat.space.hint')}</p>
     </div>
   );
 }
@@ -462,6 +475,7 @@ function DirectorModelPicker({
   reason: string;
   onAct?: (itemId: string, action: string, value?: string) => void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const needle = query.trim().toLowerCase();
   const list = useMemo(() => {
@@ -477,14 +491,14 @@ function DirectorModelPicker({
         <SearchIcon size={13} />
         <input
           value={query}
-          placeholder="搜索模型或供应商"
+          placeholder={t('chat.model.searchPlaceholder')}
           onChange={(event) => setQuery(event.target.value)}
         />
       </label>
-      <div className="dir-space__list" role="listbox" aria-label="模型">
+      <div className="dir-space__list" role="listbox" aria-label={t('chat.model.listAria')}>
         {list.length === 0 && (
           <p className="dir-space__empty">
-            {models.length > 0 ? '没有匹配的模型' : '还没有配置模型，先去设置里加一个供应商'}
+            {models.length > 0 ? t('chat.model.noMatch') : t('chat.model.empty')}
           </p>
         )}
         {list.map((option) => (
@@ -492,7 +506,7 @@ function DirectorModelPicker({
             <button
               type="button"
               className="dir-space__pick"
-              title={`换用「${option.label}」重试`}
+              title={t('chat.model.retryTitle', { name: option.label })}
               onClick={() => onAct?.(itemId, 'choose-model', option.id)}
             >
               <span className="dir-space__icon">
@@ -517,11 +531,11 @@ function DirectorModelPicker({
           className="btn btn--tiny dir-space__cancel"
           onClick={() => onAct?.(itemId, 'dismiss')}
         >
-          先不管
+          {t('chat.model.cancel')}
         </button>
       </div>
       <p className="dir-space__hint">
-        {reason ? `这次没跑起来：${reason}` : '换一个模型后，总监会自动重试刚才的任务。'}
+        {reason ? t('chat.model.reason', { reason }) : t('chat.model.hint')}
       </p>
     </div>
   );
@@ -546,10 +560,12 @@ function DirectorReportCard({
   onAddSpace?: (kind: 'local' | 'remote', itemId: string) => void;
   onDeleteSpace?: (id: string) => void;
 }) {
+  const { t, locale } = useI18n();
   const [draft, setDraft] = useState('');
   const open = report.status === 'open';
   // 审计组的消息不是总监本人说的：换个署名，免得领导以为总监在汇报自己。
   const audit = report.speaker === 'audit';
+  const doneKey = DIRECTOR_DONE_KEYS[report.resolution ?? ''];
   return (
     <article
       className={`msg msg--assistant msg--director ${audit ? 'msg--audit' : ''} ${
@@ -557,16 +573,22 @@ function DirectorReportCard({
       }`}
       data-message-id={message.id}
     >
-      <div className="msg__avatar">{audit ? '审' : '监'}</div>
+      <div className="msg__avatar">
+        {audit ? t('chat.director.avatarAudit') : t('chat.director.avatarDirector')}
+      </div>
       <div className="msg__content">
         <div className={`dir-msg dir-msg--${report.kind} ${audit ? 'is-audit' : ''}`}>
           <header className="dir-msg__head">
             <span className="dir-msg__kind">
-              {audit ? '审计组' : DIRECTOR_KIND_LABEL[report.kind]}
+              {audit ? t('chat.director.auditGroup') : t(DIRECTOR_KIND_KEYS[report.kind])}
             </span>
             <span className="dir-msg__title">{report.title}</span>
-            {report.mustRead && open && <span className="dir-msg__must">必读</span>}
-            {report.needsRead && <span className="dir-msg__need">待读取</span>}
+            {report.mustRead && open && (
+              <span className="dir-msg__must">{t('chat.director.mustRead')}</span>
+            )}
+            {report.needsRead && (
+              <span className="dir-msg__need">{t('chat.director.needsRead')}</span>
+            )}
             {!open && (
               <span
                 className={`dir-msg__state is-${
@@ -577,10 +599,10 @@ function DirectorReportCard({
                       : 'yes'
                 }`}
               >
-                {DIRECTOR_DONE_LABEL[report.resolution ?? ''] ?? '已处理'}
+                {doneKey ? t(doneKey) : t('chat.director.done.handled')}
               </span>
             )}
-            <time className="dir-msg__time">{formatClock(message.createdAt)}</time>
+            <time className="dir-msg__time">{formatClock(message.createdAt, locale)}</time>
           </header>
           <div className="dir-msg__body">
             <MarkdownView text={message.content} />
@@ -617,7 +639,7 @@ function DirectorReportCard({
               className="dir-msg__read"
               onClick={() => onAct?.(report.itemId, 'read')}
             >
-              标记已读
+              {t('chat.director.markRead')}
             </button>
           )}
           {report.taskTitle && report.taskId && (
@@ -626,7 +648,7 @@ function DirectorReportCard({
               className="dir-msg__task"
               onClick={() => onOpenTask?.(report.taskId!)}
             >
-              打开「{report.taskTitle}」
+              {t('chat.director.openTask', { title: report.taskTitle })}
             </button>
           )}
           {open &&
@@ -655,7 +677,7 @@ function DirectorReportCard({
                   <input
                     className="input"
                     value={draft}
-                    placeholder="替工人回答…"
+                    placeholder={t('chat.director.answerPlaceholder')}
                     onChange={(event) => setDraft(event.target.value)}
                   />
                   <button
@@ -664,7 +686,7 @@ function DirectorReportCard({
                     disabled={!draft.trim()}
                     onClick={() => onAct?.(report.itemId, 'answer', draft)}
                   >
-                    发送
+                    {t('chat.director.send')}
                   </button>
                 </span>
               )}
@@ -673,7 +695,7 @@ function DirectorReportCard({
                 className="btn btn--tiny"
                 onClick={() => onAct?.(report.itemId, 'dismiss')}
               >
-                知道了
+                {t('chat.director.ack')}
               </button>
             </div>
           )}
@@ -683,27 +705,33 @@ function DirectorReportCard({
   );
 }
 
-const TOOL_LABEL: Record<string, string> = {
-  list_files: '列出文件',
-  read_file: '读取文件',
-  glob_search: '查找文件',
-  grep_search: '搜索内容',
-  write_file: '写入文件',
-  edit_file: '编辑文件',
-  run_command: '执行命令',
-  todo_write: '更新待办',
-  web_search: '联网搜索',
-  web_fetch: '读取网页',
-  compact: '压缩上下文',
-  ask_user: '询问用户',
-  tool_editor_list: '查看分类功能',
-  tool_editor_get: '读取功能定义',
-  tool_editor_create: '新增功能',
-  tool_editor_update: '修改功能',
-  tool_editor_delete: '删除功能',
-  tool_editor_test: '测试功能',
-  ai_review: '安全评估',
+const TOOL_KEYS: Record<string, string> = {
+  list_files: 'chat.tool.listFiles',
+  read_file: 'chat.tool.readFile',
+  glob_search: 'chat.tool.globSearch',
+  grep_search: 'chat.tool.grepSearch',
+  write_file: 'chat.tool.writeFile',
+  edit_file: 'chat.tool.editFile',
+  run_command: 'chat.tool.runCommand',
+  todo_write: 'chat.tool.todoWrite',
+  web_search: 'chat.tool.webSearch',
+  web_fetch: 'chat.tool.webFetch',
+  compact: 'chat.tool.compact',
+  ask_user: 'chat.tool.askUser',
+  tool_editor_list: 'chat.tool.editorList',
+  tool_editor_get: 'chat.tool.editorGet',
+  tool_editor_create: 'chat.tool.editorCreate',
+  tool_editor_update: 'chat.tool.editorUpdate',
+  tool_editor_delete: 'chat.tool.editorDelete',
+  tool_editor_test: 'chat.tool.editorTest',
+  ai_review: 'chat.tool.aiReview',
 };
+
+/** A tool's display name; unknown tools keep their raw identifier. */
+function toolLabel(t: Translate, name: string): string {
+  const key = TOOL_KEYS[name];
+  return key ? t(key) : name;
+}
 
 function StepIcon({ name }: { name: string }) {
   const props = { size: 12 };
@@ -741,15 +769,16 @@ function ToolStepRow({
   step: ToolStep;
   targetLabel?: string;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const status =
     step.status === 'running'
-      ? '执行中…'
+      ? t('chat.step.running')
       : step.status === 'done'
-        ? '完成'
+        ? t('chat.step.done')
         : step.status === 'denied'
-          ? '已拒绝'
-          : '失败';
+          ? t('chat.step.denied')
+          : t('chat.step.failed');
   const seconds =
     step.status !== 'running' && step.startedAt && step.endedAt
       ? (step.endedAt - step.startedAt) / 1000
@@ -765,7 +794,7 @@ function ToolStepRow({
       >
         <span className="step__tool">
           <StepIcon name={step.name} />
-          {TOOL_LABEL[step.name] ?? step.name}
+          {toolLabel(t, step.name)}
         </span>
         <span className="step__summary">{stepSummary(step) || targetLabel}</span>
         <span className="step__status">
@@ -802,12 +831,17 @@ function ToolStepGroup({
   steps: ToolStep[];
   taskTitles?: Record<string, string>;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const running = steps.some((step) => step.status === 'running');
   const failed = steps.some(
     (step) => step.status === 'error' || step.status === 'denied',
   );
-  const status = running ? '执行中…' : failed ? '有失败' : '完成';
+  const status = running
+    ? t('chat.step.running')
+    : failed
+      ? t('chat.step.someFailed')
+      : t('chat.step.done');
   const runningSince = steps.find((step) => step.status === 'running')?.startedAt;
 
   return (
@@ -824,9 +858,9 @@ function ToolStepGroup({
       >
         <span className="step__tool">
           <StepIcon name={name} />
-          {TOOL_LABEL[name] ?? name}
+          {toolLabel(t, name)}
         </span>
-        <span className="step__count" title={`共 ${steps.length} 次`}>
+        <span className="step__count" title={t('chat.step.countTitle', { count: steps.length })}>
           {steps.length}
         </span>
         <span className="step__status">
@@ -875,6 +909,10 @@ interface RowProps {
   taskTitles?: Record<string, string>;
   spaces: DirectorWorkspaceOption[];
   models: ModelOption[];
+  /** Translator identity changes with the language pack, so rows re-render. */
+  t: Translate;
+  /** Intl locale for the timestamps in this row. */
+  locale: string;
   /** A summary card can offer "撤销压缩" only when the parent can handle it. */
   canUndo: boolean;
   /** Stable dispatcher: the parent's callbacks change identity every render. */
@@ -895,6 +933,8 @@ function ChatMessageRowView({
   taskTitles,
   spaces,
   models,
+  t,
+  locale,
   canUndo,
   actions,
 }: RowProps) {
@@ -916,25 +956,28 @@ function ChatMessageRowView({
   if (message.summary) {
     return (
       <article className="msg msg--assistant msg--summary" data-message-id={message.id}>
-        <div className="msg__avatar">摘</div>
+        <div className="msg__avatar">{t('chat.summary.avatar')}</div>
         <div className="msg__content">
           <div className="msg__bubble summary-card">
             <div className="summary-card__head">
-              <span className="summary-card__badge">压缩摘要</span>
+              <span className="summary-card__badge">{t('chat.summary.title')}</span>
               <span className="summary-card__stats">
-                已压缩 {message.summary.count} 条 · {formatTokens(message.summary.tokensBefore)} →{' '}
-                {formatTokens(message.summary.tokensAfter)} 词元
+                {t('chat.summary.stats', {
+                  count: message.summary.count,
+                  before: formatTokens(message.summary.tokensBefore),
+                  after: formatTokens(message.summary.tokensAfter),
+                })}
               </span>
             </div>
             <MarkdownView text={message.content} />
             <div className="summary-card__foot">
-              <span>原文仍保存在本地，用会话搜索还能找到</span>
+              <span>{t('chat.summary.note')}</span>
               {canUndo && (
                 <button
                   className="summary-card__undo"
                   onClick={() => actions.undoCompression?.(message.id)}
                 >
-                  撤销压缩
+                  {t('chat.summary.undo')}
                 </button>
               )}
             </div>
@@ -946,11 +989,13 @@ function ChatMessageRowView({
 
   return (
     <article className={`msg msg--${message.role}`} data-message-id={message.id}>
-      <div className="msg__avatar">{message.role === 'user' ? '我' : 'E'}</div>
+      <div className="msg__avatar">
+        {message.role === 'user' ? t('chat.avatar.user') : 'E'}
+      </div>
       <div className="msg__content">
         {message.role === 'assistant' && message.thinking && (
           <details className="msg__think" open={streaming}>
-            <summary>思考过程</summary>
+            <summary>{t('chat.thinking')}</summary>
             <div className="msg__think-body">{message.thinking}</div>
           </details>
         )}
@@ -973,10 +1018,10 @@ function ChatMessageRowView({
                 !message.content && (
                   <span className="msg__typing">
                     {phase === 'retrieving'
-                      ? '正在检索资料…'
+                      ? t('chat.typing.retrieving')
                       : message.thinking
-                        ? '正在思考…'
-                        : '正在生成…'}
+                        ? t('chat.typing.thinking')
+                        : t('chat.typing.generating')}
                   </span>
                 )
               ))}
@@ -989,7 +1034,10 @@ function ChatMessageRowView({
               <button
                 key={file.id}
                 className="msg__file"
-                title={`${file.name} · ${formatSize(file.size)}（点击在仓库中定位）`}
+                title={t('chat.attachment.title', {
+                  name: file.name,
+                  size: formatSize(file.size),
+                })}
                 onClick={() => actions.showAttachment(file)}
               >
                 <span className="msg__file-ext">{extLabel(file.ext)}</span>
@@ -1001,14 +1049,17 @@ function ChatMessageRowView({
         )}
 
         <div className="msg__foot">
-          <time className="msg__time">{formatClock(message.createdAt)}</time>
-          {message.stopped && <span className="msg__stopped">已中断</span>}
+          <time className="msg__time">{formatClock(message.createdAt, locale)}</time>
+          {message.stopped && <span className="msg__stopped">{t('chat.stopped')}</span>}
           {message.content && <CopyButton text={message.content} />}
         </div>
 
         {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
-          <div className="msg__sources" title={message.sources.join('、')}>
-            参考：{message.sources.join(' · ')}
+          <div
+            className="msg__sources"
+            title={message.sources.join(t('chat.sources.separator'))}
+          >
+            {t('chat.sources.prefix', { list: message.sources.join(' · ') })}
           </div>
         )}
       </div>
@@ -1021,6 +1072,10 @@ function sameRow(prev: RowProps, next: RowProps): boolean {
   if (prev.streaming !== next.streaming) return false;
   if (prev.taskTitles !== next.taskTitles) return false;
   if (prev.canUndo !== next.canUndo) return false;
+  // `t` changes identity when the language pack changes; rows that cached
+  // translated text must not be skipped then.
+  if (prev.t !== next.t) return false;
+  if (prev.locale !== next.locale) return false;
   // Only the streaming row needs the live activity/phase; everyone else keeps
   // whatever they had, so a phase flip does not wake the whole transcript.
   if (next.streaming) {
@@ -1109,6 +1164,7 @@ function Elapsed({ since }: { since: number }) {
  * app is waiting for the model's next step.
  */
 function ActivityLine({ activity }: { activity: AgentActivity }) {
+  const { t, locale } = useI18n();
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -1120,15 +1176,24 @@ function ActivityLine({ activity }: { activity: AgentActivity }) {
   const stalled = seconds >= 120;
   const stallHint = stalled ? (
     <span className="msg__activity-stalled">
-      {' '}· 已 {Math.floor(seconds / 60)} 分钟没有新内容，可能卡住了
+      {' '}· {t('chat.activity.stalled', { minutes: Math.floor(seconds / 60) })}
     </span>
   ) : null;
   if (activity.kind === 'tool_call') {
-    const label = TOOL_LABEL[activity.name] ?? (activity.name || '工具调用');
+    const label = activity.name
+      ? toolLabel(t, activity.name)
+      : t('chat.activity.toolFallback');
     return (
       <span className={`msg__activity${stalled ? ' is-stalled' : ''}`}>
-        正在生成{label}…
-        {activity.chars >= 200 && <> 已写 {activity.chars.toLocaleString('zh-CN')} 字符，</>}
+        {t('chat.activity.generatingTool', { tool: label })}
+        {activity.chars >= 200 && (
+          <>
+            {' '}
+            {t('chat.activity.chars', {
+              count: activity.chars.toLocaleString(locale),
+            })}
+          </>
+        )}
         {activity.chars < 200 ? ' ' : ''}
         <Elapsed since={activity.since} />
         {stallHint}
@@ -1137,7 +1202,7 @@ function ActivityLine({ activity }: { activity: AgentActivity }) {
   }
   return (
     <span className={`msg__activity${stalled ? ' is-stalled' : ''}`}>
-      等待模型下一步… <Elapsed since={activity.since} />
+      {t('chat.activity.waiting')} <Elapsed since={activity.since} />
       {stallHint}
     </span>
   );
@@ -1206,6 +1271,7 @@ export function ChatView({
   onUndoCompression,
   contextMode = 'chat',
 }: Props) {
+  const { t, locale } = useI18n();
   const bodyRef = useRef<HTMLDivElement>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [answerDraft, setAnswerDraft] = useState('');
@@ -1682,7 +1748,7 @@ export function ChatView({
   async function showAttachment(file: WarehouseItem) {
     const snapshot = await window.ezness?.warehouseSnapshot();
     if (!snapshot || !snapshot.items.some((item) => item.id === file.id)) {
-      flash(`引文文件不存在：「${file.name}」可能已从仓库删除`);
+      flash(t('chat.attachment.missing', { name: file.name }));
       return;
     }
     onShowWarehouse(file.id);
@@ -1719,8 +1785,12 @@ export function ChatView({
     <main className="chat">
       <header className="chat__head">
         <div className="chat__title">
-          <span>{session?.title ?? (compact ? '新任务' : '新对话')}</span>
-          {messages.length > 0 && <span className="chat__count">{messages.length} 条</span>}
+          <span>{session ? sessionTitle(session.title, t) : compact ? t('chat.newTask') : t('chat.newChat')}</span>
+          {messages.length > 0 && (
+            <span className="chat__count">
+              {t('chat.messageCount', { count: messages.length })}
+            </span>
+          )}
         </div>
         <div className="chat__actions">
           <SessionStats records={sessionUsage ?? EMPTY_USAGE} compact={compact} />
@@ -1732,17 +1802,17 @@ export function ChatView({
             />
           )}
           <span className={`pill ${current ? '' : 'pill--warn'}`}>
-            {current ? current.label : '未连接模型'}
+            {current ? current.label : t('chat.noModel')}
           </span>
           {compact && onVisualize && (
             <button
               type="button"
               className="chat__viz"
-              title="可视化工具：把这个工作空间的任务和用量画成图"
+              title={t('chat.visualize.title')}
               onClick={onVisualize}
             >
               <ChartIcon size={14} />
-              可视化工具
+              {t('chat.visualize.label')}
             </button>
           )}
         </div>
@@ -1752,12 +1822,12 @@ export function ChatView({
         <button
           type="button"
           className="chat__stuck"
-          title="回到这条提问"
+          title={t('chat.stuck.jumpTitle')}
           onClick={() => jumpToPrompt(stuckPrompt.id)}
         >
-          <span className="chat__stuck-tag">我的提问</span>
+          <span className="chat__stuck-tag">{t('chat.stuck.tag')}</span>
           <span className="chat__stuck-text">
-            {stuckPrompt.text.replace(/\s+/g, ' ').trim() || '（附件）'}
+            {stuckPrompt.text.replace(/\s+/g, ' ').trim() || t('chat.stuck.attachment')}
           </span>
         </button>
       )}
@@ -1768,21 +1838,35 @@ export function ChatView({
             <div className="empty__logo">
               <SparkleIcon size={26} />
             </div>
-            <h1 className="empty__title">{compact ? '开始一个新的任务' : '开始一个新的对话'}</h1>
+            <h1 className="empty__title">
+              {compact ? t('chat.empty.newTaskTitle') : t('chat.empty.newChatTitle')}
+            </h1>
             <p className="empty__sub">
-              {current ? `当前模型：${current.label}（${current.hint ?? '本地'}）` : '还没有连接模型。'}
+              {current
+                ? t('chat.empty.currentModel', {
+                    model: current.label,
+                    hint: current.hint ?? t('chat.empty.local'),
+                  })
+                : t('chat.empty.noModel')}
             </p>
             {current ? (
               <div className="empty__chips">
-                {SUGGESTIONS.map((text) => (
-                  <button key={text} className="empty__chip" onClick={() => onSend(text)}>
-                    {text}
-                  </button>
-                ))}
+                {SUGGESTION_KEYS.map((key) => {
+                  const text = t(key);
+                  return (
+                    <button
+                      key={key}
+                      className="empty__chip"
+                      onClick={() => onSend(text)}
+                    >
+                      {text}
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <button className="btn btn--primary" onClick={onConfigure}>
-                去接入模型
+                {t('chat.empty.connect')}
               </button>
             )}
           </div>
@@ -1790,8 +1874,14 @@ export function ChatView({
           <div className="messages">
             {hiddenCount > 0 && (
               <button type="button" className="messages__earlier" onClick={loadEarlier}>
-                <span>载入更早的 {Math.min(WINDOW_STEP, hiddenCount)} 条</span>
-                <span className="messages__earlier-rest">还有 {hiddenCount} 条在更早的历史里</span>
+                <span>
+                  {t('chat.window.loadEarlier', {
+                    count: Math.min(WINDOW_STEP, hiddenCount),
+                  })}
+                </span>
+                <span className="messages__earlier-rest">
+                  {t('chat.window.hidden', { count: hiddenCount })}
+                </span>
               </button>
             )}
             {shownMessages.map((message) => (
@@ -1804,6 +1894,8 @@ export function ChatView({
                 taskTitles={taskTitles}
                 spaces={directorSpaces}
                 models={models}
+                t={t}
+                locale={locale}
                 canUndo={Boolean(onUndoCompression)}
                 actions={rowActions}
               />
@@ -1816,10 +1908,13 @@ export function ChatView({
         <button
           type="button"
           className={`chat__pending chat__pending--${pendingHint.direction}`}
-          title={`还有 ${pendingHint.count} 件待你确认，点击跳到${
-            pendingHint.direction === 'down' ? '下面' : '上面'
-          }`}
-          aria-label={`还有 ${pendingHint.count} 件待确认`}
+          title={t(
+            pendingHint.direction === 'down'
+              ? 'chat.pending.titleDown'
+              : 'chat.pending.titleUp',
+            { count: pendingHint.count },
+          )}
+          aria-label={t('chat.pending.aria', { count: pendingHint.count })}
           onClick={() => jumpToPending(pendingHint.direction)}
         >
           <svg className="chat__pending-shape" viewBox="0 0 36 42" aria-hidden="true">
@@ -1833,10 +1928,10 @@ export function ChatView({
 
       {batchPermission ? (
         <div className="perm perm--batch">
-          <div className="perm__title">本轮有 {batchPermission.length} 个操作待确认</div>
-          <div className="perm__reason">
-            这些操作互不依赖，可以一起决定；未勾选的操作会被拒绝。
+          <div className="perm__title">
+            {t('chat.batch.title', { count: batchPermission.length })}
           </div>
+          <div className="perm__reason">{t('chat.batch.reason')}</div>
           <div className="perm__list">
             {batchPermission.map((item) => {
               const checked = batchAllow[item.callId] ?? !item.danger;
@@ -1855,7 +1950,9 @@ export function ChatView({
                   <span className="perm__item-body">
                     <span className="perm__item-name">{item.name}</span>
                     <span className="perm__item-summary">{item.summary || item.reason}</span>
-                    {item.danger && <span className="perm__tag">危险</span>}
+                    {item.danger && (
+                      <span className="perm__tag">{t('chat.batch.danger')}</span>
+                    )}
                   </span>
                 </label>
               );
@@ -1866,10 +1963,13 @@ export function ChatView({
               className="btn btn--primary"
               onClick={() => onResolvePermissionQueue?.(batchAllow)}
             >
-              允许 {batchAllowed} 个，拒绝 {batchPermission.length - batchAllowed} 个
+              {t('chat.batch.allow', {
+                allowed: batchAllowed,
+                denied: batchPermission.length - batchAllowed,
+              })}
             </button>
             <button className="btn" onClick={() => onResolvePermissionQueue?.({})}>
-              全部拒绝
+              {t('chat.batch.denyAll')}
             </button>
           </div>
         </div>
@@ -1877,14 +1977,14 @@ export function ChatView({
         <div className={`perm ${permission.danger ? 'perm--danger' : ''}`}>
           <div className="perm__title">
             {permission.reviewReason
-              ? '独立 AI 认为有风险，请你决定'
+              ? t('chat.perm.reviewTitle')
               : permission.danger
-                ? '这一步可能有破坏性，请确认'
-                : '代理想执行一个操作'}
+                ? t('chat.perm.dangerTitle')
+                : t('chat.perm.title')}
           </div>
           {permission.reviewReason && (
             <div className="perm__review">
-              <span className="perm__review-label">独立 AI 评估 · 建议拒绝执行</span>
+              <span className="perm__review-label">{t('chat.perm.reviewLabel')}</span>
               <p className="perm__review-text">{permission.reviewReason}</p>
             </div>
           )}
@@ -1894,14 +1994,12 @@ export function ChatView({
           </div>
           {secretFields.length > 0 && (
             <div className="perm__secrets">
-              <div className="perm__secrets-head">
-                凭据由你填写：只交给本机执行器，不会发送给模型，也不会写进对话记录。
-              </div>
+              <div className="perm__secrets-head">{t('chat.perm.secretsIntro')}</div>
               {secretFields.map((field) => (
                 <label className="perm__secret" key={field.name}>
                   <span className="perm__secret-label">
                     {field.description || field.name}
-                    {field.required && <em>必填</em>}
+                    {field.required && <em>{t('chat.perm.required')}</em>}
                   </span>
                   {field.kind === 'file' ? (
                     <div
@@ -1922,7 +2020,7 @@ export function ChatView({
                         onChange={(event) =>
                           setSecretValues((prev) => ({ ...prev, [field.name]: event.target.value }))
                         }
-                        placeholder="拖入文件，或点右侧按钮选择"
+                        placeholder={t('chat.perm.dropFile')}
                         spellCheck={false}
                       />
                       <button
@@ -1930,14 +2028,14 @@ export function ChatView({
                         className="btn"
                         onClick={async () => {
                           const picked = await window.ezness?.agentPickSecretFile?.({
-                            title: field.description || '选择文件',
+                            title: field.description || t('chat.perm.pickFile'),
                           });
                           if (picked) {
                             setSecretValues((prev) => ({ ...prev, [field.name]: picked }));
                           }
                         }}
                       >
-                        选择文件
+                        {t('chat.perm.pickFile')}
                       </button>
                     </div>
                   ) : (
@@ -1949,7 +2047,7 @@ export function ChatView({
                         onChange={(event) =>
                           setSecretValues((prev) => ({ ...prev, [field.name]: event.target.value }))
                         }
-                        placeholder="输入后只保存在内存中"
+                        placeholder={t('chat.perm.secretPlaceholder')}
                         autoComplete="off"
                         spellCheck={false}
                       />
@@ -1960,7 +2058,7 @@ export function ChatView({
                           setSecretReveal((prev) => ({ ...prev, [field.name]: !prev[field.name] }))
                         }
                       >
-                        {secretReveal[field.name] ? '隐藏' : '显示'}
+                        {secretReveal[field.name] ? t('chat.perm.hide') : t('chat.perm.show')}
                       </button>
                     </div>
                   )}
@@ -1972,7 +2070,7 @@ export function ChatView({
                   checked={secretRemember}
                   onChange={(event) => setSecretRemember(event.target.checked)}
                 />
-                本工作空间内记住（只存内存，2 小时后或重启应用清除）
+                {t('chat.perm.remember')}
               </label>
             </div>
           )}
@@ -1984,7 +2082,7 @@ export function ChatView({
                 onResolvePermission?.(true, false, '', secretValues, secretRemember)
               }
             >
-              允许
+              {t('chat.perm.allow')}
             </button>
             {permission.name === 'run_command' && !permission.danger && (
               <button
@@ -1992,11 +2090,11 @@ export function ChatView({
                 disabled={!secretsReady}
                 onClick={() => onResolvePermission?.(true, true, '', secretValues, secretRemember)}
               >
-                始终允许这条命令
+                {t('chat.perm.allowAlways')}
               </button>
             )}
             <button className="btn" onClick={() => onResolvePermission?.(false, false)}>
-              拒绝
+              {t('chat.perm.deny')}
             </button>
           </div>
         </div>
@@ -2004,7 +2102,7 @@ export function ChatView({
 
       {question && (
         <div className="perm perm--ask">
-          <div className="perm__title">代理需要你选择</div>
+          <div className="perm__title">{t('chat.question.title')}</div>
           <div className="perm__reason">{question.question}</div>
           {question.options.length > 0 && (
             <div className="perm__options">
@@ -2026,11 +2124,15 @@ export function ChatView({
           >
             <input
               value={answerDraft}
-              placeholder={question.options.length > 0 ? '或者自己填一个答案' : '输入你的回答'}
+              placeholder={
+                question.options.length > 0
+                  ? t('chat.question.placeholderOption')
+                  : t('chat.question.placeholder')
+              }
               onChange={(event) => setAnswerDraft(event.target.value)}
             />
             <button className="btn" type="submit" disabled={!answerDraft.trim()}>
-              回答
+              {t('chat.question.answer')}
             </button>
           </form>
         </div>
@@ -2042,12 +2144,20 @@ export function ChatView({
             type="button"
             className="todos__head"
             aria-expanded={!todosCollapsed}
-            title={`${todosCollapsed ? '展开' : '收起'}${allTodosDone ? '已完成的计划' : '待办'}`}
+            title={
+              todosCollapsed
+                ? allTodosDone
+                  ? t('chat.todos.expandDone')
+                  : t('chat.todos.expand')
+                : allTodosDone
+                  ? t('chat.todos.collapseDone')
+                  : t('chat.todos.collapse')
+            }
             onClick={() => setTodosCollapsed((value) => !value)}
           >
             <span className="todos__title">
               <ChevronDownIcon size={12} className="todos__chevron" />
-              {allTodosDone ? '计划已完成' : '待办'}
+              {allTodosDone ? t('chat.todos.titleDone') : t('chat.todos.title')}
             </span>
             <span className={`todos__count ${allTodosDone ? 'todos__count--done' : ''}`}>
               {completedTodos}/{todos.length}
@@ -2077,11 +2187,9 @@ export function ChatView({
 
       {compact && planReady && streamingId === null && !permission && !question && (
         <div className="plan-start">
-          <span className="plan-start__hint">
-            计划已就绪。确认后切到「工作区写入」开始执行；安全命令会自动运行，破坏性操作才会询问。
-          </span>
+          <span className="plan-start__hint">{t('chat.plan.hint')}</span>
           <button className="btn btn--primary" onClick={() => onStartPlan?.()}>
-            开始执行这个计划
+            {t('chat.plan.start')}
           </button>
         </div>
       )}

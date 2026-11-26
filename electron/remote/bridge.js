@@ -11,6 +11,7 @@
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const customTools = require('../agent/custom-tools');
+const uiText = require('../ui-text');
 
 const SCRIPT = path.join(__dirname, 'ssh_bridge.py');
 
@@ -38,7 +39,9 @@ class SshBridge {
 
   /** Start the process (once) and open the SSH connection. */
   async connect(config, timeoutMs = 60000) {
-    if (this.child) throw new BridgeError('这条连接已经建立。', 'already_connected');
+    if (this.child) {
+      throw new BridgeError(uiText.t('main.remote.error.alreadyConnected'), 'already_connected');
+    }
     this.launching = this.#spawn();
     await this.launching;
     const info = await this.request('connect', { config }, timeoutMs);
@@ -74,7 +77,10 @@ class SshBridge {
       this.closed = true;
       this.#failAll(
         new BridgeError(
-          `SSH 桥接进程已退出（代码 ${code}）。${this.stderr ? `\n${this.stderr.trim().slice(-600)}` : ''}`,
+          uiText.t('main.remote.error.bridgeExited', {
+            code,
+            detail: this.stderr ? `\n${this.stderr.trim().slice(-600)}` : '',
+          }),
           'bridge_exit',
         ),
       );
@@ -104,7 +110,11 @@ class SshBridge {
       this.pending.delete(message.id);
       clearTimeout(entry.timer);
       if (message.ok) entry.resolve(message.result);
-      else entry.reject(new BridgeError(message.error || '远程操作失败。', message.code || ''));
+      else {
+        entry.reject(
+          new BridgeError(message.error || uiText.t('main.remote.error.failed'), message.code || ''),
+        );
+      }
     }
   }
 
@@ -118,13 +128,15 @@ class SshBridge {
 
   request(op, params = {}, timeoutMs = 30000) {
     if (!this.child || this.closed) {
-      return Promise.reject(new BridgeError('SSH 连接已经断开。', 'not_connected'));
+      return Promise.reject(
+        new BridgeError(uiText.t('main.remote.error.disconnected'), 'not_connected'),
+      );
     }
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new BridgeError(`远程操作超时：${op}`, 'timeout'));
+        reject(new BridgeError(uiText.t('main.remote.error.timeout', { op }), 'timeout'));
       }, Math.max(1000, timeoutMs));
       this.pending.set(id, { resolve, reject, timer });
       try {
@@ -132,7 +144,14 @@ class SshBridge {
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);
-        reject(new BridgeError(`无法把请求发给 SSH 桥：${error?.message || String(error)}`, 'write_failed'));
+        reject(
+          new BridgeError(
+            uiText.t('main.remote.error.bridgeWrite', {
+              error: error?.message || String(error),
+            }),
+            'write_failed',
+          ),
+        );
       }
     });
   }

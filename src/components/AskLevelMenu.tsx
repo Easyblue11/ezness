@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AskLevel } from '../types';
+import { useI18n } from '../i18n';
 import { ASK_LEVELS, AskLevelSlider, askLevelName } from './AskLevelSlider';
 import { ChevronDownIcon } from './Icons';
 
@@ -15,6 +16,7 @@ interface Props {
  * and leaves the composer for the task's inputs.
  */
 export function AskLevelMenu({ value, onChange, disabled }: Props) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -35,18 +37,18 @@ export function AskLevelMenu({ value, onChange, disabled }: Props) {
         disabled={disabled}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="问询级别：决定代理多久停下来问你一次"
+        title={t('workspace.askLevel.triggerTitle')}
         onClick={() => setOpen((visible) => !visible)}
       >
-        问询
-        <b>{askLevelName(value)}</b>
+        {t('workspace.askLevel.trigger')}
+        <b>{askLevelName(value, t)}</b>
         <ChevronDownIcon size={13} />
       </button>
       {open && (
-        <div className="ask-level__pop" role="dialog" aria-label="问询级别">
+        <div className="ask-level__pop" role="dialog" aria-label={t('workspace.askLevel.aria')}>
           <div className="ask-level__pop-head">
-            <span>问询级别</span>
-            <em>{ASK_LEVELS[value].hint}</em>
+            <span>{t('workspace.askLevel.aria')}</span>
+            <em>{t((ASK_LEVELS[value] ?? ASK_LEVELS[3]).hintKey)}</em>
           </div>
           <AskLevelSlider
             value={value}
@@ -56,11 +58,10 @@ export function AskLevelMenu({ value, onChange, disabled }: Props) {
           />
           {value === 0 ? (
             <p className="ask-level__pop-foot ask-level__pop-foot--warn">
-              自动只取消询问，不会推翻权限模式。破坏性命令和越界命令会先交给一个独立的 AI
-              评估：判定安全就直接执行，判定有风险会带着 AI 的理由弹给你确认，由你决定。
+              {t('workspace.askLevel.autoFoot')}
             </p>
           ) : (
-            <p className="ask-level__pop-foot">只影响这个任务；全局默认在「设置 → 工作设置」。</p>
+            <p className="ask-level__pop-foot">{t('workspace.askLevel.foot')}</p>
           )}
         </div>
       )}

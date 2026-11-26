@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../i18n';
 import { formatDateTime } from '../lib/time';
 import type {
   KbCategory,
@@ -24,12 +25,12 @@ import { MaterialFileIcon } from './MaterialFileIcon';
 const ALL = 'all';
 const DEFAULT_CATEGORY_ID = 'default';
 
-const STATUS_LABEL: Record<KbStatus, string> = {
-  pending: '排队中',
-  parsing: '解析中',
-  embedding: '向量化',
-  ready: '就绪',
-  error: '失败',
+const STATUS_KEY: Record<KbStatus, string> = {
+  pending: 'knowledge.status.pending',
+  parsing: 'knowledge.status.parsing',
+  embedding: 'knowledge.status.embedding',
+  ready: 'knowledge.status.ready',
+  error: 'knowledge.status.error',
 };
 
 function isBusy(doc: KbDocument): boolean {
@@ -70,9 +71,10 @@ interface DocRowProps {
 }
 
 function DocumentRow({ doc, categories, progress, stage, onMove, onDownload, onRemove }: DocRowProps) {
+  const { t } = useI18n();
   // The row's stored status only flips to ready at the end, so live ingest events
   // supply the current step (解析中 / 向量化).
-  const label = isBusy(doc) && stage ? STATUS_LABEL[stage] : STATUS_LABEL[doc.status];
+  const label = t(STATUS_KEY[isBusy(doc) && stage ? stage : doc.status]);
   return (
     <div className="kb-doc">
       <span className="kb-doc__ext" title={extensionOf(doc)}>
@@ -84,8 +86,9 @@ function DocumentRow({ doc, categories, progress, stage, onMove, onDownload, onR
           {doc.name}
         </div>
         <div className="kb-doc__meta">
-          {formatSize(doc.size)} · 添加于 {formatDateTime(doc.createdAt)} · {doc.chunkCount} 段 ·{' '}
-          {label}
+          {formatSize(doc.size)} ·{' '}
+          {t('knowledge.addedAt', { date: formatDateTime(doc.createdAt) })} ·{' '}
+          {t('knowledge.chunkCount', { count: doc.chunkCount })} · {label}
           {doc.status === 'error' && doc.error && <span className="kb-doc__error"> · {doc.error}</span>}
         </div>
         {isBusy(doc) && (
@@ -98,7 +101,7 @@ function DocumentRow({ doc, categories, progress, stage, onMove, onDownload, onR
       <select
         className="select kb-doc__move"
         value={doc.categoryId}
-        title="移动到分类"
+        title={t('knowledge.moveToCategory')}
         onChange={(event) => onMove(doc.id, event.target.value)}
       >
         {/* 组合分类 can't hold files, so they are not move targets. */}
@@ -106,16 +109,16 @@ function DocumentRow({ doc, categories, progress, stage, onMove, onDownload, onR
           .filter((category) => category.kind !== 'group')
           .map((category) => (
             <option key={category.id} value={category.id}>
-              {category.name}
+              {category.id === DEFAULT_CATEGORY_ID ? t('knowledge.category.default') : category.name}
             </option>
           ))}
       </select>
 
-      <button className="iconbtn" title="下载原文件" onClick={() => onDownload(doc)}>
+      <button className="iconbtn" title={t('knowledge.downloadOriginal')} onClick={() => onDownload(doc)}>
         <DownloadIcon size={15} />
       </button>
 
-      <button className="iconbtn" title="删除" onClick={() => onRemove(doc)}>
+      <button className="iconbtn" title={t('knowledge.delete')} onClick={() => onRemove(doc)}>
         <TrashIcon size={15} />
       </button>
     </div>
@@ -131,6 +134,7 @@ interface EditorState {
 }
 
 export function KnowledgePage() {
+  const { t } = useI18n();
   const api = window.ezness;
 
   const [snapshot, setSnapshot] = useState<KbSnapshot | null>(null);
@@ -211,7 +215,7 @@ export function KnowledgePage() {
     return documentsIn(activeCategory, documents);
   }, [activeCat, activeCategory, documents]);
 
-  const activeName = activeCategory?.name ?? '全部';
+  const activeName = activeCategory?.name ?? t('knowledge.all');
 
   // "全部" and 组合分类 have no folder of their own, so dropped files go to the default one.
   const targetCategory = isGroup || activeCat === ALL ? null : activeCat;
@@ -235,7 +239,7 @@ export function KnowledgePage() {
   async function addFiles(paths: string[]) {
     if (paths.length === 0) return;
     if (isGroup) {
-      flash('组合分类只是把其他分类聚合在一起，不能直接放文件');
+      flash(t('knowledge.toast.groupNoFiles'));
       return;
     }
     await api?.kbAddFiles(paths, targetCategory);
@@ -312,7 +316,7 @@ export function KnowledgePage() {
     if (!editor) return;
     const name = editor.name.trim();
     if (!name) {
-      flash('分类名不能为空');
+      flash(t('knowledge.toast.nameRequired'));
       return;
     }
 
@@ -340,8 +344,10 @@ export function KnowledgePage() {
   async function removeCategory(category: KbCategory) {
     const message =
       category.kind === 'group'
-        ? `删除组合分类「${category.name}」？里面的文件不受影响。`
-        : `删除分类「${category.name}」？里面的文件会回到默认分类。`;
+        ? t('knowledge.deleteGroupConfirm', { name: category.name })
+        : t('knowledge.deleteCategoryConfirm', {
+          name: category.id === DEFAULT_CATEGORY_ID ? t('knowledge.category.default') : category.name,
+        });
     if (!window.confirm(message)) return;
     try {
       const next = await api?.kbDeleteCategory(category.id);
@@ -363,7 +369,7 @@ export function KnowledgePage() {
   }
 
   async function removeDocument(doc: KbDocument) {
-    if (!window.confirm(`从知识库删除「${doc.name}」？`)) return;
+    if (!window.confirm(t('knowledge.deleteDocumentConfirm', { name: doc.name }))) return;
     const next = await api?.kbDeleteDocument(doc.id);
     if (next) setSnapshot(next);
   }
@@ -371,8 +377,8 @@ export function KnowledgePage() {
   async function downloadDocument(doc: KbDocument) {
     const result = await api?.kbExportDocument(doc.id);
     if (!result) return;
-    if (result.ok && result.path) flash(`已保存到 ${result.path}`);
-    else if (result.error) flash(`下载失败：${result.error}`);
+    if (result.ok && result.path) flash(t('knowledge.toast.savedTo', { path: result.path }));
+    else if (result.error) flash(t('knowledge.toast.downloadFailed', { error: result.error }));
   }
 
   const canToggleInclude = (id: string) =>
@@ -391,8 +397,8 @@ export function KnowledgePage() {
     <div className="kb">
       <aside className="kb__cats">
         <div className="kb__cats-head">
-          <span>分类</span>
-          <button className="iconbtn" title="新建分类" onClick={openCreate}>
+          <span>{t('knowledge.categories')}</span>
+          <button className="iconbtn" title={t('knowledge.newCategory')} onClick={openCreate}>
             <PlusIcon size={14} />
           </button>
         </div>
@@ -404,7 +410,7 @@ export function KnowledgePage() {
           tabIndex={0}
         >
           <FolderIcon size={15} />
-          <span className="kb-cat__name">全部</span>
+          <span className="kb-cat__name">{t('knowledge.all')}</span>
           <span className="kb-cat__count">{documents.length}</span>
         </div>
 
@@ -445,16 +451,16 @@ export function KnowledgePage() {
               setDragCat(null);
               setDropCat(null);
             }}
-            title={category.kind === 'group' ? '组合分类：聚合其他分类，不能直接放文件' : undefined}
+            title={category.kind === 'group' ? t('knowledge.groupHint') : undefined}
             role="button"
             tabIndex={0}
           >
             {category.kind === 'group' ? <StackIcon size={15} /> : <FolderIcon size={15} />}
-            <span className="kb-cat__name">{category.name}</span>
+            <span className="kb-cat__name">{category.id === DEFAULT_CATEGORY_ID ? t('knowledge.category.default') : category.name}</span>
             <span className="kb-cat__count">{documentsIn(category, documents).length}</span>
             <button
               className="kb-cat__act"
-              title="重命名 / 编辑"
+              title={t('knowledge.renameEdit')}
               onClick={(event) => {
                 event.stopPropagation();
                 openEdit(category);
@@ -465,7 +471,7 @@ export function KnowledgePage() {
             {category.id !== DEFAULT_CATEGORY_ID && (
               <button
                 className="kb-cat__act kb-cat__act--danger"
-                title="删除分类"
+                title={t('knowledge.deleteCategory')}
                 onClick={(event) => {
                   event.stopPropagation();
                   void removeCategory(category);
@@ -483,7 +489,7 @@ export function KnowledgePage() {
               className="input"
               autoFocus
               value={editor.name}
-              placeholder="分类名称"
+              placeholder={t('knowledge.categoryName')}
               onChange={(event) =>
                 setEditor((prev) => (prev ? { ...prev, name: event.target.value } : prev))
               }
@@ -499,23 +505,23 @@ export function KnowledgePage() {
                   className={`kb-editor__kind ${editor.kind === 'files' ? 'is-on' : ''}`}
                   onClick={() => setEditor((prev) => (prev ? { ...prev, kind: 'files' } : prev))}
                 >
-                  <FolderIcon size={13} /> 文件分类
+                  <FolderIcon size={13} /> {t('knowledge.kindFiles')}
                 </button>
                 <button
                   className={`kb-editor__kind ${editor.kind === 'group' ? 'is-on' : ''}`}
                   onClick={() => setEditor((prev) => (prev ? { ...prev, kind: 'group' } : prev))}
                 >
-                  <StackIcon size={13} /> 组合分类
+                  <StackIcon size={13} /> {t('knowledge.kindGroup')}
                 </button>
               </div>
             )}
 
             {editor.kind === 'group' && (
               <>
-                <div className="kb-editor__hint">勾选要包含的文件分类；组合分类本身不能放文件。</div>
+                <div className="kb-editor__hint">{t('knowledge.groupIncludeHint')}</div>
                 <div className="kb-editor__list">
                   {fileCategories.length === 0 && (
-                    <div className="kb-editor__hint">还没有文件分类可以选。</div>
+                    <div className="kb-editor__hint">{t('knowledge.noFileCategories')}</div>
                   )}
                   {fileCategories.map((category) => (
                     <label key={category.id} className="kb-editor__check">
@@ -524,7 +530,7 @@ export function KnowledgePage() {
                         checked={editor.includes.includes(category.id)}
                         onChange={() => canToggleInclude(category.id)}
                       />
-                      <span>{category.name}</span>
+                      <span>{category.id === DEFAULT_CATEGORY_ID ? t('knowledge.category.default') : category.name}</span>
                       <span className="kb-cat__count">
                         {documentsIn(category, documents).length}
                       </span>
@@ -536,17 +542,20 @@ export function KnowledgePage() {
 
             <div className="kb-editor__actions">
               <button className="btn btn--primary" onClick={() => void saveEditor()}>
-                确定
+                {t('knowledge.confirm')}
               </button>
               <button className="btn btn--ghost" onClick={() => setEditor(null)}>
-                取消
+                {t('knowledge.cancel')}
               </button>
             </div>
           </div>
         )}
 
         <div className="kb__cats-foot">
-          {snapshot?.stats.chunks ?? 0} 个片段 · {snapshot?.stats.documents ?? 0} 个文件
+          {t('knowledge.footCounts', {
+            chunks: snapshot?.stats.chunks ?? 0,
+            documents: snapshot?.stats.documents ?? 0,
+          })}
         </div>
       </aside>
 
@@ -564,17 +573,19 @@ export function KnowledgePage() {
           <div className="kb__title">
             <span>{activeName}</span>
             {activeCategory?.kind === 'group' && (
-              <span className="kb__tag">组合 · {activeCategory.includes.length} 个分类</span>
+              <span className="kb__tag">{t('knowledge.groupTag', { count: activeCategory.includes.length })}</span>
             )}
-            <span className="kb__count">{visible.length} 个文件</span>
-            {busyCount > 0 && <span className="kb__busy">剩余解析 {busyCount} 个</span>}
+            <span className="kb__count">{t('knowledge.fileCount', { count: visible.length })}</span>
+            {busyCount > 0 && (
+              <span className="kb__busy">{t('knowledge.busyRemaining', { count: busyCount })}</span>
+            )}
           </div>
           <div className="kb__actions">
             <div className="search kb__search">
               <SearchIcon size={15} />
               <input
                 value={query}
-                placeholder="检索知识库"
+                placeholder={t('knowledge.searchPlaceholder')}
                 spellCheck={false}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
@@ -586,10 +597,10 @@ export function KnowledgePage() {
               className="btn btn--primary"
               onClick={upload}
               disabled={isGroup}
-              title={isGroup ? '组合分类不能直接添加文件' : undefined}
+              title={isGroup ? t('knowledge.cannotAddToGroup') : undefined}
             >
               <UploadIcon size={14} />
-              上传文件
+              {t('knowledge.upload')}
             </button>
           </div>
         </header>
@@ -600,8 +611,11 @@ export function KnowledgePage() {
               <div className="kb-results__head">
                 <span>
                   {searching
-                    ? '检索中…'
-                    : `${matchedDocs.length} 个文件命中 · ${results.length} 条片段`}
+                    ? t('knowledge.searching')
+                    : t('knowledge.searchSummary', {
+                        files: matchedDocs.length,
+                        chunks: results.length,
+                      })}
                   {note && <span className="kb-results__note"> · {note}</span>}
                 </span>
                 <button
@@ -611,13 +625,13 @@ export function KnowledgePage() {
                     setNote(null);
                   }}
                 >
-                  返回文件列表
+                  {t('knowledge.backToFiles')}
                 </button>
               </div>
 
               {matchedDocs.length > 0 && (
                 <section className="kb-results__group">
-                  <div className="kb-results__label">命中的文件</div>
+                  <div className="kb-results__label">{t('knowledge.matchedFiles')}</div>
                   <div className="kb-docs">
                     {matchedDocs.map((doc) => (
                       <DocumentRow
@@ -636,7 +650,7 @@ export function KnowledgePage() {
               )}
 
               <section className="kb-results__group">
-                <div className="kb-results__label">命中的片段</div>
+                <div className="kb-results__label">{t('knowledge.matchedChunks')}</div>
                 {results.map((hit) => (
                   <article key={hit.chunkId} className="kb-hit">
                     <header>
@@ -648,7 +662,9 @@ export function KnowledgePage() {
                     <p>{hit.text}</p>
                   </article>
                 ))}
-                {!searching && results.length === 0 && <div className="kb-empty">没有匹配的内容</div>}
+                {!searching && results.length === 0 && (
+                  <div className="kb-empty">{t('knowledge.noMatches')}</div>
+                )}
               </section>
             </div>
           ) : visible.length === 0 ? (
@@ -656,21 +672,17 @@ export function KnowledgePage() {
               <div className="kb-drop__icon">
                 {isGroup ? <StackIcon size={24} /> : <UploadIcon size={24} />}
               </div>
-              <h2>{isGroup ? '这个组合还没有文件' : '把文件拖进来'}</h2>
-              <p>
-                {isGroup
-                  ? '组合分类按勾选的分类聚合文件，往这些分类里放文件，这里就会自动出现。'
-                  : '支持 PDF、Word、Excel、PPT（pptx）、Markdown、TXT、CSV 等，自动解析、切片并向量化。'}
-              </p>
+              <h2>{isGroup ? t('knowledge.groupEmptyTitle') : t('knowledge.dropTitle')}</h2>
+              <p>{isGroup ? t('knowledge.groupEmptyBody') : t('knowledge.dropBody')}</p>
               {!isGroup && (
                 <>
                   <button className="btn btn--primary" onClick={upload}>
-                    选择文件
+                    {t('knowledge.chooseFiles')}
                   </button>
                   <span className="kb-drop__hint">
                     {activeCat === ALL
-                      ? '新文件会进入「默认分类」，之后可以移动到其他分类'
-                      : `新文件会直接加入「${activeName}」`}
+                      ? t('knowledge.dropHintDefault')
+                      : t('knowledge.dropHintCategory', { name: activeName })}
                   </span>
                 </>
               )}
@@ -696,7 +708,7 @@ export function KnowledgePage() {
         {dragging && (
           <div className="kb__dropmask">
             <FileIcon size={22} />
-            {isGroup ? '组合分类不能直接添加文件' : '松开即可加入知识库'}
+            {isGroup ? t('knowledge.cannotAddToGroup') : t('knowledge.dropRelease')}
           </div>
         )}
       </section>

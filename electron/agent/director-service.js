@@ -34,6 +34,7 @@ const { streamChat } = require('../chat');
 const { AgentSession } = require('./session');
 const director = require('./director');
 const workPatterns = require('./work-patterns');
+const uiText = require('../ui-text');
 
 /**
  * 巡视节奏。15 秒够快，能在“模型/网络卡住”变成用户眼里的死等之前发现；
@@ -267,47 +268,47 @@ function taskProjectId(taskId) {
  * side=task 记任务侧，side=director 记总监的处置。
  */
 const LEDGER_KIND = {
-  'run:start': { side: 'task', label: '任务开始' },
-  'run:end': { side: 'task', label: '任务结束' },
-  'run:wrapup': { side: 'director', label: '到点收口' },
-  'run:progress': { side: 'director', label: '无进展收口' },
-  'run:budget': { side: 'director', label: '超时叫停' },
-  'inbox:alert': { side: 'task', label: '任务异常' },
-  'inbox:confirm': { side: 'task', label: '需要你拍板' },
-  'inbox:report': { side: 'director', label: '汇报' },
-  'permission:auto': { side: 'director', label: '代批一步' },
-  'question:auto': { side: 'director', label: '代答工人' },
-  'instruction:queue': { side: 'director', label: '准备指令' },
-  'instruction:deliver': { side: 'director', label: '下发指令' },
-  'instruction:accepted': { side: 'director', label: '工人接手' },
-  'instruction:discarded': { side: 'director', label: '指令作废' },
-  'instruction:blocked': { side: 'director', label: '指令卡住' },
-  'instruction:stale': { side: 'director', label: '重启后收尾旧指令' },
-  'task:pin': { side: 'director', label: '置顶/取消置顶' },
-  'task:rename': { side: 'director', label: '重命名任务' },
-  'task:delete': { side: 'director', label: '删除任务' },
-  'task:export': { side: 'director', label: '导出任务' },
-  'accept:hold': { side: 'director', label: '等用户验收' },
-  'accept:quick': { side: 'director', label: '按文件状态收口' },
-  'task:forget': { side: 'director', label: '记下任务已删' },
-  'accept:pass': { side: 'director', label: '验收通过' },
-  'accept:rework': { side: 'director', label: '要求返工' },
-  'accept:auto': { side: 'director', label: '没拿到结论，先收尾' },
-  'accept:stopped': { side: 'director', label: '叫停这一轮' },
-  'accept:escalate': { side: 'director', label: '两次没过' },
-  'confirm:answer': { side: 'director', label: '转达答复' },
-  'memory:save': { side: 'director', label: '记下经验' },
-  'dispatch:spawn': { side: 'director', label: '分配任务' },
-  'project:reconcile': { side: 'director', label: '项目对账' },
-  'dispatch:ack': { side: 'task', label: '员工开工' },
-  'dispatch:done': { side: 'director', label: '分配收尾' },
-  'dispatch:split': { side: 'director', label: '拆分慢任务' },
-  'model:offer': { side: 'director', label: '请用户换模型' },
-  'model:choose': { side: 'director', label: '换模型重试' },
-  'inbox:advice': { side: 'director', label: '效率建议' },
-  'inbox:audit': { side: 'director', label: '审计结论' },
-  'advice:ack': { side: 'director', label: '建议已读' },
-  'advice:ignore': { side: 'director', label: '建议暂不采用' },
+  'run:start': { side: 'task', key: 'event.runStart' },
+  'run:end': { side: 'task', key: 'event.runEnd' },
+  'run:wrapup': { side: 'director', key: 'event.runWrapup' },
+  'run:progress': { side: 'director', key: 'event.runProgress' },
+  'run:budget': { side: 'director', key: 'event.runBudget' },
+  'inbox:alert': { side: 'task', key: 'event.inboxAlert' },
+  'inbox:confirm': { side: 'task', key: 'event.inboxConfirm' },
+  'inbox:report': { side: 'director', key: 'event.inboxReport' },
+  'permission:auto': { side: 'director', key: 'event.permissionAuto' },
+  'question:auto': { side: 'director', key: 'event.questionAuto' },
+  'instruction:queue': { side: 'director', key: 'event.instructionQueue' },
+  'instruction:deliver': { side: 'director', key: 'event.instructionDeliver' },
+  'instruction:accepted': { side: 'director', key: 'event.instructionAccepted' },
+  'instruction:discarded': { side: 'director', key: 'event.instructionDiscarded' },
+  'instruction:blocked': { side: 'director', key: 'event.instructionBlocked' },
+  'instruction:stale': { side: 'director', key: 'event.instructionStale' },
+  'task:pin': { side: 'director', key: 'event.taskPin' },
+  'task:rename': { side: 'director', key: 'event.taskRename' },
+  'task:delete': { side: 'director', key: 'event.taskDelete' },
+  'task:export': { side: 'director', key: 'event.taskExport' },
+  'accept:hold': { side: 'director', key: 'event.acceptHold' },
+  'accept:quick': { side: 'director', key: 'event.acceptQuick' },
+  'task:forget': { side: 'director', key: 'event.taskForget' },
+  'accept:pass': { side: 'director', key: 'event.acceptPass' },
+  'accept:rework': { side: 'director', key: 'event.acceptRework' },
+  'accept:auto': { side: 'director', key: 'event.acceptAuto' },
+  'accept:stopped': { side: 'director', key: 'event.acceptStopped' },
+  'accept:escalate': { side: 'director', key: 'event.acceptEscalate' },
+  'confirm:answer': { side: 'director', key: 'event.confirmAnswer' },
+  'memory:save': { side: 'director', key: 'event.memorySave' },
+  'dispatch:spawn': { side: 'director', key: 'event.dispatchSpawn' },
+  'project:reconcile': { side: 'director', key: 'event.projectReconcile' },
+  'dispatch:ack': { side: 'task', key: 'event.dispatchAck' },
+  'dispatch:done': { side: 'director', key: 'event.dispatchDone' },
+  'dispatch:split': { side: 'director', key: 'event.dispatchSplit' },
+  'model:offer': { side: 'director', key: 'event.modelOffer' },
+  'model:choose': { side: 'director', key: 'event.modelChoose' },
+  'inbox:advice': { side: 'director', key: 'event.inboxAdvice' },
+  'inbox:audit': { side: 'director', key: 'event.inboxAudit' },
+  'advice:ack': { side: 'director', key: 'event.adviceAck' },
+  'advice:ignore': { side: 'director', key: 'event.adviceIgnore' }, 'instruction:superseded': { side: 'director', key: 'event.instructionSuperseded' }, 'accept:budget': { side: 'director', key: 'event.acceptBudget' }, 'accept:unverified': { side: 'director', key: 'event.acceptUnverified' }, 'accept:user-settled': { side: 'director', key: 'event.acceptUserSettled' }, 'task:stop': { side: 'director', key: 'event.taskStop' }, 'verify:spawn': { side: 'director', key: 'event.verifySpawn' }, 'verify:retry': { side: 'director', key: 'event.verifyRetry' }, backfill: { side: 'director', key: 'event.backfill' }, 'project:debug': { side: 'director', key: 'event.projectDebug' }, 'stuck:loop': { side: 'director', key: 'event.stuckLoop' }, 'stuck:wait': { side: 'director', key: 'event.stuckWait' },
 };
 
 /**
@@ -319,11 +320,13 @@ const USER_STEP_KINDS = new Set(['confirm:answer', 'model:choose']);
 /** 旧账没有 side/label，读出来时补齐，界面不分新旧。 */
 function enrichLedgerEntry(entry) {
   if (!entry || typeof entry !== 'object') return entry;
-  const meta = LEDGER_KIND[entry.kind] ?? { side: 'task', label: entry.kind };
+  const meta = LEDGER_KIND[entry.kind]; const label = meta ? uiText.t(`main.director.${meta.key}`) : entry.kind;
   return {
     ...entry,
-    side: entry.side === 'director' || entry.side === 'task' ? entry.side : meta.side,
-    label: entry.label || meta.label,
+    side: entry.side === 'director' || entry.side === 'task' ? entry.side : meta?.side ?? 'task',
+    // Re-derive the label for known kinds: an entry written before the
+    // interface language changed would otherwise keep the old language.
+    label: meta ? label : entry.label || entry.kind,
   };
 }
 
@@ -380,7 +383,7 @@ function normalizeInboxItem(raw) {
       : 'report',
     /** 是谁发进对话的：缺省是工作总监；'audit' 是审计组自己的署名。 */
     speaker: raw.speaker === 'audit' ? 'audit' : '',
-    title: oneLine(raw.title, 120) || '工作总监',
+    title: oneLine(raw.title, 120) || uiText.t('main.director.common.director'),
     // 审计报告是完整正文，不能按普通汇报截断；其余消息仍限 4000 字。
     body: String(raw.body ?? '').slice(0, raw.kind === 'audit' ? 24000 : 4000),
     taskId: String(raw.taskId ?? ''),
@@ -438,7 +441,7 @@ function normalizeProject(raw) {
   return {
     id,
     kind: raw.kind === 'task' ? 'task' : 'dispatch',
-    title: oneLine(raw.title, 120) || '未命名项目',
+    title: oneLine(raw.title, 120) || uiText.t('main.director.common.untitledProject'),
     goal: clip(raw.goal ?? '', 1200),
     workspaceId: String(raw.workspaceId ?? ''),
     taskIds: Array.isArray(raw.taskIds)
@@ -715,7 +718,7 @@ function normalizeEmployee(raw, index) {
     : [];
   return {
     employeeId: idOf(raw.employeeId) || uid('emp'),
-    name: oneLine(raw.name, 30) || `员工${index + 1}`,
+    name: oneLine(raw.name, 30) || uiText.t('main.director.common.employeeIndex', { n: index + 1 }),
     task: clip(task, 3000),
     criteria: clip(raw.criteria ?? '', 800),
     agentId: idOf(raw.agentId),
@@ -1416,12 +1419,12 @@ class DirectorService {
 
   ledgerPush(entry) {
     const kind = oneLine(entry.kind, 40);
-    const meta = LEDGER_KIND[kind] ?? { side: 'task', label: kind };
+    const meta = LEDGER_KIND[kind];
     const item = {
       at: Date.now(),
       kind,
-      side: meta.side,
-      label: meta.label,
+      side: meta?.side ?? 'task',
+      label: meta ? uiText.t(`main.director.${meta.key}`) : kind,
       taskId: String(entry.taskId ?? ''),
       title: oneLine(entry.title, 120),
       text: clip(entry.text ?? '', 600),
@@ -1470,7 +1473,7 @@ class DirectorService {
       const running = this.runs.get(id);
       this.tasks.set(id, {
         id,
-        title: oneLine(raw?.title ?? previous.title, 120) || '未命名任务',
+        title: oneLine(raw?.title ?? previous.title, 120) || uiText.t('main.director.common.untitledTask'),
         space: oneLine(raw?.space ?? previous.space, 120),
         workspaceId: String(raw?.workspaceId ?? previous.workspaceId ?? ''),
         workspacePath: String(raw?.workspacePath ?? previous.workspacePath ?? ''),
@@ -1490,7 +1493,7 @@ class DirectorService {
       if (!this.tasks.has(taskId)) {
         this.tasks.set(taskId, {
           id: taskId,
-          title: '任务',
+          title: uiText.t('main.director.common.task'),
           space: '',
           workspaceId: '',
           busy: true,
@@ -1505,7 +1508,7 @@ class DirectorService {
     for (const [taskId, task] of this.tasks) {
       if (seen.has(taskId)) continue;
       if (now - (task.seenAt ?? now) <= TASK_FORGET_MS) continue;
-      this.forgetTask(taskId, { reason: '任务或工作空间已被删除' });
+      this.forgetTask(taskId, { reason: uiText.t('main.director.notice.taskDeleted') });
     }
     for (const [id, task] of this.tasks) {
       if (now - task.seenAt > 30 * 24 * 60 * 60 * 1000) this.tasks.delete(id);
@@ -1541,14 +1544,14 @@ class DirectorService {
       for (const stale of list.slice(1)) {
         stale.state = 'discarded';
         stale.finishedAt = Date.now();
-        stale.note = '被更新的指令替代，未验收';
-        if (!stale.resultNote) stale.resultNote = '被后续指令替代';
+        stale.note = uiText.t('main.director.status.replacedUnverified');
+        if (!stale.resultNote) stale.resultNote = uiText.t('main.director.status.replacedByNext');
         if (stale.dispatchId) touched.add(stale.dispatchId);
         this.ledgerPush({
           kind: 'instruction:superseded',
           taskId,
           title: stale.taskTitle,
-          text: `由 ${keep.id} 替代`,
+          text: uiText.t('main.director.notice.replacedBy', { id: keep.id }),
         });
         changed = true;
       }
@@ -1568,11 +1571,11 @@ class DirectorService {
         instruction.state = stale ? 'discarded' : 'accepted';
         instruction.finishedAt = now;
         if (stale) {
-          instruction.note = '停机太久，按过期收尾';
-          if (!instruction.resultNote) instruction.resultNote = '停机太久，未验证';
+          instruction.note = uiText.t('main.director.status.expiredClosed');
+          if (!instruction.resultNote) instruction.resultNote = uiText.t('main.director.status.expiredUnverified');
         } else {
           instruction.unverified = true;
-          instruction.resultNote = '进程重启后没等到这一轮的收尾（未验证）';
+          instruction.resultNote = uiText.t('main.director.status.restartNoClose');
           settled.push(instruction);
           if (instruction.dispatchId) touched.add(instruction.dispatchId);
         }
@@ -1588,8 +1591,8 @@ class DirectorService {
             parent.verdict = 'unverified';
             parent.finishedAt = now;
             parent.resultNote = stale
-              ? '验收员停机太久，未验证'
-              : '验收员重启后没跑完，未验证';
+              ? uiText.t('main.director.status.verifierExpired')
+              : uiText.t('main.director.status.verifierRestart');
             if (parent.dispatchId) touched.add(parent.dispatchId);
           }
         }
@@ -1597,7 +1600,7 @@ class DirectorService {
           kind: stale ? 'instruction:expired' : 'instruction:orphan',
           taskId: instruction.taskId,
           title: instruction.taskTitle,
-          text: stale ? '停机太久，旧指令按过期收尾' : '重启后没有对应的运行记录，按未验证收尾',
+          text: stale ? uiText.t('main.director.status.expiredLedger') : uiText.t('main.director.status.restartNoRunLedger'),
         });
         changed = true;
       }
@@ -1608,8 +1611,8 @@ class DirectorService {
     if (settled.length > 0 && !settled.some((item) => item.dispatchId)) {
       this.addInbox({
         kind: 'report',
-        title: '上次没跑完的验收我收尾了',
-        body: `重启前还有 ${settled.length} 条指令停在半路，这一轮等不到结果了。我按“未验证”记下，没当成通过；你看到哪条不对，我再让它补。`,
+        title: uiText.t('main.director.notice.restartSettledTitle'),
+        body: uiText.t('main.director.notice.restartSettledBody', { count: settled.length }),
         taskId: settled[0].taskId,
         taskTitle: settled[0].taskTitle,
       });
@@ -1632,7 +1635,7 @@ class DirectorService {
       if (this.tasks.has(instruction.taskId)) continue;
       if (!instruction.restored) continue;
       instruction.state = 'discarded';
-      instruction.note = '重启后任务已经不存在，已放弃';
+      instruction.note = uiText.t('main.director.status.restartTaskGone');
       instruction.finishedAt = Date.now();
       dropped.push(instruction);
     }
@@ -1640,13 +1643,13 @@ class DirectorService {
     this.scheduleSave('instructions');
     this.ledgerPush({
       kind: 'instruction:stale',
-      text: `重启后收尾了 ${dropped.length} 条没有对应任务的旧指令`,
+      text: uiText.t('main.director.notice.restartOrphansLedger', { count: dropped.length }),
     });
     this.addInbox({
       kind: 'report',
-      title: '重启后收尾了旧指令',
+      title: uiText.t('main.director.notice.restartOrphansTitle'),
       body: [
-        `有 ${dropped.length} 条指令对应的任务在重启后已经不存在了，我没有再执行，已标记为放弃：`,
+        uiText.t('main.director.notice.restartOrphansBody', { count: dropped.length }),
         ...dropped.slice(0, 10).map(
           (item) => `- ${item.taskTitle || item.taskId}：${clip(item.text, 80)}`,
         ),
@@ -1662,7 +1665,7 @@ class DirectorService {
   forgetTask(taskId, { reason = '' } = {}) {
     const id = idOf(taskId);
     if (!id) return;
-    const note = oneLine(reason, 200) || '任务已删除';
+    const note = oneLine(reason, 200) || uiText.t('main.director.notice.taskDeleted');
     this.runs.delete(id);
     this.tasks.delete(id);
     this.pendingDelivery.delete(id);
@@ -1710,13 +1713,13 @@ class DirectorService {
     if (action === 'rename') {
       if (!name) return { ok: false, error: '重命名需要给出新的标题' };
       this.broadcast('director:task-action', { action: 'rename', taskIds: ids, title: name });
-      this.ledgerPush({ kind: 'task:rename', text: `${ids.length} 个任务 → ${name}` });
+      this.ledgerPush({ kind: 'task:rename', text: uiText.t('main.director.notice.renameLedger', { count: ids.length, name }) });
       return { ok: true, count: ids.length, message: `已重命名为「${name}」。` };
     }
     if (action === 'pin' || action === 'unpin') {
       this.broadcast('director:task-action', { action, taskIds: ids });
       const label = action === 'pin' ? '置顶' : '取消置顶';
-      this.ledgerPush({ kind: 'task:pin', text: `${label} ${ids.length} 个任务` });
+      this.ledgerPush({ kind: 'task:pin', text: uiText.t(action === 'pin' ? 'main.director.notice.pinLedger' : 'main.director.notice.unpinLedger', { count: ids.length }) });
       return { ok: true, count: ids.length, message: `已${label} ${ids.length} 个任务。` };
     }
     if (action === 'export') {
@@ -1748,29 +1751,29 @@ class DirectorService {
       if (risky || state.mode !== 'run') {
         const preview = targets
           .slice(0, 20)
-          .map((task) => `- ${task.title}（${task.space || '未知空间'}）`)
+          .map((task) => uiText.t('main.director.notice.deleteLine', { title: task.title, space: task.space || uiText.t('main.director.common.unknownSpace') }))
           .join('\n');
-        const rest = targets.length > 20 ? `\n…还有 ${targets.length - 20} 个` : '';
+        const rest = targets.length > 20 ? uiText.t('main.director.notice.andMore', { count: targets.length - 20 }) : '';
         const why = running.length > 0
-          ? `其中 ${running.length} 个任务还在跑，删掉会中断正在做的工作。`
+          ? uiText.t('main.director.notice.deleteRunning', { count: running.length })
           : wholeBoard
-            ? '这是看板上的全部任务。'
+            ? uiText.t('main.director.notice.deleteAll')
             : bulk
-              ? `一次删 ${ids.length} 个，数量偏多。`
+              ? uiText.t('main.director.notice.deleteMany', { count: ids.length })
               : '';
         this.addConfirm('', {
-          title: `要删除 ${ids.length} 个任务`,
+          title: uiText.t('main.director.notice.deleteTitle', { count: ids.length }),
           body: [
             why,
-            `选了 ${ids.length} 个任务：`,
+            uiText.t('main.director.notice.deleteIntro', { count: ids.length }),
             `${preview}${rest}`,
             '',
-            '任务本身和里面的对话记录会一起删掉，删了找不回来。工作空间和里面的文件不会动。',
-            '确认后界面立刻删除；不想删就点「先不动」。',
+            uiText.t('main.director.notice.deleteWarning'),
+            uiText.t('main.director.notice.deleteHint'),
           ].filter(Boolean).join('\n'),
           actions: [
-            { id: 'confirm', label: `删除 ${ids.length} 个任务`, style: 'danger' },
-            { id: 'dismiss', label: '先不动' },
+            { id: 'confirm', label: uiText.t('main.director.action.deleteTasks', { count: ids.length }), style: 'danger' },
+            { id: 'dismiss', label: uiText.t('main.director.action.notNow') },
           ],
           payload: { kind: 'task-op', action: 'delete', taskIds: ids },
           urgent: true,
@@ -1786,7 +1789,7 @@ class DirectorService {
       }
 
       this.broadcastTaskDelete(ids);
-      this.ledgerPush({ kind: 'task:delete', text: `总监删除 ${ids.length} 个任务` });
+      this.ledgerPush({ kind: 'task:delete', text: uiText.t('main.director.notice.deletedLedger', { count: ids.length }) });
       return {
         ok: true,
         count: ids.length,
@@ -1815,7 +1818,7 @@ class DirectorService {
       kind: 'task:stop',
       taskId: id,
       title: this.tasks.get(id)?.title,
-      text: '总监叫停当前这一轮',
+      text: uiText.t('main.director.ledger.manualStop'),
     });
     return { ok: true, taskId: id };
   }
@@ -1837,34 +1840,34 @@ class DirectorService {
     if (!ok) {
       this.addInbox({
         kind: 'alert',
-        title: '任务操作没有完成',
-        body: `这次「${op.action === 'delete' ? '删除任务' : '导出任务'}」没有做成：${oneLine(error, 300) || '界面没有返回原因'}`,
+        title: uiText.t('main.director.notice.taskOpFailedTitle'),
+        body: uiText.t('main.director.notice.taskOpFailedBody', { action: op.action === 'delete' ? uiText.t('main.director.action.deleteTask') : uiText.t('main.director.action.exportTask'), error: oneLine(error, 300) || uiText.t('main.director.notice.noReason') }),
         taskId: '',
         urgent: true,
       });
-      this.ledgerPush({ kind: 'task:forget', text: `任务操作失败：${oneLine(error, 200)}` });
+      this.ledgerPush({ kind: 'task:forget', text: uiText.t('main.director.notice.taskOpFailedLedger', { error: oneLine(error, 200) }) });
       this.scheduleSave('inbox');
       this.broadcastSummary();
       return { ok: true };
     }
 
     if (op.action === 'delete') {
-      for (const id of op.taskIds) this.forgetTask(id, { reason: '用户确认删除任务' });
+      for (const id of op.taskIds) this.forgetTask(id, { reason: uiText.t('main.director.notice.deleteConfirmedReason') });
       const titles = (Array.isArray(deleted) ? deleted : [])
         .map((item) => oneLine(typeof item === 'string' ? item : item?.title, 120))
         .filter(Boolean);
       const count = titles.length || op.taskIds.length;
       this.addInbox({
         kind: 'report',
-        title: '任务已删除',
+        title: uiText.t('main.director.notice.taskDeletedTitle'),
         body: [
-          `删掉了 ${count} 个任务：`,
+          uiText.t('main.director.notice.taskDeletedIntro', { count }),
           ...titles.slice(0, 20).map((title) => `- ${title}`),
-          '工作空间和里面的文件没有动。',
+          uiText.t('main.director.notice.taskDeletedNote'),
         ].join('\n'),
         taskId: '',
       });
-      this.ledgerPush({ kind: 'task:delete', text: `删除了 ${count} 个任务` });
+      this.ledgerPush({ kind: 'task:delete', text: uiText.t('main.director.notice.deletedTasks', { count }) });
     }
 
     if (op.action === 'export' && Array.isArray(files) && files.length > 0) {
@@ -1883,13 +1886,13 @@ class DirectorService {
       if (items.length > 0) {
         this.addInbox({
           kind: 'report',
-          title: `已导出 ${items.length} 个任务的 Markdown`,
+          title: uiText.t('main.director.notice.exportedTitle', { count: items.length }),
           body: items.map((item) => `- ${item.name}`).join('\n'),
           taskId: '',
           files: items,
           needsRead: true,
         });
-        this.ledgerPush({ kind: 'task:export', text: `导出 ${items.length} 个任务` });
+        this.ledgerPush({ kind: 'task:export', text: uiText.t('main.director.notice.exportedLedger', { count: items.length }) });
       }
     }
     this.scheduleSave('inbox');
@@ -2012,7 +2015,7 @@ class DirectorService {
       project = normalizeProject({
         id: key,
         kind,
-        title: title || '未命名项目',
+        title: title || uiText.t('main.director.common.untitledProject'),
         goal,
         workspaceId,
         startedAt,
@@ -2029,7 +2032,7 @@ class DirectorService {
     if (Number(estimateMinutes) > 0 && !project.estimateMs) {
       project.estimateMs = Number(estimateMinutes) * 60 * 1000;
       project.estimateAt = Date.now();
-      project.estimateNote = project.estimateNote || '总监按 AI 编程速度估的';
+      project.estimateNote = project.estimateNote || uiText.t('main.director.project.estimateDefault');
     }
     // 新建时 estimateMs 已经写进去了，不能靠“刚刚才赋值”来判断要不要算检查点。
     if (project.estimateMs > 0 && !project.buildEtaAt) {
@@ -2123,10 +2126,10 @@ class DirectorService {
       kind: 'project:reconcile',
       title: project.title,
       text:
-        `计划 ${project.plan.parallelism} 人 ${project.plan.estimateMinutes} 分钟编制` +
-        `${project.plan.verifyMinutes > 0 ? ` + ${project.plan.verifyMinutes} 分钟验收` : ''} → ` +
-        `实际 ${project.actual.parallelism} 人 ${project.actual.minutes} 分钟，` +
-        `返工 ${project.actual.rounds} 轮`,
+        uiText.t('main.director.notice.projectReconcile', { planPeople: project.plan.parallelism, planMinutes: project.plan.estimateMinutes, verify: project.plan.verifyMinutes > 0 ? uiText.t('main.director.notice.verifySuffix', { minutes: project.plan.verifyMinutes }) : '', actualPeople: project.actual.parallelism, actualMinutes: project.actual.minutes, rounds: project.actual.rounds }),
+
+
+
     });
   }
 
@@ -2176,7 +2179,7 @@ class DirectorService {
       if (minutes > 0) {
         project.estimateMs = minutes * 60 * 1000;
         project.estimateAt = Date.now();
-        project.estimateNote = '总监按 AI 编程速度重新估的';
+        project.estimateNote = uiText.t('main.director.project.estimateRerun');
         project.buildEtaAt = project.startedAt + project.estimateMs;
       }
       if (Number(verifyMinutes) > 0) {
@@ -2224,7 +2227,7 @@ class DirectorService {
         ),
       );
       project.estimateMs = minutes * 60 * 1000;
-      project.estimateNote = '按任务量粗估（单员工，不再叫模型估时）';
+      project.estimateNote = uiText.t('main.director.project.estimateSingle');
       project.estimateAt = Date.now();
       project.buildEtaAt = project.startedAt + project.estimateMs;
       if (!project.verifyCheckedAt) {
@@ -2238,7 +2241,7 @@ class DirectorService {
     const reply = await this.ask({
       system:
         '你是工作总监。按 AI 编程的实际速度估一件事要多久，不按人类工时，也不按人类上班节奏。' +
-        '并行员工会缩短总时长，但不要假设无限并行。只输出一行 JSON：{"minutes": 数字, "note": "一句依据"}。不要写别的。',
+        '并行员工会缩短总时长，但不要假设无限并行。只输出一行 JSON：{"minutes": 数字, "note": "一句依据"}。不要写别的。' + uiLanguageHint(),
       user: [
         `项目：${title || project.title}`,
         shared ? `协作约定：${clip(shared, 400)}` : '',
@@ -2255,13 +2258,13 @@ class DirectorService {
     if (rawMinutes > 0) {
       const minutes = Math.max(1, Math.min(24 * 60, rawMinutes));
       project.estimateMs = minutes * 60 * 1000;
-      project.estimateNote = oneLine(data?.note, 160) || '总监按 AI 编程速度估的';
+      project.estimateNote = oneLine(data?.note, 160) || uiText.t('main.director.project.estimateDefault');
       project.estimateAt = Date.now();
       project.buildEtaAt = project.startedAt + project.estimateMs;
     } else if (!project.estimateMs) {
       // 模型完全不可用：给一个粗参照，明确标成粗估，不当承诺。
       project.estimateMs = Math.max(10, 10 + employees.length * 8) * 60 * 1000;
-      project.estimateNote = '粗估（模型没回话，按 AI 编程经验给的参照）';
+      project.estimateNote = uiText.t('main.director.project.estimateRough');
       project.estimateAt = Date.now();
       project.buildEtaAt = project.startedAt + project.estimateMs;
     }
@@ -2286,7 +2289,7 @@ class DirectorService {
     const previous = this.tasks.get(id) ?? {};
     const task = {
       id,
-      title: oneLine(previous.title || title || '任务', 120),
+      title: oneLine(previous.title || title || uiText.t('main.director.common.task'), 120),
       space: previous.space ?? '',
       workspaceId: previous.workspaceId || String(workspaceId ?? ''),
       workspacePath: previous.workspacePath || String(workspacePath ?? ''),
@@ -2342,7 +2345,7 @@ class DirectorService {
       pending.startedAt = Date.now();
       this.scheduleSave('instructions');
     }
-    this.ledgerPush({ kind: 'run:start', taskId: id, title: task.title, text: '任务开始执行' });
+    this.ledgerPush({ kind: 'run:start', taskId: id, title: task.title, text: uiText.t('main.director.notice.runStarted') });
   }
 
   onRunEvent({ taskId, payload }) {
@@ -2661,7 +2664,7 @@ class DirectorService {
       }
     }
     this.runs.delete(id);
-    const task = this.tasks.get(id) ?? { id, title: '任务', space: '', workspaceId: '' };
+    const task = this.tasks.get(id) ?? { id, title: uiText.t('main.director.common.task'), space: '', workspaceId: '' };
     task.busy = false;
     task.status = aborted ? 'aborted' : ok ? 'done' : 'failed';
     task.lastDurationMs = Math.max(0, Date.now() - run.startedAt);
@@ -2674,7 +2677,7 @@ class DirectorService {
       kind: 'run:end',
       taskId: id,
       title: task.title,
-      text: ok ? '完成' : aborted ? '被停止' : `失败：${oneLine(error, 200)}`,
+      text: ok ? uiText.t('main.director.notice.runDone') : aborted ? uiText.t('main.director.notice.runStopped') : uiText.t('main.director.notice.runFailed', { error: oneLine(error, 200) }),
     });
 
     // Only accept a run that actually started after our instruction went out;
@@ -2707,14 +2710,14 @@ class DirectorService {
       for (const stale of superseded) {
         stale.state = 'discarded';
         stale.finishedAt = Date.now();
-        stale.note = '被更新的指令替代，未验收';
-        if (!stale.resultNote) stale.resultNote = '被后续指令替代';
+        stale.note = uiText.t('main.director.status.replacedUnverified');
+        if (!stale.resultNote) stale.resultNote = uiText.t('main.director.status.replacedByNext');
         if (stale.dispatchId) this.maybeFinishDispatch(stale.dispatchId);
         this.ledgerPush({
           kind: 'instruction:superseded',
           taskId: id,
           title: stale.taskTitle,
-          text: `由 ${pending.id} 替代`,
+          text: uiText.t('main.director.notice.replacedBy', { id: pending.id }),
         });
       }
       if (superseded.length > 0) this.scheduleSave('instructions');
@@ -2729,7 +2732,7 @@ class DirectorService {
     if (pending) {
       if (modelProblem) {
         pending.state = 'discarded';
-        pending.note = '模型出错，等用户换模型';
+        pending.note = uiText.t('main.director.status.modelErrorWaiting');
         pending.resultNote = oneLine(error, 200);
         pending.finishedAt = Date.now();
         this.scheduleSave('instructions');
@@ -2741,7 +2744,7 @@ class DirectorService {
           pending.verdict = 'unverified';
           if (parent) {
             this.markVerificationUncertain(parent, {
-              reason: `验收没跑起来（模型问题）：${oneLine(error, 160)}`,
+              reason: uiText.t('main.director.notice.verifyNotStarted', { error: oneLine(error, 160) }),
             });
           }
         } else {
@@ -2904,7 +2907,7 @@ class DirectorService {
       '只输出一个 JSON 对象，不要代码块：',
       '{"worth":true,"title":"≤16字","reason":"为什么算重复的一句理由","saving":"每次大概省什么（时间或 token，基于数据）","how":["建议1","建议2"],"form":"agent|tool|prompt"}',
       'worth 为 false 时只需 {"worth":false}。',
-    ].join('\n');
+    ].concat(uiLanguageHint() ? [uiLanguageHint()] : []).join('\n');
     const user = [
       `这一类活近 30 天出现 ${stats.count} 次，跨 ${Math.max(stats.tasks, stats.spaces)} 个任务。`,
       `合计 ${workPatterns.formatDuration(stats.totalMs)}、${workPatterns.formatTokens(
@@ -2944,13 +2947,13 @@ class DirectorService {
   /** The must-read card. Suggestion only: no action ever creates anything. */
   raiseAdvice(pattern, verdict) {
     const stats = workPatterns.statsOf(pattern);
-    const formLabel = { agent: 'Agent', tool: '自定义工具', prompt: '提示词模板' }[verdict.form] ?? '预制';
+    const formLabel = verdict.form === 'tool' ? uiText.t('main.director.advice.formTool') : verdict.form === 'prompt' ? uiText.t('main.director.advice.formPrompt') : verdict.form === 'agent' ? 'Agent' : uiText.t('main.director.advice.formPreset');
     const body = [
       verdict.reason ? `${verdict.reason}` : '',
-      `\n**证据**\n${workPatterns.evidenceLines(pattern, 5).join('\n')}`,
-      `\n**建议（${formLabel}）**\n${verdict.how.map((step, index) => `${index + 1}. ${step}`).join('\n')}`,
-      `\n**预计**\n${verdict.saving}`,
-      `\n审计组只提建议，不会自己动手：改不改、怎么预制，都等你决定。`,
+      `${uiText.t('main.director.advice.evidence')}\n${workPatterns.evidenceLines(pattern, 5).join('\n')}`,
+      `${uiText.t('main.director.advice.suggestion', { form: formLabel })}\n${verdict.how.map((step, index) => `${index + 1}. ${step}`).join('\n')}`,
+      `${uiText.t('main.director.advice.expected')}\n${verdict.saving}`,
+      `${uiText.t('main.director.advice.closing')}`,
     ]
       .filter(Boolean)
       .join('\n');
@@ -2963,8 +2966,8 @@ class DirectorService {
       taskTitle: '',
       mustRead: true,
       actions: [
-        { id: 'ack', label: '知道了', style: 'primary' },
-        { id: 'ignore', label: '先不用' },
+        { id: 'ack', label: uiText.t('main.director.action.gotIt'), style: 'primary' },
+        { id: 'ignore', label: uiText.t('main.director.action.skipForNow') },
       ],
       payload: {
         kind: 'advice',
@@ -3037,88 +3040,88 @@ class DirectorService {
     const overProjects = projects.filter((project) => project.overMs > 0);
 
     const lines = [];
-    lines.push('# 内容审计报告');
+    lines.push(uiText.t('main.director.audit.heading'));
     lines.push('');
-    lines.push(`- 出具时间：${stamp}`);
-    lines.push(`- 审计窗口：近 ${Number(view?.windowDays) || 30} 天`);
+    lines.push(uiText.t('main.director.audit.issued', { stamp }));
+    lines.push(uiText.t('main.director.audit.window', { days: Number(view?.windowDays) || 30 }));
     lines.push(
-      `- 审计范围：${tasks.length} 个任务 · ${instructions} 条指令 · ${projects.length} 个项目 · ${agents.length} 个员工 · ${tools.length} 类能力`,
+      uiText.t('main.director.audit.scope', { tasks: tasks.length, instructions, projects: projects.length, agents: agents.length, tools: tools.length }),
     );
-    lines.push('- 审计方式：只读检查运行记录、验收结果、项目档案和重复投入；不改文件、不改能力。');
+    lines.push(uiText.t('main.director.audit.method'));
     lines.push('');
 
-    lines.push('## 一、总体结论');
-    const conclusion =
-      failed > 0
-        ? `有 ${failed} 条指令没通过验收，${unverified} 条未验证，${held} 条等你确认；交付质量是当前最需要处理的问题。`
-        : unverified > 0 || held > 0
-          ? `没有“没通过”的指令，但有 ${unverified} 条未验证、${held} 条等你确认；结论要谨慎看待，不能当成全部通过。`
-          : tasks.length > 0
-            ? '已收口的指令都有明确验收结论，没有发现“跑完就算过”的情况。'
-            : '还没有可审计的指令记录。';
+    lines.push(uiText.t('main.director.audit.summaryHeading'));
+    const conclusion = failed > 0 ? uiText.t('main.director.audit.conclusionFailed', { failed, unverified, held }) : unverified > 0 || held > 0 ? uiText.t('main.director.audit.conclusionUnverified', { unverified, held }) : tasks.length > 0 ? uiText.t('main.director.audit.conclusionClean') : uiText.t('main.director.audit.conclusionEmpty');
+
+        
+        
+          
+          
+            
+            
     lines.push(`- ${conclusion}`);
     lines.push(
-      `- 验收分布：通过 ${passed} · 未验证 ${unverified} · 没通过 ${failed} · 返工 ${rework} · 等你确认 ${held}。`,
+      uiText.t('main.director.audit.distribution', { passed, unverified, failed, rework, held }),
     );
     lines.push(
       userSteps > 0
-        ? `- 需要你亲自拍板：${userSteps} 次（答确认卡、换模型）。这个数越低，说明流程越能自己收口。`
-        : '- 需要你亲自拍板：0 次。这一窗口里的确认都是总监自己处理的。',
+        ? uiText.t('main.director.audit.userSteps', { count: userSteps })
+        : uiText.t('main.director.audit.userStepsNone'),
     );
     if (taskTokens > 0 || taskCost > 0) {
       lines.push(
-        `- 记录到的消耗：${tokens(taskTokens)} tok${taskCost > 0 ? ` · ¥${taskCost.toFixed(4)}` : ''}。`,
+        uiText.t('main.director.audit.usage', { tokens: tokens(taskTokens), cost: taskCost > 0 ? uiText.t('main.director.audit.costSuffix', { cost: taskCost.toFixed(4) }) : '' }),
       );
     }
     if (projects.length > 0) {
       lines.push(
-        `- 项目：${projects.length} 个，已收口 ${doneProjects.length} 个，超出预估 ${overProjects.length} 个。`,
+        uiText.t('main.director.audit.projects', { total: projects.length, done: doneProjects.length, over: overProjects.length }),
       );
     }
     const repeatedText =
       Number(totals.repeated) > 0
-        ? `重复投入 ${minutes(totals.reclaimMs)}、${tokens(totals.reclaimTokens)} tok，占全部投入的 ${Number(totals.share) || 0}%。`
-        : '没有发现达到“重复投入”标准的同类工作。';
+        ? uiText.t('main.director.audit.repeated', { time: minutes(totals.reclaimMs), tokens: tokens(totals.reclaimTokens), share: Number(totals.share) || 0 })
+        : uiText.t('main.director.audit.noRepeated');
     lines.push(`- ${repeatedText}`);
     lines.push('');
 
-    lines.push('## 二、项目审计');
+    lines.push(uiText.t('main.director.audit.projectsHeading'));
     if (projects.length === 0) {
-      lines.push('- 还没有项目档案。');
+      lines.push(uiText.t('main.director.audit.noProjects'));
     } else {
       for (const project of projects.slice(0, 8)) {
-        const state = project.status === 'done' ? '已收口' : '进行中';
-        const estimate =
-          project.estimateMs > 0
-            ? `用时 ${minutes(project.elapsedMs)} / 预估 ${minutes(project.estimateMs)}${
-                project.overMs > 0 ? `（超 ${minutes(project.overMs)}）` : ''
-              }`
-            : `用时 ${minutes(project.elapsedMs)} / 未估时`;
+        const state = project.status === 'done' ? uiText.t('main.director.audit.stateDone') : uiText.t('main.director.audit.stateActive');
+        const estimate = project.estimateMs > 0 ? uiText.t('main.director.audit.elapsedEstimate', { elapsed: minutes(project.elapsedMs), estimate: minutes(project.estimateMs), over: project.overMs > 0 ? uiText.t('main.director.audit.elapsedOver', { over: minutes(project.overMs) }) : '' }) : uiText.t('main.director.audit.elapsedNoEstimate', { elapsed: minutes(project.elapsedMs) });
+          
+            
+                
+
+            
         const problems = [
-          project.unverified > 0 ? `未验证 ${project.unverified}` : '',
-          project.failed > 0 ? `没通过 ${project.failed}` : '',
-          project.held > 0 ? `等你确认 ${project.held}` : '',
+          project.unverified > 0 ? uiText.t('main.director.audit.unverifiedCount', { count: project.unverified }) : '',
+          project.failed > 0 ? uiText.t('main.director.audit.failedCount', { count: project.failed }) : '',
+          project.held > 0 ? uiText.t('main.director.audit.heldCount', { count: project.held }) : '',
         ]
           .filter(Boolean)
           .join(' · ');
-        const planLine =
-          project.plan && project.actual
-            ? ` · 计划 ${project.plan.parallelism} 人 ${project.plan.estimateMinutes} 分钟编制` +
-              `${project.plan.verifyMinutes > 0 ? ` + ${project.plan.verifyMinutes} 分钟验收` : ''}` +
-              ` → 实际 ${project.actual.parallelism} 人 ${project.actual.minutes} 分钟`
-            : project.plan
-              ? ` · 计划 ${project.plan.parallelism} 人 ${project.plan.estimateMinutes} 分钟编制`
-              : '';
+        const planLine = project.plan && project.actual ? uiText.t('main.director.audit.planWithActual', { planPeople: project.plan.parallelism, planMinutes: project.plan.estimateMinutes, verify: project.plan.verifyMinutes > 0 ? uiText.t('main.director.audit.verifySuffix', { minutes: project.plan.verifyMinutes }) : '', actualPeople: project.actual.parallelism, actualMinutes: project.actual.minutes }) : project.plan ? uiText.t('main.director.audit.planOnly', { planPeople: project.plan.parallelism, planMinutes: project.plan.estimateMinutes }) : '';
+          
+            
+              
+              
+            
+              
+              
         lines.push(
-          `- 「${project.title}」：${state} · ${project.employees} 个员工 · 通过 ${project.accepted}${
-            problems ? ` · ${problems}` : ''
-          } · ${estimate}${planLine}`,
+          uiText.t('main.director.audit.projectLine', { title: project.title, state, employees: project.employees, accepted: project.accepted, problems: problems ? uiText.t('main.director.audit.problemsSuffix', { problems }) : '', estimate, plan: planLine }),
+            
+          
         );
       }
     }
     lines.push('');
 
-    lines.push('## 三、任务审计');
+    lines.push(uiText.t('main.director.audit.tasksHeading'));
     const taskRank = [...tasks].sort(
       (a, b) =>
         b.failed - a.failed ||
@@ -3127,99 +3130,99 @@ class DirectorService {
         b.tokens - a.tokens ||
         b.runMs - a.runMs,
     );
-    if (taskRank.length === 0) lines.push('- 还没有任务记录。');
+    if (taskRank.length === 0) lines.push(uiText.t('main.director.audit.noTasks'));
     for (const task of taskRank.slice(0, 8)) {
       const bits = [
-        `${task.instructions} 条指令`,
-        `通过 ${task.accepted}`,
-        task.unverified > 0 ? `未验证 ${task.unverified}` : '',
-        task.failed > 0 ? `没通过 ${task.failed}` : '',
-        task.rework > 0 ? `返工 ${task.rework}` : '',
-        task.held > 0 ? `等你确认 ${task.held}` : '',
-        task.interventions > 0 ? `你拍板 ${task.interventions} 次` : '',
-        `用时 ${minutes(task.runMs)}`,
+        uiText.t('main.director.audit.instructionCount', { count: task.instructions }),
+        uiText.t('main.director.audit.accepted', { count: task.accepted }),
+        task.unverified > 0 ? uiText.t('main.director.audit.unverifiedCount', { count: task.unverified }) : '',
+        task.failed > 0 ? uiText.t('main.director.audit.failedCount', { count: task.failed }) : '',
+        task.rework > 0 ? uiText.t('main.director.audit.reworkCount', { count: task.rework }) : '',
+        task.held > 0 ? uiText.t('main.director.audit.heldCount', { count: task.held }) : '',
+        task.interventions > 0 ? uiText.t('main.director.audit.interventions', { count: task.interventions }) : '',
+        uiText.t('main.director.audit.timeSpent', { time: minutes(task.runMs) }),
         task.tokens > 0 ? `${tokens(task.tokens)} tok` : '',
-        task.files > 0 ? `${task.files} 个文件` : '',
+        task.files > 0 ? uiText.t('main.director.audit.fileCount', { count: task.files }) : '',
       ].filter(Boolean);
-      lines.push(`- 「${task.title}」：${bits.join(' · ')}。`);
+      lines.push(uiText.t('main.director.audit.taskLine', { title: task.title, bits: bits.join(uiText.t('main.director.audit.listSeparator')) }));
     }
     lines.push('');
 
-    lines.push('## 四、员工 / Agent 审计');
-    if (agents.length === 0) lines.push('- 记录里还没有可归到具体员工或 Agent 的指令。');
+    lines.push(uiText.t('main.director.audit.agentsHeading'));
+    if (agents.length === 0) lines.push(uiText.t('main.director.audit.noAgents'));
     for (const agent of agents.slice(0, 8)) {
       const bits = [
-        `${agent.tasks} 个任务`,
-        `${agent.instructions} 条指令`,
-        `通过 ${agent.accepted}`,
-        agent.unverified > 0 ? `未验证 ${agent.unverified}` : '',
-        agent.failed > 0 ? `没通过 ${agent.failed}` : '',
-        agent.rework > 0 ? `返工 ${agent.rework}` : '',
-        `最长一轮 ${minutes(agent.runMs)}`,
+        uiText.t('main.director.audit.agentTasks', { count: agent.tasks }),
+        uiText.t('main.director.audit.instructionCount', { count: agent.instructions }),
+        uiText.t('main.director.audit.accepted', { count: agent.accepted }),
+        agent.unverified > 0 ? uiText.t('main.director.audit.unverifiedCount', { count: agent.unverified }) : '',
+        agent.failed > 0 ? uiText.t('main.director.audit.failedCount', { count: agent.failed }) : '',
+        agent.rework > 0 ? uiText.t('main.director.audit.reworkCount', { count: agent.rework }) : '',
+        uiText.t('main.director.audit.longestRun', { time: minutes(agent.runMs) }),
       ].filter(Boolean);
-      lines.push(`- ${agent.name}：${bits.join(' · ')}。`);
+      lines.push(uiText.t('main.director.audit.agentLine', { name: agent.name, bits: bits.join(uiText.t('main.director.audit.listSeparator')) }));
     }
     lines.push('');
 
-    lines.push('## 五、能力使用');
-    if (tools.length === 0) lines.push('- 没有足够的工具调用记录。');
+    lines.push(uiText.t('main.director.audit.toolsHeading'));
+    if (tools.length === 0) lines.push(uiText.t('main.director.audit.noTools'));
     else {
       lines.push(
-        `- ${tools
-          .slice(0, 6)
-          .map((tool) => `${tool.name} ${tool.calls} 次（${tool.tasks} 个任务）`)
-          .join('；')}。`,
+        uiText.t('main.director.audit.toolsLine', { list: tools.slice(0, 6).map((tool) => uiText.t('main.director.audit.toolUsage', { name: tool.name, calls: tool.calls, tasks: tool.tasks })).join(uiText.t('main.director.audit.listSeparator')) }),
+          
+
+          
       );
     }
     lines.push('');
 
-    lines.push('## 六、重复投入明细');
+    lines.push(uiText.t('main.director.audit.repeatedHeading'));
     if (repeated.length === 0) {
-      lines.push('- 同一类活至少做 3 次、跨 2 个任务，才会记为重复投入；目前没有达到标准的。');
+      lines.push(uiText.t('main.director.audit.repeatedRule'));
     } else {
       for (const item of repeated.slice(0, 6)) {
         lines.push(
-          `- 「${item.title}」：${item.runs} 次 · 跨 ${item.tasks} 个任务 · 可回收 ${minutes(item.reclaimMs)}${
-            item.reclaimTokens > 0 ? `、${tokens(item.reclaimTokens)} tok` : ''
-          }${item.adviceAt > 0 ? ' · 已给过建议' : ''}。`,
+          uiText.t('main.director.audit.repeatedItem', { title: item.title, runs: item.runs, tasks: item.tasks, time: minutes(item.reclaimMs), tokens: item.reclaimTokens > 0 ? uiText.t('main.director.audit.repeatedTokens', { tokens: tokens(item.reclaimTokens) }) : '', advised: item.adviceAt > 0 ? uiText.t('main.director.audit.advised') : '' }),
+            
+          
         );
       }
     }
     lines.push('');
 
-    lines.push('## 七、审计建议');
+    lines.push(uiText.t('main.director.audit.adviceHeading'));
     const advice = [];
     if (failed > 0) {
-      advice.push(`先处理 ${failed} 条没通过验收的指令：让总监按缺口返工，或明确按现状收尾，不要留在“看起来跑完了”的状态。`);
+      advice.push(uiText.t('main.director.audit.adviceFailed', { count: failed }));
     }
     if (unverified > 0 || held > 0) {
-      advice.push(`把 ${unverified + held} 条未验证/等你确认的结果补一次验收；审计报告不能替代验收。`);
+      advice.push(uiText.t('main.director.audit.adviceUnverified', { count: unverified + held }));
     }
     if (userSteps > 0) {
       advice.push(
-        `有 ${userSteps} 次需要你亲自拍板（答卡/换模型）：能按规则直接定的应该由总监当场做，把这些卡再压掉一轮，别让每件小事都绕回你这里。`,
+        uiText.t('main.director.audit.adviceUserSteps', { count: userSteps }),
       );
     }
     if (overProjects.length > 0) {
-      advice.push(`有 ${overProjects.length} 个项目超出 AI 速度预估，下一次派工把估时拆细，或把慢任务拆给空闲员工。`);
+      advice.push(uiText.t('main.director.audit.adviceOverProjects', { count: overProjects.length }));
     }
     if (rework > 0) {
-      advice.push(`返工 ${rework} 次，优先看返工原因是不是验收标准写得不够具体。`);
+      advice.push(uiText.t('main.director.audit.adviceRework', { count: rework }));
     }
     if (Number(totals.repeated) > 0) {
-      advice.push('重复投入最高的一类，可以让总监评估预制为 Agent 或固定流程；审计只给建议，不替你改能力。');
+      advice.push(uiText.t('main.director.audit.adviceRepeated'));
     }
     if (advice.length === 0) {
-      advice.push('这次没有发现需要立刻处理的问题；保持当前验收和派工口径即可。');
+      advice.push(uiText.t('main.director.audit.adviceNone'));
     }
     for (const line of advice) lines.push(`- ${line}`);
     lines.push('');
     lines.push(
-      '> 本报告只读，不会改动文件或能力。需要有人动手处理时，直接告诉工作总监，由他派人执行。',
+      uiText.t('main.director.audit.footer'),
     );
 
     return {
-      title: `审计报告 · ${stamp}`,
+      title: uiText.t('main.director.audit.title', { stamp }),
       at: now,
       windowDays: Number(view?.windowDays) || 30,
       markdown: lines.join('\n'),
@@ -3275,7 +3278,7 @@ class DirectorService {
         const agent =
           agents.get(agentKey) ?? {
             id: item.agentId || '',
-            name: item.employeeName || item.agentId || '员工',
+            name: item.employeeName || item.agentId || uiText.t('main.director.common.employee'),
             tasks: new Set(),
             instructions: 0,
             accepted: 0,
@@ -3386,13 +3389,13 @@ class DirectorService {
       });
 
     const detail = [
-      `按任务看：${tasks.size} 个任务有总监下的指令。`,
-      `按员工看：${agents.size} 个员工有记录。`,
+      uiText.t('main.director.audit.detailTasks', { count: tasks.size }),
+      uiText.t('main.director.audit.detailAgents', { count: agents.size }),
       projects.length
-        ? `按项目看：${projects.length} 个项目，${projects.filter((item) => item.status === 'done').length} 个已收口，${projects.filter((item) => item.overMs > 0).length} 个超出预估。`
-        : '按项目看：还没有项目档案。',
+        ? uiText.t('main.director.audit.detailProjects', { total: projects.length, done: projects.filter((item) => item.status === 'done').length, over: projects.filter((item) => item.overMs > 0).length })
+        : uiText.t('main.director.audit.detailNoProjects'),
       toolRows.length
-        ? `常用能力：${toolRows.slice(0, 3).map((entry) => `${entry.name}×${entry.calls}`).join('、')}。`
+        ? uiText.t('main.director.audit.detailTools', { list: toolRows.slice(0, 3).map((entry) => `${entry.name}×${entry.calls}`).join(uiText.t('main.director.audit.listSeparator')) })
         : '',
     ]
       .filter(Boolean)
@@ -3437,10 +3440,10 @@ class DirectorService {
   /** 「复盘」按钮：用户主动要，不受冷却和每日限额影响。 */
   async reviewNow() {
     if (!this.getState().enabled) {
-      return { ok: false, error: '工作总监现在是关着的：先打开，审计组才能看。' };
+      return { ok: false, error: uiText.t('main.director.error.reviewDisabled') };
     }
     if (this.reviewingNow) {
-      return { ok: false, error: '上一次审计还在看，等它出结果再点。' };
+      return { ok: false, error: uiText.t('main.director.error.reviewBusy') };
     }
     const candidates = this.patterns
       .map((pattern) => ({ pattern, stats: workPatterns.statsOf(pattern) }))
@@ -3451,7 +3454,7 @@ class DirectorService {
         return right - left || b.stats.count - a.stats.count || b.stats.lastAt - a.stats.lastAt;
       });
     if (candidates.length === 0) {
-      return { ok: false, error: '还没有足够重复的工作：同一类活至少 3 次、跨 2 个任务才会复盘。' };
+      return { ok: false, error: uiText.t('main.director.error.reviewNotEnough') };
     }
     // 已经提过或判断过、又没有新证据的，先跳过；不然连点两下就是两张一样的卡片，
     // 或者拿同样的问题再问一遍模型。
@@ -3462,7 +3465,7 @@ class DirectorService {
     if (fresh.length === 0) {
       return {
         ok: false,
-        error: `这 ${candidates.length} 类重复工作我都看过了，还没有新的证据。等这类活再多做几次，我再来复盘。`,
+        error: uiText.t('main.director.error.reviewNoNew', { count: candidates.length }),
       };
     }
 
@@ -3480,7 +3483,7 @@ class DirectorService {
           return {
             ok: false,
             checked: looked,
-            error: `${looked.length > 0 ? `已看过「${looked.join('」「')}」，` : ''}我这边没拿到能用的答复，这次没看成。稍后再点一次。`,
+            error: `${looked.length > 0 ? uiText.t('main.director.error.reviewSeen', { list: looked.join(uiText.t('main.director.error.reviewSeenSeparator')) }) : ''}${uiText.t('main.director.error.reviewNoAnswer')}`,
           };
         }
         pattern.judgedAt = Date.now();
@@ -3488,7 +3491,7 @@ class DirectorService {
         if (verdict.worth) {
           const item = this.raiseAdvice(pattern, verdict);
           if (!item) {
-            return { ok: false, checked: looked, error: '建议没有发出去，稍后再试。' };
+            return { ok: false, checked: looked, error: uiText.t('main.director.error.reviewNotSent') };
           }
           return {
             ok: true,
@@ -3505,7 +3508,7 @@ class DirectorService {
       return {
         ok: false,
         checked: looked,
-        error: `我看过 ${looked.length} 类重复工作（${looked.join('、')}），都还不够通用，先不预制。换个更典型的活再做几次，我再来复盘。`,
+        error: uiText.t('main.director.error.reviewNotGeneric', { count: looked.length, list: looked.join(uiText.t('main.director.audit.listSeparator')) }),
       };
     } finally {
       this.reviewingNow = false;
@@ -3535,12 +3538,12 @@ class DirectorService {
       if (similarity(text, instruction.text) >= 0.55) {
         instruction.state = 'discarded';
         instruction.finishedAt = Date.now();
-        instruction.note = '和用户刚下的指令重复，已丢弃';
+        instruction.note = uiText.t('main.director.status.duplicateDropped');
         this.ledgerPush({
           kind: 'instruction:discarded',
           taskId: id,
           title: this.taskOf(id)?.title,
-          text: '被用户指令覆盖',
+          text: uiText.t('main.director.notice.coveredByUser'),
         });
       }
     }
@@ -3577,12 +3580,12 @@ class DirectorService {
       if (!instruction) continue;
       instruction.state = 'discarded';
       instruction.finishedAt = Date.now();
-      instruction.note = '和用户刚下的指令重复，已丢弃';
+      instruction.note = uiText.t('main.director.status.duplicateDropped');
       this.ledgerPush({
         kind: 'instruction:discarded',
         taskId,
         title: this.taskOf(taskId)?.title,
-        text: '被用户指令覆盖',
+        text: uiText.t('main.director.notice.coveredByUser'),
       });
     }
     this.scheduleSave('instructions');
@@ -3606,8 +3609,8 @@ class DirectorService {
     if (state.mode === 'observe') {
       this.addInbox({
         kind: 'alert',
-        title: '任务在等你批准',
-        body: `「${task?.title ?? '任务'}」需要确认：${summary}\n原因：${oneLine(payload?.reason, 200)}`,
+        title: uiText.t('main.director.permission.pendingTitle'),
+        body: uiText.t('main.director.permission.pendingBody', { title: task?.title ?? uiText.t('main.director.common.task'), summary, reason: oneLine(payload?.reason, 200) }),
         taskId,
         urgent: true,
         taskTitle: task?.title,
@@ -3619,7 +3622,7 @@ class DirectorService {
       const opinion = await this.ask({
         system:
           '你是工作总监，只给意见，不替用户决定。用两三句话说清楚：这一步该批准还是拒绝，为什么。' +
-          '不要复述任务，不要写步骤。',
+          '不要复述任务，不要写步骤。' + uiLanguageHint(),
         user: [
           `任务：${task?.title ?? ''}`,
           `操作：${summary}`,
@@ -3630,10 +3633,10 @@ class DirectorService {
       });
       this.addInbox({
         kind: 'alert',
-        title: '需要你批准（我建议）',
-        body: `「${task?.title ?? '任务'}」需要确认：${summary}${
-          opinion ? `\n\n我的意见：${opinion}` : ''
-        }`,
+        title: uiText.t('main.director.permission.suggestTitle'),
+        body: uiText.t('main.director.permission.body', { title: task?.title ?? uiText.t('main.director.common.task'), summary, opinion: opinion ? uiText.t('main.director.permission.opinionSuffix', { opinion }) : '' }),
+          
+        
         taskId,
         urgent: true,
         taskTitle: task?.title,
@@ -3646,8 +3649,8 @@ class DirectorService {
       // 只读 spaces are watched, not driven: report, never resolve.
       this.addInbox({
         kind: 'alert',
-        title: '任务在等你批准',
-        body: `「${task?.title ?? '任务'}」需要确认：${summary}\n这个空间只让我看，我不替你批。`,
+        title: uiText.t('main.director.permission.pendingTitle'),
+        body: uiText.t('main.director.permission.readOnlyBody', { title: task?.title ?? uiText.t('main.director.common.task'), summary }),
         taskId,
         urgent: true,
         taskTitle: task?.title,
@@ -3655,17 +3658,17 @@ class DirectorService {
       return;
     }
     if (danger) {
-      this.raiseConfirm(taskId, payload, summary, '这一步风险高，我不替你批');
+      this.raiseConfirm(taskId, payload, summary, uiText.t('main.director.permission.whyDanger'));
       return;
     }
     if (!this.mayAutoApprove(taskId)) {
-      this.raiseConfirm(taskId, payload, summary, '这一小时自动批准次数过多，交给你');
+      this.raiseConfirm(taskId, payload, summary, uiText.t('main.director.permission.whyRate'));
       return;
     }
 
     const allowed = this.resolveRun(taskId, payload?.call?.id, { allow: true });
     if (!allowed) {
-      this.raiseConfirm(taskId, payload, summary, '没能把决定送回任务，请你处理');
+      this.raiseConfirm(taskId, payload, summary, uiText.t('main.director.permission.whyFailed'));
       return;
     }
     this.recordApproval(taskId);
@@ -3673,7 +3676,7 @@ class DirectorService {
       kind: 'permission:auto',
       taskId,
       title: task?.title,
-      text: `批准：${summary}`,
+      text: uiText.t('main.director.permission.approvedLedger', { summary }),
     });
     // One report per ten minutes per task: the ledger has every approval, the
     // inbox should not turn a busy task into a wall of identical notices.
@@ -3682,8 +3685,8 @@ class DirectorService {
       this.lastAlertAt.set(key, Date.now());
       this.addInbox({
         kind: 'report',
-        title: '我替你批准了一步',
-        body: `「${task?.title ?? '任务'}」：${summary}`,
+        title: uiText.t('main.director.permission.autoTitle'),
+        body: uiText.t('main.director.permission.autoBody', { title: task?.title ?? uiText.t('main.director.common.task'), summary }),
         taskId,
         taskTitle: task?.title,
       });
@@ -3702,8 +3705,8 @@ class DirectorService {
     if (state.mode === 'observe') {
       this.addInbox({
         kind: 'alert',
-        title: '任务在等你回答',
-        body: `「${task?.title ?? '任务'}」提问：${question}`,
+        title: uiText.t('main.director.question.pendingTitle'),
+        body: uiText.t('main.director.question.pendingBody', { title: task?.title ?? uiText.t('main.director.common.task'), question }),
         taskId,
         urgent: true,
         taskTitle: task?.title,
@@ -3713,7 +3716,7 @@ class DirectorService {
 
     if (state.mode === 'suggest') {
       const opinion = await this.ask({
-        system: '你是工作总监，只给意见，不替用户回答。用两三句话给出你推荐的选择和理由。',
+        system: '你是工作总监，只给意见，不替用户回答。用两三句话给出你推荐的选择和理由。' + uiLanguageHint(),
         user: [`任务：${task?.title ?? ''}`, `问题：${question}`, options.length ? `选项：${options.join(' / ')}` : '']
           .filter(Boolean)
           .join('\n'),
@@ -3721,8 +3724,8 @@ class DirectorService {
       });
       this.addInbox({
         kind: 'alert',
-        title: '需要你回答（我建议）',
-        body: `「${task?.title ?? '任务'}」提问：${question}${opinion ? `\n\n我的意见：${opinion}` : ''}`,
+        title: uiText.t('main.director.question.suggestTitle'),
+        body: uiText.t('main.director.question.body', { title: task?.title ?? uiText.t('main.director.common.task'), question, opinion: opinion ? uiText.t('main.director.question.opinionSuffix', { opinion }) : '' }),
         taskId,
         urgent: true,
         taskTitle: task?.title,
@@ -3733,8 +3736,8 @@ class DirectorService {
     if (access !== 'write') {
       this.addInbox({
         kind: 'alert',
-        title: '任务在等你回答',
-        body: `「${task?.title ?? '任务'}」提问：${question}\n这个空间只让我看，我不替你答。`,
+        title: uiText.t('main.director.question.pendingTitle'),
+        body: uiText.t('main.director.question.readOnlyBody', { title: task?.title ?? uiText.t('main.director.common.task'), question }),
         taskId,
         urgent: true,
         taskTitle: task?.title,
@@ -3760,11 +3763,11 @@ class DirectorService {
     const parsed = reply ? this.parseJson(reply) : null;
     if (!parsed || parsed.ask_user === true || !String(parsed.answer ?? '').trim()) {
       this.addConfirm(taskId, {
-        title: '工人在等你回答',
-        body: `「${task?.title ?? '任务'}」提问：${question}`,
+        title: uiText.t('main.director.question.workerWaitingTitle'),
+        body: uiText.t('main.director.question.pendingBody', { title: task?.title ?? uiText.t('main.director.common.task'), question }),
         actions: [
-          { id: 'answer', label: '我去回答', style: 'primary' },
-          { id: 'dismiss', label: '先放着' },
+          { id: 'answer', label: uiText.t('main.director.action.answerIt'), style: 'primary' },
+          { id: 'dismiss', label: uiText.t('main.director.action.leaveIt') },
         ],
         payload: { kind: 'question', callId: payload?.call?.id, question, options },
       });
@@ -3779,12 +3782,12 @@ class DirectorService {
       kind: 'question:auto',
       taskId,
       title: task?.title,
-      text: `回答：${question} → ${oneLine(parsed.answer, 300)}`,
+      text: uiText.t('main.director.question.answeredLedger', { question, answer: oneLine(parsed.answer, 300) }),
     });
     this.addInbox({
       kind: 'report',
-      title: '我替你回答了一个问题',
-      body: `「${task?.title ?? '任务'}」：${question}\n\n我回答：${oneLine(parsed.answer, 300)}`,
+      title: uiText.t('main.director.question.autoTitle'),
+      body: uiText.t('main.director.question.autoBody', { title: task?.title ?? uiText.t('main.director.common.task'), question, answer: oneLine(parsed.answer, 300) }),
       taskId,
       taskTitle: task?.title,
     });
@@ -3793,11 +3796,11 @@ class DirectorService {
   raiseConfirm(taskId, payload, summary, why) {
     const task = this.taskOf(taskId);
     this.addConfirm(taskId, {
-      title: '任务需要你决定',
-      body: `「${task?.title ?? '任务'}」：${summary}\n${why}`,
+      title: uiText.t('main.director.confirm.title'),
+      body: uiText.t('main.director.confirm.body', { title: task?.title ?? uiText.t('main.director.common.task'), summary, why }),
       actions: [
-        { id: 'allow', label: '批准', style: 'primary' },
-        { id: 'deny', label: '拒绝', style: 'danger' },
+        { id: 'allow', label: uiText.t('main.director.action.approve'), style: 'primary' },
+        { id: 'deny', label: uiText.t('main.director.action.deny'), style: 'danger' },
       ],
       payload: {
         kind: 'permission',
@@ -3874,11 +3877,11 @@ class DirectorService {
     // 领导只看结论：一句话 + 最有用的那一小截，细节去任务里看。
     // 保留工人答复里的换行和 Markdown：表格、列表、加粗要能原样画出来。
     const body = report.ok
-      ? `「${report.title}」完成。${report.tail ? `\n\n${markdownTail(report.tail)}` : ''}`
-      : `「${report.title}」异常结束。${report.error ? `\n\n${oneLine(report.error, 300)}` : ''}`;
+      ? uiText.t('main.director.report.completed', { title: report.title, tail: report.tail ? `\n\n${markdownTail(report.tail)}` : '' })
+      : uiText.t('main.director.report.errored', { title: report.title, error: report.error ? `\n\n${oneLine(report.error, 300)}` : '' });
     this.addInbox({
       kind: report.ok ? 'report' : 'alert',
-      title: report.ok ? '任务完成' : '任务异常结束',
+      title: report.ok ? uiText.t('main.director.report.taskDone') : uiText.t('main.director.report.taskErrored'),
       body,
       taskId: report.taskId,
       taskTitle: task?.title ?? report.title,
@@ -4003,7 +4006,7 @@ class DirectorService {
 
   async resolveInbox({ id, action, value }) {
     const item = this.inbox.find((entry) => entry.id === String(id ?? ''));
-    if (!item) return { ok: false, error: '这条消息已经不存在' };
+    if (!item) return { ok: false, error: uiText.t('main.director.notice.messageGone') };
     const taskId = item.taskId;
     const callId = item.payload?.callId;
 
@@ -4030,7 +4033,7 @@ class DirectorService {
         kind: `advice:${action}`,
         taskId,
         title: item.title,
-        text: action === 'ignore' ? '先不用' : '已读',
+        text: action === 'ignore' ? uiText.t('main.director.status.skipped') : uiText.t('main.director.status.read'),
       });
       this.scheduleSave('inbox');
       this.broadcastSummary();
@@ -4060,9 +4063,9 @@ class DirectorService {
     }
 
     if (action === 'allow' || action === 'deny') {
-      if (!callId) return { ok: false, error: '这个确认已经失效' };
+      if (!callId) return { ok: false, error: uiText.t('main.director.error.confirmExpired') };
       const allowed = this.resolveRun(taskId, callId, { allow: action === 'allow' });
-      if (!allowed) return { ok: false, error: '任务已经不在等待这个确认了' };
+      if (!allowed) return { ok: false, error: uiText.t('main.director.error.confirmGone') };
       item.status = 'resolved';
       item.resolution = action;
       item.read = true;
@@ -4079,10 +4082,10 @@ class DirectorService {
 
     if (action === 'answer') {
       const answer = String(value ?? '').trim();
-      if (!answer) return { ok: false, error: '回答不能为空' };
-      if (!callId) return { ok: false, error: '这个问题已经失效' };
+      if (!answer) return { ok: false, error: uiText.t('main.director.error.answerEmpty') };
+      if (!callId) return { ok: false, error: uiText.t('main.director.error.questionExpired') };
       const allowed = this.resolveRun(taskId, callId, { allow: true, answer });
-      if (!allowed) return { ok: false, error: '任务已经不在等待这个回答' };
+      if (!allowed) return { ok: false, error: uiText.t('main.director.error.questionGone') };
       item.status = 'resolved';
       item.resolution = 'answer';
       item.read = true;
@@ -4130,12 +4133,12 @@ class DirectorService {
 
     if (action === 'choose' && item.payload?.kind === 'workspace' && item.payload.draft) {
       if (this.getState().mode === 'observe') {
-        return { ok: false, error: '当前是观察级别：只能提醒，不能给员工派任务' };
+        return { ok: false, error: uiText.t('main.director.error.observeNoDispatch') };
       }
       const spaceId = String(value ?? '').trim();
-      if (!spaceId) return { ok: false, error: '没有选择工作空间' };
+      if (!spaceId) return { ok: false, error: uiText.t('main.director.error.noWorkspace') };
       if (director.accessFor(this.getState(), spaceId) !== 'write') {
-        return { ok: false, error: '这个工作空间还没有交给总监写入，先在分管范围里授权' };
+        return { ok: false, error: uiText.t('main.director.error.workspaceNotGranted') };
       }
       const result = this.executeDispatch({ ...item.payload.draft, workspaceId: spaceId });
       if (!result.ok) return result;
@@ -4150,7 +4153,7 @@ class DirectorService {
     if (action === 'choose-model' && item.payload?.kind === 'model' && item.payload.taskId) {
       const taskId = idOf(item.payload.taskId);
       const model = oneLine(value, 200);
-      if (!model) return { ok: false, error: '没有选择模型' };
+      if (!model) return { ok: false, error: uiText.t('main.director.error.noModel') };
       // 模型由界面先换好（任务自己的设置），这里只负责让原来的要求再跑一次。
       const instruction = this.instructions.find(
         (entry) => entry.id === String(item.payload.instructionId ?? ''),
@@ -4178,7 +4181,7 @@ class DirectorService {
           if (!result.ok) return result;
           retried = true;
           instruction.state = 'discarded';
-          instruction.note = '已换模型重试';
+          instruction.note = uiText.t('main.director.status.modelRetried');
           this.scheduleSave('instructions');
         }
       } else {
@@ -4200,7 +4203,7 @@ class DirectorService {
         kind: 'model:choose',
         taskId,
         title: this.taskOf(taskId)?.title,
-        text: `换成 ${model}`,
+        text: uiText.t('main.director.notice.modelSwitched', { model }),
       });
       this.scheduleSave('inbox');
       this.broadcastSummary();
@@ -4222,7 +4225,7 @@ class DirectorService {
       this.scheduleSave('inbox');
       this.broadcastSummary();
       this.broadcastTaskDelete(ids);
-      this.ledgerPush({ kind: 'task:delete', text: `用户确认删除 ${ids.length} 个任务` });
+      this.ledgerPush({ kind: 'task:delete', text: uiText.t('main.director.notice.userDeleteLedger', { count: ids.length }) });
       return { ok: true, count: ids.length };
     }
 
@@ -4231,7 +4234,7 @@ class DirectorService {
       const instruction = this.instructions.find(
         (entry) => entry.id === String(item.payload?.instructionId ?? ''),
       );
-      if (!instruction) return { ok: false, error: '对应的指令已经不在了' };
+      if (!instruction) return { ok: false, error: uiText.t('main.director.error.instructionGone') };
       item.status = 'resolved';
       item.resolution = action;
       item.read = true;
@@ -4250,7 +4253,7 @@ class DirectorService {
         return { ok: true };
       }
       instruction.state = 'discarded';
-      instruction.note = '重启后用户选择不继续';
+      instruction.note = uiText.t('main.director.status.restartDeclined');
       instruction.finishedAt = Date.now();
       this.scheduleSave('instructions');
       this.scheduleSave('inbox');
@@ -4262,14 +4265,14 @@ class DirectorService {
     if (item.payload?.kind === 'stuck-action' && action === 'approve') {
       const taskId = idOf(item.payload?.taskId ?? '');
       const task = this.taskOf(taskId);
-      if (!taskId) return { ok: false, error: '对应的任务已经不在了' };
+      if (!taskId) return { ok: false, error: uiText.t('main.director.error.taskGone') };
       const wanted = item.payload?.action === 'instruct' ? 'instruct' : 'stop';
       let acted = false;
       if (wanted === 'instruct' && String(item.payload?.instruction ?? '').trim()) {
         const queued = this.enqueue({
           taskId,
           text: String(item.payload.instruction),
-          intent: '修复卡住的任务',
+          intent: uiText.t('main.director.notice.fixStuckIntent'),
           criteria: String(item.payload?.criteria ?? ''),
           source: 'director',
           approved: true,
@@ -4287,10 +4290,10 @@ class DirectorService {
       if (acted) {
         this.addInbox({
           kind: 'report',
-          title: wanted === 'instruct' ? '卡住的任务已经补上指令' : '卡住的任务已经叫停',
-          body: `「${task?.title ?? item.taskTitle ?? '任务'}」我处理了。${
-            wanted === 'instruct' ? '新指令会紧接着开始。' : '这一轮停下，排队中的指令会继续。'
-          }`,
+          title: wanted === 'instruct' ? uiText.t('main.director.notice.stuckInstructedTitle') : uiText.t('main.director.notice.stuckStoppedTitle'),
+          body: uiText.t('main.director.notice.stuckHandledBody', { title: task?.title ?? item.taskTitle ?? uiText.t('main.director.common.task'), detail:
+            wanted === 'instruct' ? uiText.t('main.director.notice.stuckInstructTail') : uiText.t('main.director.notice.stuckStopTail')
+          }),
           taskId,
           taskTitle: task?.title,
         });
@@ -4319,8 +4322,8 @@ class DirectorService {
         if (!target) {
           this.addInbox({
             kind: 'report',
-            title: '没有可叫停的任务',
-            body: `「${project.title}」现在没有还在编制的员工，可能刚交付或已经停了。`,
+            title: uiText.t('main.director.notice.noTaskToStopTitle'),
+            body: uiText.t('main.director.notice.noTaskToStopBody', { title: project.title }),
             taskTitle: project.title,
           });
           return { ok: true };
@@ -4328,12 +4331,12 @@ class DirectorService {
         const stopped = this.interruptTask(target.taskId);
         this.addInbox({
           kind: 'report',
-          title: stopped.ok ? '已经叫停了最久的那一个' : '没叫停成功',
-          body: stopped.ok
-            ? `「${project.title}」里的「${target.employeeName || '员工'}」已经叫停；它会交回已经做到的部分，我再按现状收尾。`
-            : `「${project.title}」里的「${target.employeeName || '员工'}」没停下来：${
-                stopped.error || '未知原因'
-              }。`,
+          title: stopped.ok ? uiText.t('main.director.notice.stoppedLongestTitle') : uiText.t('main.director.notice.stopFailedTitle'),
+          body: stopped.ok ? uiText.t('main.director.notice.stoppedLongestBody', { project: project.title, employee: target.employeeName || uiText.t('main.director.common.employee') }) : uiText.t('main.director.notice.stopFailedBody', { project: project.title, employee: target.employeeName || uiText.t('main.director.common.employee'), reason: stopped.error || uiText.t('main.director.notice.noReason') }),
+
+
+
+
           taskId: target.taskId,
           taskTitle: project.title,
           urgent: !stopped.ok,
@@ -4343,8 +4346,8 @@ class DirectorService {
       const elapsed = Date.now() - (project.startedAt || Date.now());
       project.estimateMs = Math.max(Number(project.estimateMs) || 0, Math.round(elapsed * 1.5));
       project.buildEtaAt = (project.startedAt || Date.now()) + project.estimateMs;
-      project.estimateNote = '按领导的“继续等”调整了预期';
-      this.addProjectDecision(project.id, '领导选择继续等，我放宽了预期');
+      project.estimateNote = uiText.t('main.director.status.estimateContinuedWait');
+      this.addProjectDecision(project.id, uiText.t('main.director.status.decisionKeepWaiting'));
       this.scheduleSave('projects');
       return { ok: true };
     }
@@ -4353,7 +4356,7 @@ class DirectorService {
     // 点“继续跑”就延长预期，过 6 分钟再按实际进度报一次。
     if (item.payload?.kind === 'project-time') {
       const project = this.projects.get(idOf(item.payload?.projectId));
-      if (!project) return { ok: false, error: '这个项目档案已经不在了' };
+      if (!project) return { ok: false, error: uiText.t('main.director.error.projectGone') };
       item.status = 'resolved';
       item.resolution = action === 'approve' ? 'approve' : 'dismiss';
       item.read = true;
@@ -4363,16 +4366,16 @@ class DirectorService {
         const taskId =
           project.taskIds.find((id) => this.tasks.has(id)) || project.taskIds[0] || '';
         project.lastReportAt = Date.now();
-        project.lastReport = '领导要进项目看当前进度';
-        this.addProjectDecision(project.id, '领导要进项目看当前进度');
+        project.lastReport = uiText.t('main.director.status.reportOpenedProject');
+        this.addProjectDecision(project.id, uiText.t('main.director.status.decisionOpenProject'));
         this.scheduleSave('projects');
         return taskId ? { ok: true, openTask: taskId } : { ok: true };
       }
       // 继续跑：把预期放宽到“已用 + 一半”，给项目一个更符合现状的参照。
       const elapsed = Date.now() - project.startedAt;
       project.estimateMs = Math.max(project.estimateMs, Math.round(elapsed * 1.5));
-      project.estimateNote = '按领导的“继续跑”调整了预期';
-      this.addProjectDecision(project.id, '领导选择继续跑，我放宽了预期');
+      project.estimateNote = uiText.t('main.director.status.estimateContinueRun');
+      this.addProjectDecision(project.id, uiText.t('main.director.status.decisionKeepRunning'));
       this.scheduleSave('projects');
       return { ok: true };
     }
@@ -4395,11 +4398,11 @@ class DirectorService {
       const instruction = this.instructions.find(
         (entry) => entry.id === String(item.payload?.instructionId ?? ''),
       );
-      if (!instruction) return { ok: false, error: '对应的指令已经不在了' };
+      if (!instruction) return { ok: false, error: uiText.t('main.director.error.instructionGone') };
       instruction.state = 'accepted';
       instruction.finishedAt = Date.now();
       instruction.unverified = false;
-      instruction.resultNote = '用户确认通过';
+      instruction.resultNote = uiText.t('main.director.status.userApproved');
       item.status = 'resolved';
       item.resolution = 'accept';
       item.read = true;
@@ -4407,7 +4410,7 @@ class DirectorService {
         kind: 'accept:pass',
         taskId,
         title: item.taskTitle,
-        text: '用户确认通过',
+        text: uiText.t('main.director.status.userApproved'),
       });
       this.scheduleSave('instructions');
       this.scheduleSave('inbox');
@@ -4422,11 +4425,11 @@ class DirectorService {
       const instruction = this.instructions.find(
         (entry) => entry.id === String(item.payload?.instructionId ?? ''),
       );
-      if (!instruction) return { ok: false, error: '对应的指令已经不在了' };
+      if (!instruction) return { ok: false, error: uiText.t('main.director.error.instructionGone') };
       instruction.state = 'accepted';
       instruction.finishedAt = Date.now();
       instruction.unverified = false;
-      instruction.resultNote = '用户看过交付后按现状收尾（未验证）';
+      instruction.resultNote = uiText.t('main.director.status.userSettledUnverified');
       item.status = 'resolved';
       item.resolution = 'accept';
       item.read = true;
@@ -4434,7 +4437,7 @@ class DirectorService {
         kind: 'accept:user-settled',
         taskId,
         title: item.taskTitle,
-        text: '用户按现状收尾（未验证）',
+        text: uiText.t('main.director.status.userSettledLedger'),
       });
       this.scheduleSave('instructions');
       this.scheduleSave('inbox');
@@ -4447,7 +4450,7 @@ class DirectorService {
       const instruction = this.instructions.find(
         (entry) => entry.id === String(item.payload?.instructionId ?? '') || entry.id === String(value ?? ''),
       );
-      if (!instruction) return { ok: false, error: '对应的指令已经不在了' };
+      if (!instruction) return { ok: false, error: uiText.t('main.director.error.instructionGone') };
       let queued = null;
       if (action === 'abandon') {
         instruction.state = 'discarded';
@@ -4457,7 +4460,7 @@ class DirectorService {
         // 原要求它有。只把上次没过的缺口给它，并给一个时间上限，避免又去
         // 搭一整套测试环境、把全项目重审一遍。
         const gap = String(instruction.resultNote || '')
-          .replace(/^未验证[:：]\s*/, '')
+          .replace(/(?:未验证[:：]|unverified[:：])\s*/i, '')
           .trim();
         const reworkText = [
           '只补上次验收指出的缺口，不要重做已经通过的部分，也不要把整个项目重新审查一遍。',
@@ -4483,7 +4486,7 @@ class DirectorService {
           approved: true,
         });
         // 没排进去就不能把卡片标成“已返工”，否则用户以为重跑了，实际什么都没发。
-        if (!queued.ok) return { ok: false, error: queued.error || '没能把返工排进队列' };
+        if (!queued.ok) return { ok: false, error: queued.error || uiText.t('main.director.error.reworkEnqueueFailed') };
         instruction.state = 'discarded';
         instruction.finishedAt = Date.now();
       }
@@ -4493,13 +4496,13 @@ class DirectorService {
       this.ledgerPush({ kind: `accept:${action}`, taskId, title: item.taskTitle, text: '' });
       // 点“再跑一次”之后要立刻回一句：用户等的是“活动起来了”，不是一张变灰的卡片。
       if (action === 'rework') {
-        const label = oneLine(item.taskTitle || instruction.taskTitle || '这个任务', 120);
+        const label = oneLine(item.taskTitle || instruction.taskTitle || uiText.t('main.director.notice.thisTask'), 120);
         this.addInbox({
           kind: 'report',
-          title: '返工已安排',
+          title: uiText.t('main.director.notice.reworkScheduledTitle'),
           body: queued?.duplicate
-            ? `「${label}」这条已经在队列里了，我不重复下发；跑完我直接看结果。`
-            : `「${label}」我让他按这一轮的缺口重跑一遍，跑完我直接看结果，有问题再叫他返工。`,
+            ? uiText.t('main.director.notice.reworkScheduledDuplicate', { task: label })
+            : uiText.t('main.director.notice.reworkScheduledBody', { task: label }),
           taskId,
           taskTitle: item.taskTitle,
         });
@@ -4512,7 +4515,7 @@ class DirectorService {
       return { ok: true };
     }
 
-    return { ok: false, error: '未知操作' };
+    return { ok: false, error: uiText.t('main.director.error.unknownAction') };
   }
 
   /* ------------------------------------------------------------------ */
@@ -4552,15 +4555,15 @@ class DirectorService {
     originalBudgetMinutes = 0,
   }) {
     const state = this.getState();
-    if (!state.enabled) return { ok: false, error: '工作总监未启用' };
+    if (!state.enabled) return { ok: false, error: uiText.t('main.director.error.disabled') };
     const id = idOf(taskId);
     const task = this.taskOf(id);
-    if (!task) return { ok: false, error: '找不到这个任务' };
+    if (!task) return { ok: false, error: uiText.t('main.director.error.taskNotFound') };
     if (!this.writable(id)) {
-      return { ok: false, error: '这个工作空间不在总监的分管范围内' };
+      return { ok: false, error: uiText.t('main.director.error.spaceOutOfScope') };
     }
     const body = String(text ?? '').trim();
-    if (!body) return { ok: false, error: '指令不能为空' };
+    if (!body) return { ok: false, error: uiText.t('main.director.error.instructionEmpty') };
 
     // 同一条指令还在排队/执行/返工/等确认时，再下一次就是重复劳动：
     // 工人会跑两遍，验收会出两张卡。按「任务 + 正文」去重。
@@ -4619,15 +4622,15 @@ class DirectorService {
     // observe never instructs, suggest asks before anything goes out.
     if (source === 'director' && !approved) {
       if (state.mode === 'observe') {
-        return { ok: false, error: '当前是观察级别：只能提醒，不能给工人下指令' };
+        return { ok: false, error: uiText.t('main.director.error.observeNoInstruct') };
       }
       if (state.mode === 'suggest') {
         this.addConfirm(id, {
-          title: '我建议给工人下一条指令',
-          body: `「${task.title}」：${clip(body, 500)}${criteria ? `\n验收：${clip(criteria, 200)}` : ''}`,
+          title: uiText.t('main.director.confirm.instructTitle'),
+          body: uiText.t('main.director.confirm.instructBody', { title: task.title, text: clip(body, 500), criteria: criteria ? `\n${uiText.t('main.director.confirm.criteriaLine', { criteria: clip(criteria, 200) })}` : '' }),
           actions: [
-            { id: 'approve', label: '同意下发', style: 'primary' },
-            { id: 'dismiss', label: '不用' },
+            { id: 'approve', label: uiText.t('main.director.action.approveInstruct'), style: 'primary' },
+            { id: 'dismiss', label: uiText.t('main.director.action.notNeeded') },
           ],
           payload: {
             kind: 'instruction',
@@ -4800,7 +4803,7 @@ class DirectorService {
       const taskId = instruction.taskId;
       if (!this.writable(taskId)) {
         // 空间不在分管范围、或者任务已经被删掉：这不是"等一下就好"，必须开口。
-        this.askBlocked(instruction, '这个任务已经不存在，或者它的工作空间不在我的分管范围里');
+        this.askBlocked(instruction, uiText.t('main.director.notice.drainTaskGone'));
         continue;
       }
       if (this.runs.has(taskId)) continue;
@@ -4812,7 +4815,7 @@ class DirectorService {
         if (instruction.role !== 'verify') {
           this.askBlocked(
             instruction,
-            `同时在跑的员工已经到上限（${maxDispatch} 个），这一条一直在排队`,
+            uiText.t('main.director.notice.drainQueueFull', { max: maxDispatch }),
             QUEUED_ALERT_MS,
           );
         }
@@ -4872,15 +4875,15 @@ class DirectorService {
     instruction.alertedAt = Date.now();
     const task = this.taskOf(instruction.taskId);
     this.addConfirm(instruction.taskId, {
-      title: '重启前有条删除类指令没跑完',
+      title: uiText.t('main.director.confirm.restoredTitle'),
       body: [
-        `「${task?.title ?? instruction.taskTitle ?? '任务'}」这条指令是上次关应用前没执行的：`,
-        `指令内容：${clip(instruction.text, 500)}`,
-        '删除不可逆，重启后我没有自动续跑。要继续就点「继续执行」；不想做了点「放弃」。',
+        uiText.t('main.director.confirm.restoredTaskLine', { task: task?.title ?? instruction.taskTitle ?? uiText.t('main.director.common.task') }),
+        uiText.t('main.director.confirm.instructionLine', { text: clip(instruction.text, 500) }),
+        uiText.t('main.director.confirm.restoredWarning'),
       ].join('\n'),
       actions: [
-        { id: 'resume', label: '继续执行', style: 'primary' },
-        { id: 'abandon', label: '放弃', style: 'danger' },
+        { id: 'resume', label: uiText.t('main.director.action.resume'), style: 'primary' },
+        { id: 'abandon', label: uiText.t('main.director.action.abandon'), style: 'danger' },
       ],
       payload: { kind: 'restored', instructionId: instruction.id },
       urgent: true,
@@ -4889,7 +4892,7 @@ class DirectorService {
       kind: 'instruction:blocked',
       taskId: instruction.taskId,
       title: instruction.taskTitle,
-      text: '重启前的删除类指令，等用户确认是否继续',
+      text: uiText.t('main.director.status.restoredWaiting'),
     });
     this.scheduleSave('instructions');
   }
@@ -4918,17 +4921,17 @@ class DirectorService {
     const task = this.taskOf(instruction.taskId);
     const detail = task
       ? reason
-      : '这个任务已经不存在了（会话或工作空间被删掉），我没法把指令送进去';
+      : uiText.t('main.director.notice.taskGoneDetail');
     this.addConfirm(instruction.taskId, {
-      title: '这条指令没能执行，需要你定一下',
+      title: uiText.t('main.director.confirm.blockedTitle'),
       body: [
-        `「${instruction.taskTitle || task?.title || '任务'}」${detail}。`,
-        `指令内容：${clip(instruction.text, 300)}`,
-        '要我重试就点「再试一次」；如果缺的是写权限，先去「分管范围」把那个空间交给我，再点重试。不想做了就点「放弃」。',
+        uiText.t('main.director.confirm.blockedTaskLine', { title: instruction.taskTitle || task?.title || uiText.t('main.director.common.task'), detail }),
+        uiText.t('main.director.confirm.instructionLine', { text: clip(instruction.text, 300) }),
+        uiText.t('main.director.confirm.blockedHint'),
       ].join('\n'),
       actions: [
-        { id: 'rework', label: '再试一次', style: 'primary' },
-        { id: 'abandon', label: '放弃', style: 'danger' },
+        { id: 'rework', label: uiText.t('main.director.action.retry'), style: 'primary' },
+        { id: 'abandon', label: uiText.t('main.director.action.abandon'), style: 'danger' },
       ],
       payload: { instructionId: instruction.id, blocked: detail },
       urgent: true,
@@ -4955,7 +4958,7 @@ class DirectorService {
 
   instructionAck({ id, ok, error }) {
     const instruction = this.instructions.find((entry) => entry.id === String(id ?? ''));
-    if (!instruction) return { ok: false, error: '这条指令已经不存在' };
+    if (!instruction) return { ok: false, error: uiText.t('main.director.error.instructionMissing') };
     this.pendingDelivery.delete(instruction.taskId);
     if (ok) {
       instruction.deliveredAt = Date.now();
@@ -4972,11 +4975,11 @@ class DirectorService {
       if (instruction.failures >= 3) {
         instruction.state = 'escalated';
         this.addConfirm(instruction.taskId, {
-          title: '指令没能下发',
-          body: `「${instruction.taskTitle}」连续 ${instruction.failures} 次没能开始执行。${instruction.note}`,
+          title: uiText.t('main.director.confirm.deliverFailedTitle'),
+          body: uiText.t('main.director.confirm.deliverFailedBody', { title: instruction.taskTitle, count: instruction.failures, note: instruction.note }),
           actions: [
-            { id: 'rework', label: '再试一次', style: 'primary' },
-            { id: 'abandon', label: '放弃', style: 'danger' },
+            { id: 'rework', label: uiText.t('main.director.action.retry'), style: 'primary' },
+            { id: 'abandon', label: uiText.t('main.director.action.abandon'), style: 'danger' },
           ],
           payload: { instructionId: instruction.id },
           urgent: true,
@@ -5011,14 +5014,14 @@ class DirectorService {
     force = false,
   }) {
     const state = this.getState();
-    if (!state.enabled) return { ok: false, error: '工作总监未启用' };
+    if (!state.enabled) return { ok: false, error: uiText.t('main.director.error.disabled') };
     if (state.mode === 'observe') {
-      return { ok: false, error: '当前是观察级别：只能提醒，不能给员工派任务' };
+      return { ok: false, error: uiText.t('main.director.error.observeNoDispatch') };
     }
     const list = (Array.isArray(employees) ? employees : [])
       .map((item, index) => normalizeEmployee(item, index))
       .filter(Boolean);
-    if (list.length === 0) return { ok: false, error: '没有可以派给员工的任务' };
+    if (list.length === 0) return { ok: false, error: uiText.t('main.director.error.noEmployeeTasks') };
     // 长篇流程会让员工把时间花在自证上：先让总监把指令压短再派。
     for (const employee of list) {
       if (employee.role === 'verify') continue;
@@ -5041,7 +5044,7 @@ class DirectorService {
       // 总监多半会原样再派一次；直接把“按真实入口跑一次”补在后面更有效。
       const criteria = String(employee.criteria ?? '').trim();
       if (criteria.length > 0 && criteria.length <= 8 && !OBSERVABLE_CRITERIA.test(criteria)) {
-        employee.criteria = `${criteria}（按真实入口启动一次，命令和输出写进证据）`;
+        employee.criteria = uiText.t('main.director.notice.criteriaTail', { criteria });
       }
     }
     if (list.length > director.MAX_EMPLOYEES_PER_DISPATCH) {
@@ -5138,7 +5141,7 @@ class DirectorService {
     if (spaceId) this.ensureEnvCard(spaceId);
     const draft = {
       workspaceId: spaceId,
-      title: oneLine(title, 120) || '未命名分配',
+      title: oneLine(title, 120) || uiText.t('main.director.common.untitledDispatch'),
       employees: list,
       shared: clip(shared, 1200),
       /** 所有人共同遵守的接口/边界；多人并行时必填。 */
@@ -5155,21 +5158,21 @@ class DirectorService {
     // 工作空间选择卡，列出全部空间（含在线空间），选完自动派工。
     if (!spaceId || director.accessFor(state, spaceId) !== 'write') {
       this.addConfirm('', {
-        title: '用哪个工作空间？',
+        title: uiText.t('main.director.confirm.chooseWorkspaceTitle'),
         body: [
-          `「${draft.title}」`,
+          uiText.t('main.director.confirm.quotedTitle', { title: draft.title }),
           ...list.map(
-            (employee) =>
-              `- ${employee.name}：${oneLine(employee.task, 120)}${
-                employee.agentId ? `（Agent：${employee.agentId}）` : ''
-              }`,
+            (employee) => uiText.t('main.director.confirm.employeeLine', { name: employee.name, task: oneLine(employee.task, 120), agent: employee.agentId ? uiText.t('main.director.confirm.agentSuffix', { id: employee.agentId }) : '' }),
+              
+                
+
           ),
-          draft.shared ? `\n协作约定：${oneLine(draft.shared, 200)}` : '',
-          spaceId ? '\n指定的工作空间没有交给我写入，请重新选一个。' : '\n选一个工作空间，我就按上面的分工派工。',
+          draft.shared ? `\n${uiText.t('main.director.confirm.sharedLine', { shared: oneLine(draft.shared, 200) })}` : '',
+          spaceId ? `\n${uiText.t('main.director.confirm.workspaceNotGranted')}` : `\n${uiText.t('main.director.confirm.workspacePickHint')}`,
         ]
           .filter(Boolean)
           .join('\n'),
-        actions: [{ id: 'dismiss', label: '先不派' }],
+        actions: [{ id: 'dismiss', label: uiText.t('main.director.action.dontDispatch') }],
         payload: { kind: 'workspace', draft },
       });
       return {
@@ -5181,22 +5184,22 @@ class DirectorService {
 
     if (state.mode === 'suggest' && !approved) {
       this.addConfirm('', {
-        title: '我建议把这件拆给员工',
+        title: uiText.t('main.director.confirm.dispatchTitle'),
         body: [
-          `「${draft.title}」`,
+          uiText.t('main.director.confirm.quotedTitle', { title: draft.title }),
           ...list.map(
-            (employee) =>
-              `- ${employee.name}：${oneLine(employee.task, 120)}${
-                employee.agentId ? `（Agent：${employee.agentId}）` : ''
-              }`,
+            (employee) => uiText.t('main.director.confirm.employeeLine', { name: employee.name, task: oneLine(employee.task, 120), agent: employee.agentId ? uiText.t('main.director.confirm.agentSuffix', { id: employee.agentId }) : '' }),
+              
+                
+
           ),
-          draft.shared ? `\n协作约定：${oneLine(draft.shared, 200)}` : '',
+          draft.shared ? `\n${uiText.t('main.director.confirm.sharedLine', { shared: oneLine(draft.shared, 200) })}` : '',
         ]
           .filter(Boolean)
           .join('\n'),
         actions: [
-          { id: 'approve', label: '同意派工', style: 'primary' },
-          { id: 'dismiss', label: '不用' },
+          { id: 'approve', label: uiText.t('main.director.action.approveDispatch'), style: 'primary' },
+          { id: 'dismiss', label: uiText.t('main.director.action.notNeeded') },
         ],
         payload: { kind: 'dispatch', draft },
       });
@@ -5268,7 +5271,7 @@ class DirectorService {
   spawnAck({ dispatchId, items = [] }) {
     const id = String(dispatchId ?? '');
     const spawn = this.spawns.get(id);
-    if (!spawn) return { ok: false, error: '这次分配已经收尾或不存在' };
+    if (!spawn) return { ok: false, error: uiText.t('main.director.error.dispatchGone') };
     // 验收员的一次性检查不是项目：不建档案、不参与项目对账和跨项目检查。
     // 以前给 dspv_ 建了项目，开工 0.6 秒就被脉搏收口，台账里多出一条
     // “计划 1 人 0 分钟 → 实际 1 人 1 分钟”的假记录。
@@ -5305,8 +5308,8 @@ class DirectorService {
       if (!item.ok) {
         this.addInbox({
           kind: 'alert',
-          title: '员工任务没能建立',
-          body: `「${spawn.title}」里的「${employee.name}」没有建成：${oneLine(item.error, 200) || '未知原因'}`,
+          title: uiText.t('main.director.notice.employeeTaskFailedTitle'),
+          body: uiText.t('main.director.notice.employeeTaskFailedBody', { dispatch: spawn.title, employee: employee.name, reason: oneLine(item.error, 200) || uiText.t('main.director.notice.noReason') }),
           taskId: '',
           urgent: true,
         });
@@ -5317,7 +5320,7 @@ class DirectorService {
       // 主进程的任务板由界面推送；新任务先按回执登记，验收时才有地方查。
       this.tasks.set(taskId, {
         id: taskId,
-        title: oneLine(item.title, 120) || `${employee.name} · ${oneLine(employee.task, 40)}`,
+        title: oneLine(item.title, 120) || uiText.t('main.director.notice.employeeTaskTitle', { name: employee.name, task: oneLine(employee.task, 40) }),
         space: oneLine(item.space, 120),
         workspaceId: String(item.workspaceId ?? spawn.workspaceId),
         workspacePath: String(item.workspacePath ?? ''),
@@ -5377,8 +5380,8 @@ class DirectorService {
       } else {
         this.addInbox({
           kind: 'alert',
-          title: '员工任务没能开始',
-          body: `「${spawn.title}」里的「${employee.name}」排队失败：${result.error}`,
+          title: uiText.t('main.director.notice.employeeTaskQueueFailedTitle'),
+          body: uiText.t('main.director.notice.employeeTaskQueueFailedBody', { dispatch: spawn.title, employee: employee.name, reason: result.error }),
           taskId,
           urgent: true,
         });
@@ -5388,7 +5391,7 @@ class DirectorService {
     this.ledgerPush({
       kind: 'dispatch:ack',
       title: spawn.title,
-      text: `已建立 ${created} 个员工任务`,
+      text: uiText.t('main.director.notice.tasksCreated', { count: created }),
     });
     this.drain();
     return { ok: true, created };
@@ -5402,10 +5405,10 @@ class DirectorService {
       this.spawns.delete(id);
       this.addInbox({
         kind: 'alert',
-        title: '分配没有建立起来',
-        body: `「${spawn.title}」的员工任务等了 ${Math.round(
-          DISPATCH_ACK_MS / 1000,
-        )} 秒还没建出来。可能是界面刚重载，或工作空间已经被删除。`,
+        title: uiText.t('main.director.notice.dispatchNotBuiltTitle'),
+        body: uiText.t('main.director.notice.dispatchNotBuiltBody', { title: spawn.title, seconds: Math.round(DISPATCH_ACK_MS / 1000) }),
+
+
         urgent: true,
       });
     }
@@ -5442,27 +5445,27 @@ class DirectorService {
       return;
     }
 
-    const title = group[0].dispatchTitle || '分配的任务';
+    const title = group[0].dispatchTitle || uiText.t('main.director.common.dispatchTask');
     const failed = final.filter((item) => item.state === 'escalated' && !item.unverified);
     // 自动按现状收尾的也算“未验证”：标题要如实标出来，别让领导以为全都验过了。
     const unverified = final.filter((item) => item.unverified);
     const held = final.filter((item) => item.state === 'held');
     const lines = final.map((item) => {
-      const name = item.employeeName || '员工';
-      return `- ${name}：${this.dispatchStatusLabel(item)}${
+      const name = item.employeeName || uiText.t('main.director.common.employee');
+      return uiText.t('main.director.report.employeeLine', { name, status: this.dispatchStatusLabel(item), note:
         item.resultNote ? ` · ${oneLine(item.resultNote, 200)}` : ''
-      }`;
+      });
     });
     const files = mergeDeliveredFiles(...group.map((item) => item.files));
     const needsAttention = failed.length > 0 || unverified.length > 0 || held.length > 0;
-    const reportTitle =
-      failed.length > 0
-        ? '分配结束，有员工没通过验收'
-        : held.length > 0
-          ? '分配结束，有员工等你确认'
-          : unverified.length > 0
-            ? '分配结束，有员工未验证'
-            : '分配的任务全部完成';
+    const reportTitle = failed.length > 0 ? uiText.t('main.director.report.dispatchFailedTitle') : held.length > 0 ? uiText.t('main.director.report.dispatchHeldTitle') : unverified.length > 0 ? uiText.t('main.director.report.dispatchUnverifiedTitle') : uiText.t('main.director.report.dispatchDoneTitle');
+
+
+
+
+
+
+
     const payload = {
       // 派工已经收口：哪怕有员工没验证或等你确认，这一轮也不再占着界面上的
       // 待办；有问题的员工单独写在汇总里。只有“没通过”才留着计划让人看。
@@ -5475,9 +5478,9 @@ class DirectorService {
       (item) => item.payload?.summary === true && item.payload?.dispatchId === group[0].dispatchId,
     );
     const leftover = leftoverArtifacts(this.workspaceRootOf(this.taskOf(group[0].taskId)));
-    const body = `「${title}」\n${lines.join('\n')}${
-      leftover.length ? `\n（测试残留：${leftover.join('、')}，要清理的话说一声）` : ''
-    }`;
+    const body = uiText.t('main.director.report.dispatchBody', { title, lines: lines.join('\n'), leftover:
+      leftover.length ? uiText.t('main.director.report.leftover', { items: leftover.join(uiText.t('main.director.report.listSeparator')) }) : ''
+    });
     if (existing) {
       existing.title = reportTitle;
       existing.body = body;
@@ -5522,7 +5525,7 @@ class DirectorService {
       project.updatedAt = Date.now();
       this.addProjectDecision(
         project.id,
-        `收口：${final.length} 个员工，${unverified.length} 个未验证，${held.length} 个等你确认`,
+        uiText.t('main.director.status.decisionClosed', { total: final.length, unverified: unverified.length, held: held.length }),
       );
       this.scheduleSave('projects');
     }
@@ -5557,7 +5560,7 @@ class DirectorService {
       instruction.state = 'accepted';
       instruction.finishedAt = now;
       instruction.unverified = true;
-      instruction.resultNote = '等不到人：按现状收尾（未验证）';
+      instruction.resultNote = uiText.t('main.director.status.settledNoOne');
       item.status = 'resolved';
       item.resolution = 'accept';
       item.read = true;
@@ -5618,7 +5621,7 @@ class DirectorService {
       if (!plan || plan.employees.length === 0) continue;
       const draft = {
         dispatchId,
-        title: group[0].dispatchTitle || '分配的任务',
+        title: group[0].dispatchTitle || uiText.t('main.director.common.dispatchTask'),
         workspaceId: this.taskOf(group[0].taskId)?.workspaceId ?? '',
         shared: plan.shared,
         employees: plan.employees,
@@ -5628,16 +5631,16 @@ class DirectorService {
 
       if (state.mode === 'suggest') {
         this.addConfirm('', {
-          title: '有员工偏慢，我建议再拆一步',
+          title: uiText.t('main.director.confirm.splitTitle'),
           body: [
-            `「${draft.title}」还有 ${active.length} 个员工在跑，别的已经完成。`,
+            uiText.t('main.director.confirm.splitBody', { title: draft.title, count: active.length }),
             ...draft.employees.map(
-              (employee) => `- 新增 ${employee.name}：${oneLine(employee.task, 120)}`,
+              (employee) => uiText.t('main.director.confirm.splitEmployeeLine', { name: employee.name, task: oneLine(employee.task, 120) }),
             ),
           ].join('\n'),
           actions: [
-            { id: 'approve', label: '同意再派人', style: 'primary' },
-            { id: 'dismiss', label: '不用' },
+            { id: 'approve', label: uiText.t('main.director.action.approveSplit'), style: 'primary' },
+            { id: 'dismiss', label: uiText.t('main.director.action.notNeeded') },
           ],
           payload: { kind: 'split', draft },
         });
@@ -5656,7 +5659,7 @@ class DirectorService {
         '判断剩下的活能不能再拆给新员工并行做，能拆就拆。' +
         '不要派新员工去改正在被别的员工改的同一批文件；要帮就做不重叠的部分，或者只做验收/取证。' +
         '只回答一行 JSON：{"split": true, "shared": "协作约定，可空", "employees": [{"name":"员工X","task":"具体做什么","criteria":"验收标准"}]}。' +
-        `最多 ${slots} 个新员工。不能拆、或者拆了会互相踩，就回答 {"split": false}。不要写别的。`,
+        `最多 ${slots} 个新员工。不能拆、或者拆了会互相踩，就回答 {"split": false}。不要写别的。` + uiLanguageHint(),
       user: [
         `分配：${group[0].dispatchTitle || '未命名'}`,
         '已经完成的：',
@@ -5682,15 +5685,15 @@ class DirectorService {
   /** 慢任务拆分 / 续派：和第一次派工走同一条广播和回执。 */
   spawnEmployees({ dispatchId, title, workspaceId, shared, employees }) {
     const state = this.getState();
-    if (!state.enabled) return { ok: false, error: '工作总监未启用' };
-    if (!workspaceId) return { ok: false, error: '找不到这次分配的工作空间' };
+    if (!state.enabled) return { ok: false, error: uiText.t('main.director.error.disabled') };
+    if (!workspaceId) return { ok: false, error: uiText.t('main.director.error.dispatchWorkspaceGone') };
     if (director.accessFor(state, workspaceId) !== 'write') {
-      return { ok: false, error: '这个工作空间不在总监的分管范围内（需要写权限）' };
+      return { ok: false, error: uiText.t('main.director.error.spaceOutOfScopeWrite') };
     }
     const list = (Array.isArray(employees) ? employees : [])
       .map((item, index) => normalizeEmployee(item, index))
       .filter(Boolean);
-    if (list.length === 0) return { ok: false, error: '没有可以派出的新员工' };
+    if (list.length === 0) return { ok: false, error: uiText.t('main.director.error.noNewEmployees') };
     const payload = {
       dispatchId,
       title,
@@ -5722,11 +5725,11 @@ class DirectorService {
    */
   offerModelChoice({ taskId, reason = '', instructionId = '' }) {
     const state = this.getState();
-    if (!state.enabled) return { ok: false, error: '工作总监未启用' };
+    if (!state.enabled) return { ok: false, error: uiText.t('main.director.error.disabled') };
     const id = idOf(taskId);
     const task = this.taskOf(id);
-    if (!task) return { ok: false, error: '找不到这个任务' };
-    if (!this.monitored(id)) return { ok: false, error: '这个工作空间没有对总监开放' };
+    if (!task) return { ok: false, error: uiText.t('main.director.error.taskNotFound') };
+    if (!this.monitored(id)) return { ok: false, error: uiText.t('main.director.error.spaceNotOpen') };
     // 总监主动调用时不知道是哪条指令：找这个任务里最近一条还没收尾的。
     let retryId = String(instructionId ?? '');
     if (!retryId) {
@@ -5737,7 +5740,7 @@ class DirectorService {
             entry.taskId === id &&
             entry.source !== 'user' &&
             (['delivered', 'rework', 'escalated'].includes(entry.state) ||
-              (entry.state === 'discarded' && /模型/.test(entry.note ?? ''))),
+              (entry.state === 'discarded' && /(?:模型|model)/i.test(entry.note ?? ''))),
         );
       retryId = latest?.id ?? '';
     }
@@ -5754,13 +5757,13 @@ class DirectorService {
     }
     const detail = oneLine(reason, 300);
     const item = this.addConfirm(id, {
-      title: '任务没跑起来：换一个模型？',
+      title: uiText.t('main.director.confirm.modelTitle'),
       body: [
-        `「${task.title}」这一轮没有跑起来。`,
-        detail ? `原因：${detail}` : '没有留下具体原因。',
-        '选一个模型，我就按原来的要求让它重试；也可以先不管。',
+        uiText.t('main.director.confirm.modelBody', { title: task.title }),
+        detail ? uiText.t('main.director.confirm.modelReason', { reason: detail }) : uiText.t('main.director.confirm.modelNoReason'),
+        uiText.t('main.director.confirm.modelHint'),
       ].join('\n'),
-      actions: [{ id: 'dismiss', label: '先不管' }],
+      actions: [{ id: 'dismiss', label: uiText.t('main.director.action.ignoreForNow') }],
       payload: {
         kind: 'model',
         taskId: id,
@@ -5772,7 +5775,7 @@ class DirectorService {
       kind: 'model:offer',
       taskId: id,
       title: task.title,
-      text: detail || '模型没有跑起来',
+      text: detail || uiText.t('main.director.status.modelNotStarted'),
     });
     return {
       ok: true,
@@ -5792,27 +5795,27 @@ class DirectorService {
     instruction.finishedAt = Date.now();
     instruction.files = files;
     instruction.unverified = true;
-    instruction.resultNote = '删除类任务：等用户确认';
+    instruction.resultNote = uiText.t('main.director.status.deleteHold');
     this.ledgerPush({
       kind: 'accept:hold',
       taskId: instruction.taskId,
       title: task?.title ?? instruction.taskTitle,
-      text: reason || '删除类任务不做自动验收',
+      text: reason || uiText.t('main.director.status.deleteNoAutoVerify'),
     });
     const evidence = clip(String(tail ?? '').trim(), 800);
     this.addConfirm(instruction.taskId, {
-      title: '删除类任务：结果在这，等你点头',
+      title: uiText.t('main.director.confirm.deleteTitle'),
       body: [
-        `「${task?.title ?? instruction.taskTitle}」跑完了${reason ? `（${reason}）` : ''}。`,
-        check ? `\n可核对的事实：\n${check}\n` : '',
-        evidence ? `\n工人的回复：\n${markdownTail(evidence)}\n` : '',
-        '删除不可逆，我这边没拿到判断，不能替你判“通过”。',
-        '清点一下：该删的删了没有、不该删的还在不在。没问题就点「确认通过」，要补就点「再跑一次」。',
+        uiText.t('main.director.confirm.deleteBody', { title: task?.title ?? instruction.taskTitle, reason: reason ? uiText.t('main.director.report.reasonSuffix', { reason }) : '' }),
+        check ? `\n${uiText.t('main.director.report.factHeading')}\n${check}\n` : '',
+        evidence ? `\n${uiText.t('main.director.report.workerReplyHeading')}\n${markdownTail(evidence)}\n` : '',
+        uiText.t('main.director.confirm.deleteWarning'),
+        uiText.t('main.director.confirm.deleteHint'),
       ].join('\n'),
       actions: [
-        { id: 'accept', label: '确认通过', style: 'primary' },
-        { id: 'rework', label: '再跑一次' },
-        { id: 'abandon', label: '放弃', style: 'danger' },
+        { id: 'accept', label: uiText.t('main.director.action.confirmPass'), style: 'primary' },
+        { id: 'rework', label: uiText.t('main.director.action.runAgain') },
+        { id: 'abandon', label: uiText.t('main.director.action.abandon'), style: 'danger' },
       ],
       payload: { kind: 'accept-hold', instructionId: instruction.id },
       urgent: true,
@@ -5832,32 +5835,32 @@ class DirectorService {
    */
   reportUnverified(instruction, { files = [], tail = '', check = '', reason = '', ok = true } = {}) {
     const task = this.taskOf(instruction.taskId);
-    const title = task?.title ?? instruction.taskTitle ?? '任务';
+    const title = task?.title ?? instruction.taskTitle ?? uiText.t('main.director.common.task');
     instruction.state = 'escalated';
     instruction.finishedAt = Date.now();
     instruction.files = files;
     instruction.unverified = true;
     instruction.verdict = 'unverified';
     instruction.resultNote = oneLine(
-      reason ? `未验证：${reason}` : '未验证（我没拿到结论）',
+      reason ? uiText.t('main.director.status.unverifiedReason', { reason }) : uiText.t('main.director.status.unverifiedNoConclusion'),
       200,
     );
     this.ledgerPush({
       kind: 'accept:unverified',
       taskId: instruction.taskId,
       title,
-      text: reason || '我没拿到验收判断',
+      text: reason || uiText.t('main.director.status.noVerdict'),
     });
     const evidence = clip(String(tail ?? '').trim(), 700);
     this.updateDeliveryMessage(instruction, {
-      title: `「${title}」没验成，记作未验证`,
+      title: uiText.t('main.director.report.unverifiedTitle', { title }),
       note: [
-        `这一轮${ok ? '正常结束了' : '没有正常结束'}，但我没拿到明确结论${
-          reason ? `（${reason}）` : ''
-        }。`,
-        '我没有把它算成通过，也不会让你替我验。',
-        check ? `\n可核对的事实：\n${check}` : '',
-        evidence ? `\n工人的回复：\n${markdownTail(evidence)}` : '',
+        uiText.t('main.director.report.unverifiedIntro', { state: ok ? uiText.t('main.director.status.endedNormally') : uiText.t('main.director.status.endedAbnormally'), reason:
+          reason ? uiText.t('main.director.report.reasonSuffix', { reason }) : ''
+        }),
+        uiText.t('main.director.report.unverifiedNoPass'),
+        check ? `\n${uiText.t('main.director.report.factHeading')}\n${check}` : '',
+        evidence ? `\n${uiText.t('main.director.report.workerReplyHeading')}\n${markdownTail(evidence)}` : '',
       ]
         .filter(Boolean)
         .join('\n'),
@@ -5880,8 +5883,8 @@ class DirectorService {
     if (!root) {
       return {
         text: files.length
-          ? `这一轮记录了 ${files.length} 个交付文件，但任务没有本地路径（可能是远程空间），无法核对磁盘。`
-          : '这一轮没有记录到交付文件。',
+          ? uiText.t('main.director.report.filesRemote', { count: files.length })
+          : uiText.t('main.director.report.noFiles'),
         total: files.length,
         found: 0,
         unknown: files.length > 0,
@@ -5910,19 +5913,19 @@ class DirectorService {
       if (present && size === 0 && String(file?.kind ?? '') !== 'directory') empty += 1;
       lines.push(
         present
-          ? `✅ ${rel}${size > 0 ? `（${formatSize(size)}）` : '（目录）'}`
-          : `❌ ${rel}：磁盘上找不到`,
+          ? uiText.t('main.director.report.filePresentLine', { path: rel, suffix: size > 0 ? uiText.t('main.director.report.sizeSuffix', { size: formatSize(size) }) : uiText.t('main.director.report.dirSuffix') })
+          : uiText.t('main.director.report.fileMissing', { path: rel }),
       );
     }
     if (lines.length === 0) {
-      return { text: '这一轮没有记录到交付文件。', total: 0, found: 0, unknown: false };
+      return { text: uiText.t('main.director.report.noFiles'), total: 0, found: 0, unknown: false };
     }
     const notes = [
-      `交付文件：磁盘上找到 ${found}/${lines.length} 个${
-        empty > 0 ? `，其中 ${empty} 个是空文件` : ''
-      }。`,
+      uiText.t('main.director.report.filesFound', { found, total: lines.length, empty:
+        empty > 0 ? uiText.t('main.director.report.filesEmptySuffix', { count: empty }) : ''
+      }),
     ];
-    if (found < lines.length) notes.push('缺少的文件可能被工人写在别处，或者根本没写出来。');
+    if (found < lines.length) notes.push(uiText.t('main.director.report.filesMissingNote'));
     return {
       text: `${notes.join('')}\n${lines.join('\n')}`,
       total: lines.length,
@@ -5978,10 +5981,10 @@ class DirectorService {
     const negated = /(?:无|没有?|未|不|非|not|no|never)[^。；，,;\n]{0,8}(?:PYTHONPATH|桩包?|桩数据|stubs?|mocks?|模拟服务器?)/gi;
     const positiveTail = textTail.replace(negated, ' ');
     if (/PYTHONPATH/i.test(positiveTail) && /stub|桩|mock|模拟/i.test(positiveTail)) {
-      problems.push('工人的答复里写了用 PYTHONPATH/桩包启动，交付的不是真实实现');
+      problems.push(uiText.t('main.director.audit.problemStubStart'));
     }
     if (/stubdata|验证用临时桩/i.test(positiveTail)) {
-      problems.push('工人的答复里提到临时桩数据，交付的不是真实实现');
+      problems.push(uiText.t('main.director.audit.problemStubData'));
     }
 
     // 2) 读交付的源码，查桩标记和占位实现。测试目录里的 mock 是正常的，跳过。
@@ -6005,9 +6008,9 @@ class DirectorService {
           continue;
         }
         if (hardMarkers.test(content)) {
-          problems.push(`${rel} 里有桩/模拟服务/环境注入的标记`);
+          problems.push(uiText.t('main.director.audit.problemMarker', { path: rel }));
         } else if (softMarkers.test(content) && /\.(py|js|ts|tsx|jsx)$/i.test(rel)) {
-          warnings.push(`${rel} 里还有 TODO/占位实现`);
+          warnings.push(uiText.t('main.director.audit.warnTodo', { path: rel }));
         }
       }
     }
@@ -6045,7 +6048,7 @@ class DirectorService {
     }
     const entry = deliveredEntries[0] || diskEntry;
     if (codeFiles.length > 0 && !entry) {
-      problems.push('交付里有代码，但找不到可启动的入口（app.py / main.py / package.json scripts / index.html）');
+      problems.push(uiText.t('main.director.audit.problemNoEntry'));
     }
 
     // 4) 运行证据：只写“做完了/文件已创建”不够。
@@ -6054,7 +6057,7 @@ class DirectorService {
         textTail,
       );
     if (codeFiles.length > 0 && !runProof) {
-      warnings.push('工人的答复里没有实际运行入口的证据（启动命令 + 输出）');
+      warnings.push(uiText.t('main.director.audit.warnNoRunProof'));
     }
 
     return {
@@ -6081,7 +6084,7 @@ class DirectorService {
   /** 验收员要盯的关键点：优先用总监/标准里写明的，否则给几个通用的。 */
   verifyPointsFor(instruction) {
     const contractPoint = instruction.contract
-      ? '实现符合接口契约：路由/函数/字段名和契约一致，没有擅自改动边界'
+      ? uiText.t('main.director.verify.contractPoint')
       : '';
     if (Array.isArray(instruction.verifyPoints) && instruction.verifyPoints.length > 0) {
       return [contractPoint, ...instruction.verifyPoints].filter(Boolean).slice(0, 3);
@@ -6091,8 +6094,8 @@ class DirectorService {
     if (cleanupTargets(instruction.text).length > 0) {
       const targets = cleanupTargets(instruction.text);
       return [
-        `目标已删除/清理：${targets.join('、')} 在工作空间里不再存在`,
-        '工作空间里没有因为这次删除而少掉别的东西',
+        uiText.t('main.director.verify.cleanupGone', { targets: targets.join(uiText.t('main.director.report.listSeparator')) }),
+        uiText.t('main.director.verify.cleanupNothingElse'),
       ].slice(0, 2);
     }
     // 验收点必须能执行：有启动命令、有能看到的输出、或者能对着契约核对。
@@ -6106,9 +6109,9 @@ class DirectorService {
     // 五子棋那次的教训：文件都在、界面也能开，但服务是用 PYTHONPATH 注入的
     // 桩包在跑。只看“文件存在”会把测试产物当成交付，必须单独列一条。
     const defaults = [
-      '交付的是真实实现：不是桩、模拟服务器或测试脚本顶替',
-      '按说明启动真实入口并实际跑过一次，不是只看文件存在',
-      '原要求里的核心功能实际可用（能跑就跑一遍冒烟）',
+      uiText.t('main.director.verify.realImplementation'),
+      uiText.t('main.director.verify.realEntry'),
+      uiText.t('main.director.verify.coreWorks'),
     ];
     // 验收点越少越容易收口。契约优先，再放原要求里的点（最多 2 个），最后补通用点。
     return [...new Set([contractPoint, ...points.slice(0, 2), ...defaults].filter(Boolean))].slice(0, 3);
@@ -6116,7 +6119,7 @@ class DirectorService {
 
   /** 验收员的任务正文：只验不改、限时、结构化结论。 */
   composeVerifierText(instruction, { files = [], tail = '', points = [], previousFindings = '' } = {}) {
-    const title = instruction.taskTitle || this.taskOf(instruction.taskId)?.title || '任务';
+    const title = instruction.taskTitle || this.taskOf(instruction.taskId)?.title || uiText.t('main.director.common.task');
     // 验收员要知道“这次改了什么”，否则只能按整站回归去猜，既慢又抓不住重点。
     const changedLine = files.length
       ? `本次改动：${files
@@ -6245,7 +6248,7 @@ class DirectorService {
         });
         if (!spawned.ok) {
           this.markVerificationUncertain(item, {
-            reason: `前置完成后验收员没能建立：${spawned.error || '未知原因'}`,
+            reason: uiText.t('main.director.status.verifierSpawnFailedAfterDeps', { reason: spawned.error || uiText.t('main.director.common.unknownReason') }),
           });
         }
       }
@@ -6259,14 +6262,14 @@ class DirectorService {
   spawnVerifier(instruction, { files = [], tail = '', previousFindings = '', budgetMinutes = 0 } = {}) {
     const task = this.taskOf(instruction.taskId);
     const workspaceId = String(task?.workspaceId || '').trim();
-    if (!workspaceId) return { ok: false, error: '找不到这个任务的工作空间' };
+    if (!workspaceId) return { ok: false, error: uiText.t('main.director.error.taskWorkspaceGone') };
     const points = this.verifyPointsFor(instruction);
     instruction.verifyPoints = points;
     // 只看这名员工声明改的范围；整轮扫描会把同批别人的改动也算成“本次改动”。
     const scopedFiles = scopeFilesToDeclared(files, instruction.declaredFiles);
     const employee = {
       employeeId: uid('emp'),
-      name: '验收员',
+      name: uiText.t('main.director.common.verifier'),
       task: this.composeVerifierText(instruction, {
         files: scopedFiles,
         tail,
@@ -6288,7 +6291,7 @@ class DirectorService {
     };
     const result = this.spawnEmployees({
       dispatchId: uid('dspv'),
-      title: `验收 · ${task?.title || instruction.taskTitle || '任务'}`,
+      title: uiText.t('main.director.notice.verifyTaskTitle', { title: task?.title || instruction.taskTitle || uiText.t('main.director.common.task') }),
       workspaceId,
       shared: '',
       employees: [employee],
@@ -6298,7 +6301,7 @@ class DirectorService {
         kind: 'verify:spawn',
         taskId: instruction.taskId,
         title: instruction.taskTitle,
-        text: `已派验收员，关键点 ${points.length} 个`,
+        text: uiText.t('main.director.notice.verifierSpawned', { count: points.length }),
       });
     }
     return result;
@@ -6322,55 +6325,55 @@ class DirectorService {
     const remaining = targets.filter((rel) => fsSync.existsSync(path.join(root, rel)));
     if (remaining.length > 0) return null;
     return {
-      note: `已核对：${targets.join('、')} 已经不在工作空间里了（只读检查，没派验收员）。`,
+      note: uiText.t('main.director.report.quickStateNote', { targets: targets.join(uiText.t('main.director.report.listSeparator')) }),
     };
   }
 
   /** 编制完成后先把这一版交给用户；验收结论回来再更新同一条。 */
   deliverBuildToUser(instruction, { task = null, failed = false } = {}) {
-    const title = instruction.taskTitle || task?.title || '任务';
+    const title = instruction.taskTitle || task?.title || uiText.t('main.director.common.task');
     const files = normalizeFiles(instruction.files);
     const path = this.workspaceRootOf(task);
     const details = instruction.evidence ? clip(instruction.evidence, 900) : '';
     const head = failed
-      ? `这一轮没跑完：${instruction.resultNote || '员工中途停下了'}`
+      ? uiText.t('main.director.report.failedLine', { reason: instruction.resultNote || uiText.t('main.director.report.workerStopped') })
       : instruction.isWrapUp
-        ? '到点收口：这一版是时间用完时交上来的，没做完的部分由验收员核并写进结论。'
+        ? uiText.t('main.director.report.wrapupHead')
         : instruction.round > 0
-          ? `返工完成，已经重新交给验收员。这是第 ${instruction.round} 轮返工后的版本。`
-          : '工人已经交付这一版，我安排了验收员在验。';
+          ? uiText.t('main.director.report.reworkHead', { round: instruction.round })
+          : uiText.t('main.director.report.deliveredHead');
     const audit = instruction.deliveryAudit;
     const auditLine =
       audit && audit.level === 'bad'
-        ? `\n⚠️ 我核对到这一版不像能交付的程序：${audit.problems.slice(0, 3).join('；')}。验收会按真实运行来判，不会直接算完成。`
+        ? uiText.t('main.director.report.auditBadLine', { problems: audit.problems.slice(0, 3).join(uiText.t('main.director.report.listSeparator')) })
         : audit && audit.level === 'warn'
-          ? `\n我还没看到实际运行入口的证据${audit.warnings[0] ? `（${audit.warnings[0]}）` : ''}，验收会补跑。`
+          ? uiText.t('main.director.report.auditWarnLine', { reason: audit.warnings[0] ? uiText.t('main.director.report.reasonSuffix', { reason: audit.warnings[0] }) : '' })
           : '';
     const stats = instruction.runStats;
     const statLine = stats
-      ? `\n这一轮用了 ${
-          stats.elapsedMs < 60000 ? '不到 1' : Math.round(stats.elapsedMs / 60000)
-        } 分钟，${stats.toolCalls} 次工具调用（命令 ${stats.commands} 次，写文件 ${stats.writes} 次）。`
+      ? `\n${uiText.t('main.director.report.statsLine', { minutes: stats.elapsedMs < 60000 ? uiText.t('main.director.report.lessThanMinute') : Math.round(stats.elapsedMs / 60000), tools: stats.toolCalls, commands: stats.commands, writes: stats.writes })}`
+          
+
       : '';
     const body = [
       head,
-      details ? `\n它说做完了这些：\n${clip(details, 700)}` : '',
+      details ? `\n${uiText.t('main.director.report.claimsHeading')}\n${clip(details, 700)}` : '',
       auditLine,
       statLine,
       files.length
-        ? `\n交付文件：\n${files
+        ? `\n${uiText.t('main.director.report.filesHeading')}\n${files
             .slice(0, 10)
             .map((file) =>
               file.kind === 'directory'
-                ? `- 项目文件夹：${file.path === '.' ? file.name : file.path}`
-                : `- ${file.name}：${file.path}`,
+                ? uiText.t('main.director.report.projectFolderLine', { path: file.path === '.' ? file.name : file.path })
+                : uiText.t('main.director.report.fileLine', { name: file.name, path: file.path }),
             )
             .join('\n')}`
         : '',
-      path ? `\n项目路径：${path}` : '',
+      path ? `\n${uiText.t('main.director.report.projectPath', { path })}` : '',
       failed
-        ? '\n这一轮没有结果，我按未验证记；要我重跑一遍就说一声。'
-        : '\n版本说明：这是阶段版，验收没结束前文件可能还会变；验收结果我回来补在同一条里。',
+        ? uiText.t('main.director.report.failedFooter')
+        : uiText.t('main.director.report.stageFooter'),
     ]
       .filter(Boolean)
       .join('\n');
@@ -6382,10 +6385,10 @@ class DirectorService {
       status: failed ? 'failed' : 'verifying',
     };
     const reportTitle = failed
-      ? `「${title}」这一轮没跑完`
+      ? uiText.t('main.director.report.failedTitle', { title })
       : instruction.round > 0
-        ? `「${title}」返工完成 · 重新验收中`
-        : `「${title}」已交付 · 验收中`;
+        ? uiText.t('main.director.report.reworkTitle', { title })
+        : uiText.t('main.director.report.deliveredTitle', { title });
     const existing = this.inbox.find(
       (item) =>
         item.payload?.kind === 'delivery' &&
@@ -6419,7 +6422,7 @@ class DirectorService {
 
   /** 验收结果回来时，更新用户已经拿到的那一条，不再另起一条。 */
   updateDeliveryMessage(instruction, { title, note = '', urgent = false, status = '' } = {}) {
-    const child = instruction.taskTitle || this.taskOf(instruction.taskId)?.title || '任务';
+    const child = instruction.taskTitle || this.taskOf(instruction.taskId)?.title || uiText.t('main.director.common.task');
     const existing = this.inbox.find(
       (item) =>
         item.payload?.kind === 'delivery' &&
@@ -6428,7 +6431,7 @@ class DirectorService {
     const suffix = note ? `\n\n${note}` : '';
     if (existing) {
       existing.title = title || existing.title;
-      existing.body = `${existing.body.split('\n\n验收结论：')[0]}${suffix}`.slice(0, 4000);
+      existing.body = `${existing.body.split(`\n\n${uiText.t('main.director.delivery.verdictMarker')}`)[0]}${suffix}`.slice(0, 4000);
       existing.kind = urgent ? 'alert' : 'report';
       existing.urgent = Boolean(urgent);
       existing.payload = {
@@ -6445,8 +6448,8 @@ class DirectorService {
     }
     this.addInbox({
       kind: urgent ? 'alert' : 'report',
-      title: title || `「${child}」验收有结果了`,
-      body: note || '验收结果已经回来。',
+      title: title || uiText.t('main.director.report.verdictReadyTitle', { task: child }),
+      body: note || uiText.t('main.director.report.verdictReadyBody'),
       taskId: instruction.taskId,
       taskTitle: child,
       urgent: Boolean(urgent),
@@ -6475,7 +6478,7 @@ class DirectorService {
       if (instruction.wrapUpInstructionId) {
         instruction.state = 'discarded';
         instruction.unverified = true;
-        instruction.resultNote = '到点收口：换成收口指令交付这一版';
+        instruction.resultNote = uiText.t('main.director.status.wrapUpDeliveryNote');
         this.scheduleSave('instructions');
         this.refreshDispatchProgress(instruction.dispatchId);
         if (instruction.dispatchId) this.maybeFinishDispatch(instruction.dispatchId);
@@ -6484,8 +6487,8 @@ class DirectorService {
       instruction.unverified = Boolean(instruction.budgetStoppedAt);
       instruction.state = instruction.budgetStoppedAt ? 'accepted' : 'discarded';
       instruction.resultNote = instruction.budgetStoppedAt
-        ? '超过验证上限，已叫停（未验证）'
-        : '被叫停，未验收';
+        ? uiText.t('main.director.status.budgetStoppedUnverified')
+        : uiText.t('main.director.status.stoppedUnverified');
       this.scheduleSave('instructions');
       this.deliverBuildToUser(instruction, { task, failed: !instruction.budgetStoppedAt });
       this.refreshDispatchProgress(instruction.dispatchId);
@@ -6498,7 +6501,7 @@ class DirectorService {
       instruction.state = 'escalated';
       instruction.unverified = false;
       instruction.finishedAt = Date.now();
-      instruction.resultNote = `员工没跑完：${oneLine(error, 160)}`;
+      instruction.resultNote = uiText.t('main.director.status.employeeIncomplete', { error: oneLine(error, 160) });
       this.scheduleSave('instructions');
       this.deliverBuildToUser(instruction, { task, failed: true });
       this.refreshDispatchProgress(instruction.dispatchId);
@@ -6518,7 +6521,7 @@ class DirectorService {
     instruction.unverified = true;
     instruction.verdict = '';
     instruction.finishedAt = Date.now();
-    instruction.resultNote = instruction.round > 0 ? '返工完成，重新验收中' : '已交付，验收中';
+    instruction.resultNote = instruction.round > 0 ? uiText.t('main.director.status.reworkReverifying') : uiText.t('main.director.status.deliveredVerifying');
     this.deliverBuildToUser(instruction, { task });
     this.scheduleSave('instructions');
 
@@ -6533,7 +6536,7 @@ class DirectorService {
       instruction.finishedAt = Date.now();
       instruction.resultNote = quick.note;
       this.updateDeliveryMessage(instruction, {
-        title: `「${instruction.taskTitle || task?.title || '任务'}」已完成`,
+        title: uiText.t('main.director.report.quickDoneTitle', { task: instruction.taskTitle || task?.title || uiText.t('main.director.common.task') }),
         note: quick.note,
         status: 'done',
       });
@@ -6556,10 +6559,10 @@ class DirectorService {
     const waiting = this.waitingDependencies(instruction);
     if (waiting.length > 0) {
       instruction.verificationWaiting = true;
-      instruction.resultNote = `已交付，等 ${waiting.join('、')} 完成后一起验收`;
+      instruction.resultNote = uiText.t('main.director.status.waitingDependencies', { deps: waiting.join(uiText.t('main.director.report.listSeparator')) });
       this.updateDeliveryMessage(instruction, {
-        title: `「${instruction.taskTitle || task?.title || '任务'}」已交付 · 等前置完成`,
-        note: `它依赖的 ${waiting.join('、')} 还没收口。现在验只会拿半截接口判错，所以我等前置完成后再派验收。`,
+        title: uiText.t('main.director.report.waitingDepsTitle', { task: instruction.taskTitle || task?.title || uiText.t('main.director.common.task') }),
+        note: uiText.t('main.director.report.waitingDepsNote', { deps: waiting.join(uiText.t('main.director.report.listSeparator')) }),
         status: 'verifying',
       });
       this.scheduleSave('instructions');
@@ -6575,7 +6578,7 @@ class DirectorService {
     });
     if (!spawned.ok) {
       instruction.verificationPending = false;
-      instruction.note = `验收员没能建立：${spawned.error || '未知原因'}`;
+      instruction.note = uiText.t('main.director.status.verifierSpawnFailed', { reason: spawned.error || uiText.t('main.director.common.unknownReason') });
       await this.accept(instruction, { ok: true, error: '', aborted: false, files: instruction.files });
       return;
     }
@@ -6613,7 +6616,7 @@ class DirectorService {
       system:
         '你是工作总监。用户直接进任务里操作并结束了这一轮。判断用户改完的东西是否已经补上之前验收指出的缺口。' +
         '只输出一行 JSON：{"done":true} 或 {"done":false,"gap":"还差什么"}。不要写别的。' +
-        '拿不准就回 {"done":false,"gap":"没看出已经补上，需要继续"}。',
+        '拿不准就回 {"done":false,"gap":"没看出已经补上，需要继续"}。' + uiLanguageHint(),
       user: [
         `原要求：${clip(latest.intent || latest.text, 800)}`,
         `验收标准：${clip(latest.criteria, 400)}`,
@@ -6633,16 +6636,16 @@ class DirectorService {
       latest.unverified = true;
       latest.verdict = '';
       latest.finishedAt = Date.now();
-      latest.resultNote = '你直接改过，按你的版本重新验收';
+      latest.resultNote = uiText.t('main.director.status.userEditedReworkReverify');
       this.updateDeliveryMessage(latest, {
-        title: `「${latest.taskTitle || '任务'}」你改过的版本重新验收中`,
-        note: '你直接在这个任务里补过，我没有再返工；现在按你的版本重新安排验收。',
+        title: uiText.t('main.director.report.userEditReworkTitle', { task: latest.taskTitle || uiText.t('main.director.common.task') }),
+        note: uiText.t('main.director.report.userEditReworkNote'),
         status: 'verifying',
       });
       const spawned = this.spawnVerifier(latest, { files: latest.files, tail: visible });
       if (!spawned.ok) {
         latest.verificationPending = false;
-        latest.resultNote = `验收员没能建立：${spawned.error || '未知原因'}`;
+        latest.resultNote = uiText.t('main.director.status.verifierSpawnFailed', { reason: spawned.error || uiText.t('main.director.common.unknownReason') });
       }
       this.scheduleSave('instructions');
       this.refreshDispatchProgress(dispatchId);
@@ -6650,7 +6653,7 @@ class DirectorService {
       return;
     }
 
-    const gap = oneLine(data.gap, 300) || '用户改过之后还没看出缺口被补上';
+    const gap = oneLine(data.gap, 300) || uiText.t('main.director.report.userEditGapFallback');
     latest.verifyGaps = [gap];
     latest.state = 'rework';
     this.enqueueRework(latest, [gap]);
@@ -6781,7 +6784,7 @@ class DirectorService {
         ? []
         : await this.salvageFindingsFor(verification.taskId);
     if (findings.length) {
-      evidence = [evidence, `未写结论前已发现：\n${findings.map((item) => `- ${item}`).join('\n')}`]
+      evidence = [evidence, `${uiText.t('main.director.report.foundBeforeVerdict')}\n${findings.map((item) => `- ${item}`).join('\n')}`]
         .filter(Boolean)
         .join('\n\n');
     }
@@ -6789,7 +6792,7 @@ class DirectorService {
     verification.finishedAt = Date.now();
     verification.evidence = evidence || verification.evidence;
     verification.verdict = parsed.verdict;
-    verification.resultNote = parsed.note || (ok ? '验收员交回了结论' : `验收员没跑完：${oneLine(error, 160)}`);
+    verification.resultNote = parsed.note || (ok ? uiText.t('main.director.status.verifierReturned') : uiText.t('main.director.status.verifierIncomplete', { reason: oneLine(error, 160) }));
     this.scheduleSave('instructions');
 
     const parent = this.instructions.find(
@@ -6798,8 +6801,8 @@ class DirectorService {
     if (!parent) {
       this.addInbox({
         kind: 'alert',
-        title: '验收结论找不到对应的任务',
-        body: `验收员交了结论，但原来的编制任务已经不在了：${clip(evidence, 500)}`,
+        title: uiText.t('main.director.notice.verdictNoTaskTitle'),
+        body: uiText.t('main.director.notice.verdictNoTaskBody', { evidence: clip(evidence, 500) }),
         urgent: true,
       });
       return;
@@ -6810,12 +6813,12 @@ class DirectorService {
       // 到时被叫停，但结论已经写出来了：证据在，就按结论收口，别让它白验一轮。
       // 只有“没有明确结论”才算未验证。
       if (aborted && parsed.verdict && parsed.verdict !== 'unverified' && evidence) {
-        parsed.note = [parsed.note, '验收员到时被叫停，结论在叫停前已经给出']
+        parsed.note = [parsed.note, uiText.t('main.director.status.verifierStoppedAfterVerdict')]
           .filter(Boolean)
           .join('；');
       } else {
         this.markVerificationUncertain(parent, {
-          reason: aborted ? '验收员被叫停，没来得及给结论' : `验收员没跑完：${oneLine(error, 160)}`,
+          reason: aborted ? uiText.t('main.director.status.verifierStoppedNoVerdict') : uiText.t('main.director.status.verifierIncomplete', { reason: oneLine(error, 160) }),
           findings,
         });
         return;
@@ -6834,17 +6837,17 @@ class DirectorService {
       parent.unverified = true;
       parent.verdict = '';
       parent.finishedAt = Date.now();
-      parent.resultNote = '你在验收期间改过，按新版本再验一次';
+      parent.resultNote = uiText.t('main.director.status.userEditedReverify');
       this.updateDeliveryMessage(parent, {
-        title: `「${parent.taskTitle || '任务'}」你改过的版本复核中`,
-        note: '你在验收期间直接改过这个任务，上一轮结论对应的是旧版本；我按新版本再验一次。',
+        title: uiText.t('main.director.report.userEditReviewTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
+        note: uiText.t('main.director.report.userEditReviewNote'),
         status: 'verifying',
       });
       // 不复读上一轮验收员的话：它验的是旧版本，带过去会污染新结论。
       const respawned = this.spawnVerifier(parent, { files: parent.files, tail: '' });
       if (!respawned.ok) {
         this.markVerificationUncertain(parent, {
-          reason: `复核的验收员没能建立：${respawned.error || '未知原因'}`,
+          reason: uiText.t('main.director.status.reviewVerifierFailed', { reason: respawned.error || uiText.t('main.director.notice.noReason') }),
         });
         return;
       }
@@ -6859,7 +6862,7 @@ class DirectorService {
       // 处理归系统：在返工额度内直接打回重做一次，不问用户；到上限才如实报告。
       const audit = parent.deliveryAudit;
       if (audit && audit.level === 'bad') {
-        const problems = audit.problems.length > 0 ? audit.problems : ['交付预检没通过'];
+        const problems = audit.problems.length > 0 ? audit.problems : [uiText.t('main.director.audit.precheckFailed')];
         parent.verdict = 'unverified';
         parent.verifiedAt = 0;
         parent.verifyGaps = problems.slice(0, 5);
@@ -6871,18 +6874,18 @@ class DirectorService {
         parent.state = 'rework';
         parent.unverified = true;
         parent.finishedAt = Date.now();
-        parent.resultNote = `预检发现是测试产物，已打回重做：${problems.slice(0, 3).join('；')}`;
+        parent.resultNote = uiText.t('main.director.status.testProductRework', { problems: problems.slice(0, 3).join(uiText.t('main.director.report.listSeparator')) });
         const queued = this.enqueueRework(parent, problems, { redo: true });
         if (!queued.ok) {
-          this.escalateTestProduct(parent, problems, `返工没排上：${oneLine(queued.error, 120)}`);
+          this.escalateTestProduct(parent, problems, uiText.t('main.director.status.reworkNotQueued', { reason: oneLine(queued.error, 120) }));
           return;
         }
         this.updateDeliveryMessage(parent, {
-          title: `「${parent.taskTitle || '任务'}」像测试产物，已打回重做`,
+          title: uiText.t('main.director.report.testProductReworkTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
           note: [
-            '验收员给了“通过”，但我核对交付时发现：',
+            uiText.t('main.director.report.testProductFound'),
             ...problems.map((item) => `- ${item}`),
-            `这不像能交付的程序，我按真实实现打回重做（第 ${parent.round + 1}/${limit} 轮），不用你处理。`,
+            uiText.t('main.director.report.testProductReworkNote', { round: parent.round + 1, limit }),
           ].join('\n'),
           urgent: false,
           status: 'rework',
@@ -6898,16 +6901,16 @@ class DirectorService {
       parent.verifiedAt = Date.now();
       parent.finishedAt = Date.now();
       parent.verifyGaps = [];
-      const warning = audit?.warnings?.[0] ? `；预检提醒：${audit.warnings[0]}` : '';
+      const warning = audit?.warnings?.[0] ? uiText.t('main.director.status.precheckWarnSuffix', { reason: audit.warnings[0] }) : '';
       const untestedNote =
-        parsed.untested?.length > 0 ? `；没测到：${parsed.untested.join('；')}` : '';
+        parsed.untested?.length > 0 ? uiText.t('main.director.status.untestedSuffix', { items: parsed.untested.join(uiText.t('main.director.report.listSeparator')) }) : '';
       parent.untested = parsed.untested || [];
-      parent.resultNote = `验收通过${parsed.note ? `：${parsed.note}` : ''}${warning}${untestedNote}`;
+      parent.resultNote = parsed.note ? uiText.t('main.director.status.passResult', { note: parsed.note, warning, untested: untestedNote }) : uiText.t('main.director.status.passResultNoNote', { warning, untested: untestedNote });
       this.updateDeliveryMessage(parent, {
-        title: `「${parent.taskTitle || '任务'}」已验证`,
-        note: `验收结论：通过。${parsed.note || '验收员按关键点确认可用。'}${
-          audit?.warnings?.length ? `\n预检提醒：${audit.warnings.join('；')}` : ''
-        }${untestedNote ? `\n没测到的：${parsed.untested.join('；')}` : ''}`,
+        title: uiText.t('main.director.report.verifiedTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
+        note: uiText.t('main.director.report.verifiedNote', { note: parsed.note || uiText.t('main.director.report.verifiedNoteFallback'), warning:
+          audit?.warnings?.length ? `\n${uiText.t('main.director.report.precheckWarnLine', { items: audit.warnings.join(uiText.t('main.director.report.listSeparator')) })}` : '',
+                untested: parsed.untested?.length ? `\n${uiText.t('main.director.report.untestedLine', { items: parsed.untested.join(uiText.t('main.director.report.listSeparator')) })}` : '' }),
         status: 'verified',
       });
       this.scheduleSave('instructions');
@@ -6917,9 +6920,9 @@ class DirectorService {
     }
 
     if (parsed.verdict === 'fail') {
-      const gaps = parsed.gaps.length > 0 ? parsed.gaps : [parsed.note || '验收员没写具体缺口'];
+      const gaps = parsed.gaps.length > 0 ? parsed.gaps : [parsed.note || uiText.t('main.director.status.noGapsGiven')];
       parent.verifyGaps = gaps;
-      parent.resultNote = `验收不通过：${gaps.join('；')}`;
+      parent.resultNote = uiText.t('main.director.status.failGaps', { gaps: gaps.join(uiText.t('main.director.report.listSeparator')) });
       const limit = this.reworkLimit();
       if (parent.round >= limit) {
         parent.state = 'escalated';
@@ -6927,17 +6930,17 @@ class DirectorService {
         parent.verdict = 'fail';
         parent.finishedAt = Date.now();
         this.updateDeliveryMessage(parent, {
-          title: `「${parent.taskTitle || '任务'}」返工到上限，仍未通过`,
-          note: `验收结论：不通过，已经返工 ${parent.round} 轮，达到上限。\n缺口：${gaps.join('；')}`,
+          title: uiText.t('main.director.report.reworkLimitTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
+          note: uiText.t('main.director.report.reworkLimitNote', { round: parent.round, gaps: gaps.join(uiText.t('main.director.report.listSeparator')) }),
           urgent: true,
           status: 'failed',
         });
         this.addConfirm(parent.taskId, {
-          title: '返工到上限，还是没通过',
-          body: `「${parent.taskTitle || '任务'}」验收没过的点：\n${gaps.join('\n')}\n\n要我换一种做法再试，还是先按现状收尾？`,
+          title: uiText.t('main.director.confirm.reworkLimitTitle'),
+          body: uiText.t('main.director.confirm.reworkLimitBody', { title: parent.taskTitle || uiText.t('main.director.common.task'), gaps: gaps.join('\n') }),
           actions: [
-            { id: 'rework', label: '再试一次', style: 'primary' },
-            { id: 'abandon', label: '先这样', style: 'danger' },
+            { id: 'rework', label: uiText.t('main.director.action.retry'), style: 'primary' },
+            { id: 'abandon', label: uiText.t('main.director.action.leaveAsIs'), style: 'danger' },
           ],
           payload: { instructionId: parent.id },
           urgent: true,
@@ -6952,12 +6955,12 @@ class DirectorService {
       parent.finishedAt = Date.now();
       const queued = this.enqueueRework(parent, gaps);
       if (!queued.ok) {
-        this.markVerificationUncertain(parent, { reason: `返工没排上：${queued.error}` });
+        this.markVerificationUncertain(parent, { reason: uiText.t('main.director.status.reworkNotQueued', { reason: queued.error }) });
         return;
       }
       this.updateDeliveryMessage(parent, {
-        title: `「${parent.taskTitle || '任务'}」验收没通过，返工中`,
-        note: `验收结论：不通过。\n缺口：${gaps.join('；')}\n我已经让原来的员工只补这几项（第 ${parent.round + 1}/${limit} 轮）。`,
+        title: uiText.t('main.director.report.reworkFailTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
+        note: uiText.t('main.director.report.reworkFailNote', { gaps: gaps.join(uiText.t('main.director.report.listSeparator')), round: parent.round + 1, limit }),
         urgent: false,
         status: 'rework',
       });
@@ -6974,7 +6977,7 @@ class DirectorService {
       parent.verificationPending = true;
       parent.unverified = false;
       parent.verdict = '';
-      parent.resultNote = '验收结论没读清，重新派了一轮验收';
+      parent.resultNote = uiText.t('main.director.status.verdictUnclearRetry');
       const respawned = this.spawnVerifier(parent, {
         files: parent.files || [],
         tail: evidence,
@@ -6987,11 +6990,11 @@ class DirectorService {
           kind: 'verify:retry',
           taskId: parent.taskId,
           title: parent.taskTitle,
-          text: '验收结论没读清，按同一版重新派了一轮验收',
+          text: uiText.t('main.director.status.verdictUnclearLedger'),
         });
         this.updateDeliveryMessage(parent, {
-          title: `「${parent.taskTitle || '任务'}」结论没读清，重新验收中`,
-          note: '验收员跑完了，但结论里读不出明确的通过/不通过。我没有算通过，已经按同一版再派一轮验收。',
+          title: uiText.t('main.director.report.verdictUnclearTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
+          note: uiText.t('main.director.report.verdictUnclearNote'),
           status: 'verifying',
         });
         this.scheduleSave('instructions');
@@ -7002,7 +7005,7 @@ class DirectorService {
     }
 
     this.markVerificationUncertain(parent, {
-      reason: parsed.note || '验收员没有给出通过/不通过',
+      reason: parsed.note || uiText.t('main.director.status.noPassFail'),
       findings,
     });
   }
@@ -7019,16 +7022,16 @@ class DirectorService {
     parent.verdict = 'unverified';
     parent.finishedAt = Date.now();
     parent.resultNote =
-      `未验证：${oneLine(reason, 200)}` +
-      (found.length ? `｜到点前已发现：${oneLine(found.join('；'), 300)}` : '');
+      uiText.t('main.director.status.uncertainNote', { reason: oneLine(reason, 200) }) +
+      (found.length ? uiText.t('main.director.status.uncertainFoundSuffix', { found: oneLine(found.join(uiText.t('main.director.report.listSeparator')), 300) }) : '');
     this.updateDeliveryMessage(parent, {
-      title: `「${parent.taskTitle || '任务'}」验收没给出结论`,
+      title: uiText.t('main.director.report.uncertainTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
       note: [
-        `这一轮验收没拿到可判断的证据：${oneLine(reason, 300)}。`,
+        uiText.t('main.director.report.uncertainIntro', { reason: oneLine(reason, 300) }),
         found.length
-          ? `不过它到点前已经查到这些，我没丢：\n${found.map((item) => `- ${item}`).join('\n')}`
+          ? uiText.t('main.director.report.uncertainFound', { lines: found.map((item) => `- ${item}`).join('\n') })
           : '',
-        '我没有把它算成通过，也不会让你替我验；版本和已有证据都在项目里，需要就再让它补验。',
+        uiText.t('main.director.report.uncertainNoPass'),
       ]
         .filter(Boolean)
         .join('\n'),
@@ -7037,14 +7040,14 @@ class DirectorService {
     });
     this.addInbox({
       kind: 'report',
-      title: '「' + (parent.taskTitle || '任务') + '」没有验成',
+      title: uiText.t('main.director.report.notVerifiedTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
       body: [
-        `「${parent.taskTitle || '任务'}」这一轮验收没拿到结论：${oneLine(reason, 300) || '验收员没有给出通过/不通过'}。`,
+        uiText.t('main.director.report.notVerifiedIntro', { task: parent.taskTitle || uiText.t('main.director.common.task'), reason: oneLine(reason, 300) || uiText.t('main.director.status.noPassFail') }),
         found.length
-          ? `它到点前已经查到这些（未最终确认，已保存）：\n${found.map((item) => `- ${item}`).join('\n')}`
+          ? uiText.t('main.director.report.notVerifiedFound', { lines: found.map((item) => `- ${item}`).join('\n') })
           : '',
-        '我按未验证如实记录，没有算成通过。',
-        '这是验收环节的问题，不需要你替它验；要补验跟我说一声，我派一个更窄的。',
+        uiText.t('main.director.report.notVerifiedRecorded'),
+        uiText.t('main.director.report.notVerifiedHint'),
       ]
         .filter(Boolean)
         .join('\n'),
@@ -7061,7 +7064,7 @@ class DirectorService {
    * 同样不问用户“重做还是按现状”——该重做的时候上一段已经自动做了。
    */
   escalateTestProduct(parent, problems, reason = '') {
-    const list = Array.isArray(problems) && problems.length > 0 ? problems : ['交付预检没通过'];
+    const list = Array.isArray(problems) && problems.length > 0 ? problems : [uiText.t('main.director.audit.precheckFailed')];
     parent.verificationPending = false;
     parent.state = 'escalated';
     parent.unverified = true;
@@ -7069,25 +7072,25 @@ class DirectorService {
     parent.verifiedAt = 0;
     parent.finishedAt = Date.now();
     parent.verifyGaps = list.slice(0, 5);
-    parent.resultNote = `未验证：交付像测试产物（${list.slice(0, 3).join('；')}）${reason ? `；${reason}` : ''}`;
+    parent.resultNote = uiText.t('main.director.status.testProductUnverified', { problems: list.slice(0, 3).join(uiText.t('main.director.report.listSeparator')), reason: reason ? uiText.t('main.director.status.reasonSuffixSemi', { reason }) : '' });
     this.updateDeliveryMessage(parent, {
-      title: `「${parent.taskTitle || '任务'}」像测试产物，没有算通过`,
+      title: uiText.t('main.director.report.testProductTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
       note: [
-        '验收员给了“通过”，但我核对交付时发现：',
+        uiText.t('main.director.report.testProductFound'),
         ...list.map((item) => `- ${item}`),
-        reason || '已经返工到上限，还是这样。',
-        '我没有把它算成通过。要换个做法重做，跟我说一声，我直接安排。',
+        reason || uiText.t('main.director.report.testProductLimitReason'),
+        uiText.t('main.director.report.testProductNoPass'),
       ].join('\n'),
       urgent: true,
       status: 'unverified',
     });
     this.addInbox({
       kind: 'report',
-      title: `「${parent.taskTitle || '任务'}」交付像测试产物`,
+      title: uiText.t('main.director.report.testProductInboxTitle', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
       body: [
-        `「${parent.taskTitle || '任务'}」预检发现：`,
+        uiText.t('main.director.report.testProductInboxIntro', { task: parent.taskTitle || uiText.t('main.director.common.task') }),
         ...list.map((item) => `- ${item}`),
-        reason || '返工到上限还是这样，我按未验证记，不算通过。',
+        reason || uiText.t('main.director.report.testProductInboxFallback'),
       ].join('\n'),
       taskId: parent.taskId,
       taskTitle: parent.taskTitle,
@@ -7111,7 +7114,7 @@ class DirectorService {
   }
 
   enqueueRework(parent, gaps, { redo = false } = {}) {
-    const gap = (Array.isArray(gaps) ? gaps : []).join('；') || parent.resultNote || '上一轮验收没通过';
+    const gap = (Array.isArray(gaps) ? gaps : []).join('；') || parent.resultNote || uiText.t('main.director.status.previousFail');
     const missing = this.missingDeclaredFiles(parent);
     // 重做是一次重新实现，不是补小缺口：按这一单原本的时间给，而不是拍一个
     // 12 分钟——时间不够的重做只会再交一个半成品，把返工额度白白用光。
@@ -7168,13 +7171,13 @@ class DirectorService {
 
   /** 一条任务在项目汇总里的状态词。 */
   dispatchStatusLabel(item) {
-    if (item.verificationPending) return '已交付 · 验收中';
-    if (item.state === 'accepted') return item.unverified ? '未验证' : '已验证';
-    if (item.state === 'rework') return '返工中';
-    if (item.state === 'escalated') return item.unverified ? '未验证' : '没通过';
-    if (item.state === 'held') return '等你确认';
-    if (item.state === 'discarded') return '已放弃';
-    return '编制中';
+    if (item.verificationPending) return uiText.t('main.director.status.deliveredVerifying');
+    if (item.state === 'accepted') return item.unverified ? uiText.t('main.director.status.unverified') : uiText.t('main.director.status.verified');
+    if (item.state === 'rework') return uiText.t('main.director.status.reworking');
+    if (item.state === 'escalated') return item.unverified ? uiText.t('main.director.status.unverified') : uiText.t('main.director.status.failed');
+    if (item.state === 'held') return uiText.t('main.director.status.heldLabel');
+    if (item.state === 'discarded') return uiText.t('main.director.status.abandoned');
+    return uiText.t('main.director.status.building');
   }
 
   /** 项目级状态消息：编制全部结束、验收还没结束时发一条，之后原地更新。 */
@@ -7203,34 +7206,34 @@ class DirectorService {
     if (building && !existing) return;
 
     const project = this.projects.get(id);
-    const title = project?.title || group[0].dispatchTitle || '项目';
+    const title = project?.title || group[0].dispatchTitle || uiText.t('main.director.common.project');
     const lines = items.map((item) => {
-      const name = item.employeeName || this.taskOf(item.taskId)?.title || '员工';
-      return `- ${name}：${this.dispatchStatusLabel(item)}${
+      const name = item.employeeName || this.taskOf(item.taskId)?.title || uiText.t('main.director.common.employee');
+      return uiText.t('main.director.report.progressEmployeeLine', { name, status: this.dispatchStatusLabel(item), note:
         item.resultNote ? ` · ${oneLine(item.resultNote, 140)}` : ''
-      }`;
+      });
     });
     const files = mergeDeliveredFiles(...items.map((item) => item.files));
     const headline = building
-      ? '验收发现缺口，已经退回返工'
-      : '编制完毕，正在验收';
+      ? uiText.t('main.director.report.headlineRework')
+      : uiText.t('main.director.report.headlineVerifying');
     const body = [
-      `「${title}」`,
+      uiText.t('main.director.confirm.quotedTitle', { title }),
       lines.join('\n'),
       '',
       building
-        ? '有一部分退回重做了；做完我会重新安排验收，并在这一条里更新。'
-        : '编制已经全部结束，验收还在继续；有了结论我会在这条里更新。',
+        ? uiText.t('main.director.report.progressReworkNote')
+        : uiText.t('main.director.report.progressVerifyingNote'),
       project?.buildEtaAt
-        ? `原计划：编制 ${Math.round(project.estimateMs / 60000)} 分钟，验收再加 ${Math.round(
-            project.verifyEstimateMs / 60000,
-          )} 分钟。`
+        ? uiText.t('main.director.report.planLine', { build: Math.round(project.estimateMs / 60000), verify: Math.round(project.verifyEstimateMs / 60000) })
+
+
         : '',
     ]
       .filter(Boolean)
       .join('\n');
     if (existing) {
-      existing.title = `「${title}」${headline}`;
+      existing.title = uiText.t('main.director.report.progressTitle', { title, headline });
       existing.body = body;
       existing.kind = 'report';
       existing.files = files;
@@ -7246,7 +7249,7 @@ class DirectorService {
     } else {
       this.addInbox({
         kind: 'report',
-        title: `「${title}」${headline}`,
+        title: uiText.t('main.director.report.progressTitle', { title, headline }),
         body,
         taskId: items[0].taskId,
         taskTitle: title,
@@ -7315,18 +7318,18 @@ class DirectorService {
     if (!result.ok) return;
     this.addInbox({
       kind: 'report',
-      title: '空出来的位置去补位了',
-      body: `「${target.title}」偏慢，我把刚空出来的位置派给「${helper.name}」：${oneLine(
+      title: uiText.t('main.director.notice.backfillTitle'),
+      body: uiText.t('main.director.notice.backfillBody', { project: target.title, helper: helper.name, task: oneLine(
         helper.task,
         180,
-      )}`,
+      ) }),
       taskId: '',
       taskTitle: target.title,
     });
     this.ledgerPush({
       kind: 'backfill',
       title: target.title,
-      text: `补位：${helper.name}`,
+      text: uiText.t('main.director.notice.backfillLedger', { name: helper.name }),
     });
   }
 
@@ -7336,20 +7339,20 @@ class DirectorService {
       if (project.status !== 'active') continue;
       if (project.buildEtaAt > 0 && !project.buildCheckedAt && now >= project.buildEtaAt) {
         project.buildCheckedAt = now;
-        this.addProjectDecision(project.id, '到了预计编制完成时间，检查是否需要重新分配');
+        this.addProjectDecision(project.id, uiText.t('main.director.status.decisionBuildCheckpoint'));
         this.scheduleSave('projects');
         void this.pulseProject(project.id, {
           force: true,
-          reason: '到了预计编制完成时间',
+          reason: uiText.t('main.director.status.reasonBuildCheckpoint'),
         }).catch(() => undefined);
       }
       if (project.verifyEtaAt > 0 && !project.verifyCheckedAt && now >= project.verifyEtaAt) {
         project.verifyCheckedAt = now;
-        this.addProjectDecision(project.id, '到了预计验收完成时间，检查是否继续返工或交给用户');
+        this.addProjectDecision(project.id, uiText.t('main.director.status.decisionVerifyCheckpoint'));
         this.scheduleSave('projects');
         void this.pulseProject(project.id, {
           force: true,
-          reason: '到了预计验收完成时间',
+          reason: uiText.t('main.director.status.reasonVerifyCheckpoint'),
         }).catch(() => undefined);
       }
       this.checkProjectOverdue(project, now);
@@ -7386,28 +7389,28 @@ class DirectorService {
       const run = this.runs.get(item.taskId);
       const ranFor = Math.round((now - Number(run?.startedAt || item.startedAt || item.createdAt || now)) / 60000);
       const quiet = run ? Math.round((now - Number(run.lastAt || now)) / 60000) : 0;
-      return `- ${item.employeeName || item.taskTitle || '员工'}：已跑 ${ranFor} 分钟${
-        quiet >= 3 ? `，最近 ${quiet} 分钟没有新动作` : ''
-      }`;
+      return uiText.t('main.director.report.overdueRow', { name: item.employeeName || item.taskTitle || uiText.t('main.director.common.employee'), minutes: ranFor, quiet:
+        quiet >= 3 ? uiText.t('main.director.report.overdueQuiet', { minutes: quiet }) : ''
+      });
     });
     const slowest = [...active].sort(
       (a, b) => Number(a.startedAt || a.createdAt || 0) - Number(b.startedAt || b.createdAt || 0),
     )[0];
-    this.addProjectDecision(project.id, `超时提醒：已跑 ${elapsed} 分钟，超过预计 ${over} 分钟`);
+    this.addProjectDecision(project.id, uiText.t('main.director.status.decisionOverdue', { elapsed, over }));
     this.addInbox({
       kind: 'confirm',
-      title: '项目超时了，要我怎么处理？',
+      title: uiText.t('main.director.confirm.overdueTitle'),
       body: [
-        `「${project.title}」已经跑了 ${elapsed} 分钟，比预计多 ${over} 分钟。`,
-        '还在做：',
+        uiText.t('main.director.confirm.overdueBody', { title: project.title, elapsed, over }),
+        uiText.t('main.director.confirm.overdueStillRunning'),
         ...rows,
-        '继续等，还是叫停跑得最久的那个？',
+        uiText.t('main.director.confirm.overdueQuestion'),
       ].join('\n'),
       taskId: slowest?.taskId ?? '',
       taskTitle: project.title,
       actions: [
-        { id: 'approve', label: '继续等' },
-        { id: 'stop', label: '叫停跑得最久的', style: 'danger' },
+        { id: 'approve', label: uiText.t('main.director.action.keepWaiting') },
+        { id: 'stop', label: uiText.t('main.director.action.stopLongest'), style: 'danger' },
       ],
       payload: { kind: 'project-overdue', projectId: project.id, taskId: slowest?.taskId ?? '' },
       urgent: alerts === 0,
@@ -7483,25 +7486,25 @@ class DirectorService {
       );
       this.addInbox({
         kind: 'report',
-        title: verified >= 2 ? '整体检查完毕' : '整体检查跳过',
+        title: verified >= 2 ? uiText.t('main.director.report.integrationDoneTitle') : uiText.t('main.director.report.integrationSkippedTitle'),
         body:
           verified >= 2
             ? [
-                `最近完工的 ${done.length} 个项目里，有 ${verified} 项拿到了通过的验收结论。`,
-                '我按这些结论对照了一遍接口和交接处，没有发现需要再问的地方。',
+                uiText.t('main.director.report.integrationDoneLine1', { projects: done.length, verified }),
+                uiText.t('main.director.report.integrationDoneLine2'),
               ].join('\n')
             : [
-                `最近完工的 ${done.length} 个项目里只有 ${verified} 项拿到了通过的验收结论（共 ${taskTotal} 项任务），不够做跨项目检查。`,
+                uiText.t('main.director.report.integrationSkipLine1', { projects: done.length, verified, tasks: taskTotal }),
                 verified === 0
-                  ? '其余任务都是未验证或已放弃，我不会把它们当成通过。'
-                  : '其余任务没有可用结论，我不会把它们当成通过。',
+                  ? uiText.t('main.director.report.integrationSkipNone')
+                  : uiText.t('main.director.report.integrationSkipSome'),
               ].join('\n'),
         payload: { kind: 'integration', checked: done.length, verified },
       });
     };
 
     if (rows.length < 2) {
-      finish(0, `整体检查：只有 ${rows.length} 项有通过的验收结论，跳过跨项目检查`);
+      finish(0, uiText.t('main.director.report.integrationSkipNote', { count: rows.length }));
       return;
     }
 
@@ -7528,11 +7531,11 @@ class DirectorService {
     const data = reply ? this.parseJson(reply) : null;
     if (!data) {
       // 没拿到模型结论就不说“检查完毕”：如实记未验证，不冒充做过。
-      finish(0, '整体检查没拿到模型结论（未验证）', false);
+      finish(0, uiText.t('main.director.report.integrationNoVerdictNote'), false);
       this.addInbox({
         kind: 'alert',
-        title: '整体检查没做成',
-        body: '模型没有回话，我没法对照接口和交接处。先记作未验证，没有当成通过。',
+        title: uiText.t('main.director.report.integrationNoVerdictTitle'),
+        body: uiText.t('main.director.report.integrationNoVerdictBody'),
         urgent: true,
       });
       return;
@@ -7561,8 +7564,8 @@ class DirectorService {
     finish(
       sent,
       sent > 0
-        ? `整体检查：发现 ${sent} 个衔接疑问，已派只回答的询问`
-        : '整体检查完毕，没有新的衔接疑问',
+        ? uiText.t('main.director.report.integrationIssuesDone', { count: sent })
+        : uiText.t('main.director.report.integrationCleanDone'),
     );
   }
 
@@ -7586,7 +7589,7 @@ class DirectorService {
         instruction.state = 'accepted';
         instruction.files = files;
         instruction.unverified = true;
-        instruction.resultNote = `超过 ${budget} 分钟验证上限，已叫停（未验证）`;
+        instruction.resultNote = uiText.t('main.director.status.budgetStopped', { minutes: budget });
         this.ledgerPush({
           kind: 'accept:budget',
           taskId: instruction.taskId,
@@ -7595,13 +7598,13 @@ class DirectorService {
         });
         this.addInbox({
           kind: 'report',
-          title: '验证到时间了，我先叫停',
+          title: uiText.t('main.director.notice.budgetStopTitle'),
           body: [
-            `「${task?.title ?? instruction.taskTitle ?? '这个任务'}」跑了 ${budget} 分钟，到了我设的验证上限，我让它先停，不再继续搭环境。`,
-            evidence
-              ? `\n已经拿到的：\n${markdownTail(clip(tail, 1200))}`
-              : '\n这一轮没有留下可读的答复。',
-            '\n没测到的：以工人上面没提到的项为准。要不要我换个更窄的验证再跑一次？',
+            uiText.t('main.director.notice.budgetStopLine1', { task: task?.title ?? instruction.taskTitle ?? uiText.t('main.director.common.task'), minutes: budget }),
+            evidence ? uiText.t('main.director.notice.budgetStopEvidence', { evidence: markdownTail(clip(tail, 1200)) }) : uiText.t('main.director.notice.budgetStopNoReply'),
+              
+              
+            uiText.t('main.director.notice.budgetStopUntested'),
           ].join('\n'),
           taskId: instruction.taskId,
           taskTitle: task?.title,
@@ -7614,12 +7617,12 @@ class DirectorService {
       instruction.state = 'discarded';
       instruction.files = files;
       instruction.unverified = false;
-      instruction.resultNote = '被叫停，未验收';
+      instruction.resultNote = uiText.t('main.director.status.stoppedUnverified');
       this.ledgerPush({
         kind: 'accept:stopped',
         taskId: instruction.taskId,
         title: task?.title,
-        text: '这一轮被叫停，不算交付',
+        text: uiText.t('main.director.ledger.stoppedNotDelivery'),
       });
       this.scheduleSave('instructions');
       return;
@@ -7644,8 +7647,8 @@ class DirectorService {
       });
       this.addInbox({
         kind: 'report',
-        title: '清理完成',
-        body: `「${task?.title ?? instruction.taskTitle}」我核对过了。\n${quick.note}`,
+        title: uiText.t('main.director.report.cleanupTitle'),
+        body: uiText.t('main.director.report.cleanupBody', { task: task?.title ?? instruction.taskTitle, note: quick.note }),
         taskId: instruction.taskId,
         taskTitle: task?.title,
         files,
@@ -7671,7 +7674,7 @@ class DirectorService {
         '你是工作总监，验收工人的交付。只依据给出的证据判断，不要补脑。' +
         '第一行只写「通过」或「不通过」，第二行写一句理由，之后可以列具体缺口。' +
         '如果任务异常结束，或者声称交付的文件在磁盘上找不到，直接判不通过。' +
-        '如果交付是桩、mock、模拟服务器或测试脚本顶替的，或者找不到真实入口、工人没实际跑过，也判不通过。',
+        '如果交付是桩、mock、模拟服务器或测试脚本顶替的，或者找不到真实入口、工人没实际跑过，也判不通过。' + uiLanguageHint(),
       user: [
         `任务：${task?.title ?? instruction.taskTitle}`,
         `你下的要求：${clip(instruction.text, 900)}`,
@@ -7710,8 +7713,8 @@ class DirectorService {
     // 可核对的事实，不拿“算不算完成”去问领导。
     if (verdict === null) {
       const reason = filesMissing
-        ? '交付文件在磁盘上一个都找不到'
-        : failReason || (reply ? '验收结论读不出来' : '验收模型 20 秒内没给结论');
+        ? uiText.t('main.director.status.filesAllMissing')
+        : failReason || (reply ? uiText.t('main.director.status.verdictUnreadable') : uiText.t('main.director.status.verdictTimeout'));
       // 这一轮正常结束、文件也都在，只是我这边没拿到验收结论：不拿一张
       // “我验不了”的卡拦住领导。按现状收尾，如实记“未验证”，整次分配
       // 收口时一起报；删除类任务仍然要等领导点头。
@@ -7723,8 +7726,8 @@ class DirectorService {
         instruction.unverified = true;
         instruction.resultNote = oneLine(
           check.total > 0
-            ? `按现状收尾（未验证）：交付文件 ${check.found}/${check.total} 在磁盘上`
-            : '按现状收尾（未验证）：正常结束，验收模型没给结论',
+            ? uiText.t('main.director.status.autoCloseFiles', { found: check.found, total: check.total })
+            : uiText.t('main.director.status.autoCloseNoVerdict'),
           200,
         );
         this.ledgerPush({
@@ -7755,12 +7758,12 @@ class DirectorService {
     const pass = verdict;
     const reason =
       auditProblems.length > 0
-        ? `交付预检不通过：${auditProblems.join('；')}`
+        ? uiText.t('main.director.status.precheckFailed', { problems: auditProblems.join(uiText.t('main.director.report.semicolonSeparator')) })
         : reply
           ? clip(reply.split('\n').slice(1).join('\n').trim(), 400)
           : pass
-            ? '验收通过'
-            : '验收不通过';
+            ? uiText.t('main.director.status.passShort')
+            : uiText.t('main.director.status.failShort');
 
     instruction.finishedAt = Date.now();
     instruction.resultNote = oneLine(reason, 200);
@@ -7783,8 +7786,8 @@ class DirectorService {
       }
       this.addInbox({
         kind: 'report',
-        title: '验收通过',
-        body: `「${task?.title ?? instruction.taskTitle}」我验收过了。${reason ? `\n${reason}` : ''}`,
+        title: uiText.t('main.director.report.passTitle'),
+        body: uiText.t('main.director.report.passBody', { task: task?.title ?? instruction.taskTitle, reason: reason ? `\n${reason}` : '' }),
         taskId: instruction.taskId,
         taskTitle: task?.title,
         files,
@@ -7808,8 +7811,8 @@ class DirectorService {
       });
       this.addInbox({
         kind: 'alert',
-        title: '验收没过，已让工人返工一次',
-        body: `「${task?.title ?? instruction.taskTitle}」${reason ? `\n${reason}` : ''}`,
+        title: uiText.t('main.director.report.reworkInboxTitle'),
+        body: uiText.t('main.director.report.reworkBody', { task: task?.title ?? instruction.taskTitle, reason: reason ? `\n${reason}` : '' }),
         taskId: instruction.taskId,
         taskTitle: task?.title,
         urgent: true,
@@ -7848,7 +7851,7 @@ class DirectorService {
       // 新的返工指令接手；旧的留成“已转返工”，否则这次分配永远等不到收尾。
       if (instruction.dispatchId) {
         instruction.state = 'discarded';
-        instruction.note = '已转返工';
+        instruction.note = uiText.t('main.director.status.movedToRework');
       }
     } else {
       instruction.state = 'escalated';
@@ -7859,12 +7862,12 @@ class DirectorService {
         text: reason,
       });
       this.addConfirm(instruction.taskId, {
-        title: '两次验收都没过',
-        body: `「${task?.title ?? instruction.taskTitle}」${reason ? `\n${reason}` : ''}`,
+        title: uiText.t('main.director.confirm.reworkTwiceTitle'),
+        body: uiText.t('main.director.confirm.reworkTwiceBody', { task: task?.title ?? instruction.taskTitle, reason: reason ? `\n${reason}` : '' }),
         actions: [
-          { id: 'rework', label: '再返工一次', style: 'primary' },
-          { id: 'accept', label: '按现状收尾' },
-          { id: 'abandon', label: '放弃', style: 'danger' },
+          { id: 'rework', label: uiText.t('main.director.action.reworkAgain'), style: 'primary' },
+          { id: 'accept', label: uiText.t('main.director.action.closeAsIs') },
+          { id: 'abandon', label: uiText.t('main.director.action.abandon'), style: 'danger' },
         ],
         payload: { instructionId: instruction.id },
         urgent: true,
@@ -7905,23 +7908,23 @@ class DirectorService {
     // 同一段静止期别再触发一次“任务停住了”，两条提醒说的是一件事。
     run.stuckAlertedAt = run.loopAlertedAt;
     const tool = oneLine(
-      (run.recentTools || []).slice(-1)[0]?.split(':')[0] || run.tool || '同一个工具',
+      (run.recentTools || []).slice(-1)[0]?.split(':')[0] || run.tool || uiText.t('main.director.common.unknownTool'),
       80,
     );
-    const label = task?.title ?? '任务';
+    const label = task?.title ?? uiText.t('main.director.common.task');
     if (state.mode === 'run') {
       this.broadcast('director:task-action', { action: 'stop', taskIds: [id] });
     }
     this.addConfirm(id, {
-      title: '员工在同一个步骤上打转',
+      title: uiText.t('main.director.confirm.loopTitle'),
       body: [
-        `「${label}」连续 3 次调用同一个工具、参数也一样：${tool}。`,
-        '这不像是在干活，更像在原地打转。',
-        state.mode === 'run' ? '我先叫停了这一轮。' : '要不要叫停重来？',
+        uiText.t('main.director.confirm.loopLine1', { task: label, tool }),
+        uiText.t('main.director.confirm.loopLine2'),
+        state.mode === 'run' ? uiText.t('main.director.confirm.loopRunning') : uiText.t('main.director.confirm.loopAsk'),
       ].join('\n'),
       actions: [
-        { id: 'rework', label: '叫停并重做', style: 'primary' },
-        { id: 'abandon', label: '先不管', style: 'danger' },
+        { id: 'rework', label: uiText.t('main.director.action.stopAndRedo'), style: 'primary' },
+        { id: 'abandon', label: uiText.t('main.director.action.ignoreForNow'), style: 'danger' },
       ],
       payload: { kind: 'loop', instructionId: instruction?.id ?? '' },
       urgent: true,
@@ -7930,7 +7933,7 @@ class DirectorService {
       kind: 'stuck:loop',
       taskId: id,
       title: label,
-      text: `${tool} 连续重复 3 次`,
+      text: uiText.t('main.director.ledger.loopRepeat', { tool }),
     });
     this.scheduleSave('inbox');
   }
@@ -7972,7 +7975,7 @@ class DirectorService {
         '你要在下面几个动作里选一个：wait（继续等）、stop（叫停这一轮重试）、instruct（补一条更明确的指令并打断）、report（现在向领导汇报）、ask（问领导）。',
         '普通的长思考不要轻易叫停；没有任何新事件、也没有工具动作，才优先怀疑卡住。',
         '只输出一行 JSON：{"action":"wait|stop|instruct|report|ask","message":"对领导说的话，一两句，可空","instruction":"action=instruct 时给工人的具体指令","criteria":"可选验收标准","reason":"你凭什么这么判断"}。不要写别的。',
-      ].join('\n'),
+      ].concat(uiLanguageHint() ? [uiLanguageHint()] : []).join('\n'),
       user: [
         `任务：${task?.title ?? '任务'}`,
         `你下的要求：${clip(instruction?.text ?? '', 600) || '（不是你下的指令）'}`,
@@ -7998,7 +8001,7 @@ class DirectorService {
         kind: 'stuck:wait',
         taskId: id,
         title: task?.title,
-        text: reason || `${quietMinutes} 分钟没有新事件，先继续等`,
+        text: reason || uiText.t('main.director.ledger.stuckWait', { minutes: quietMinutes }),
       });
       return;
     }
@@ -8014,10 +8017,10 @@ class DirectorService {
           kind: 'alert',
           // 和老巡视用同一个标题：同一段静止期只留一条，别在 8 分钟和
           // 15 分钟各报一次。
-          title: '任务停住了',
-          body: `「${task?.title ?? '任务'}」已经 ${quietMinutes} 分钟没有任何新内容，${
-            health.tool ? `最后一步是：${health.tool}` : '连工具动作都没有'
-          }。这不像是正在干活，可能是模型或网络挂住了。你可以让我叫停重试，或者先去看看。`,
+          title: uiText.t('main.director.notice.stuckTitle'),
+          body: health.tool ? uiText.t('main.director.notice.stuckBodyWithTool', { task: task?.title ?? uiText.t('main.director.common.task'), minutes: quietMinutes, tool: health.tool }) : uiText.t('main.director.notice.stuckBodyNoTool', { task: task?.title ?? uiText.t('main.director.common.task'), minutes: quietMinutes }),
+            
+
           taskId: id,
           taskTitle: task?.title,
           urgent: true,
@@ -8031,18 +8034,18 @@ class DirectorService {
       run.stuckAlertedAt = now;
       this.addInbox({
         kind: action === 'ask' ? 'confirm' : 'alert',
-        title: action === 'ask' ? '任务可能卡住了，要我怎么处理？' : '任务可能卡住了',
+        title: action === 'ask' ? uiText.t('main.director.notice.stuckAskTitle') : uiText.t('main.director.notice.stuckMaybeTitle'),
         body:
           message ||
-          `「${task?.title ?? '任务'}」已经 ${quietMinutes} 分钟没有任何新内容，看起来像卡住了。`,
+          uiText.t('main.director.notice.stuckMaybeBody', { task: task?.title ?? uiText.t('main.director.common.task'), minutes: quietMinutes }),
         taskId: id,
         taskTitle: task?.title,
         urgent: true,
         actions:
           action === 'ask'
             ? [
-                { id: 'approve', label: '叫停重试', style: 'primary' },
-                { id: 'dismiss', label: '再等等' },
+                { id: 'approve', label: uiText.t('main.director.action.stopRetry'), style: 'primary' },
+                { id: 'dismiss', label: uiText.t('main.director.action.waitMore') },
               ]
             : [],
         payload:
@@ -8057,14 +8060,14 @@ class DirectorService {
       const text =
         message ||
         (action === 'stop'
-          ? '这个任务已经很久没有新内容，我先叫停这一轮重试。'
-          : '这个任务卡住了，我补一条更明确的指令让它继续。');
+          ? uiText.t('main.director.notice.stuckStopDefault')
+          : uiText.t('main.director.notice.stuckInstructDefault'));
       const mode = this.getState().mode;
       if (mode === 'observe') {
         this.addInbox({
           kind: 'alert',
-          title: '任务可能卡住了',
-          body: `${text}（现在是观察级别，我只提醒，不动手。）`,
+          title: uiText.t('main.director.notice.stuckMaybeTitle'),
+          body: text + uiText.t('main.director.notice.stuckObserveSuffix'),
           taskId: id,
           taskTitle: task?.title,
           urgent: true,
@@ -8074,14 +8077,14 @@ class DirectorService {
       if (mode === 'suggest') {
         this.addInbox({
           kind: 'confirm',
-          title: '任务可能卡住了，要不要我处理？',
+          title: uiText.t('main.director.notice.stuckHandleTitle'),
           body: text,
           taskId: id,
           taskTitle: task?.title,
           urgent: true,
           actions: [
-            { id: 'approve', label: action === 'stop' ? '叫停重试' : '补指令', style: 'primary' },
-            { id: 'dismiss', label: '再等等' },
+            { id: 'approve', label: action === 'stop' ? uiText.t('main.director.action.stopRetry') : uiText.t('main.director.action.addInstruction'), style: 'primary' },
+            { id: 'dismiss', label: uiText.t('main.director.action.waitMore') },
           ],
           payload: {
             kind: 'stuck-action',
@@ -8108,7 +8111,7 @@ class DirectorService {
           this.interruptTask(id);
           this.addInbox({
             kind: 'report',
-            title: '我把卡住的任务接上了',
+            title: uiText.t('main.director.notice.stuckReconnectedTitle'),
             body: text,
             taskId: id,
             taskTitle: task?.title,
@@ -8120,7 +8123,7 @@ class DirectorService {
       if (stopped.ok) {
         this.addInbox({
           kind: 'report',
-          title: '我把卡住的任务叫停了',
+          title: uiText.t('main.director.notice.stuckStoppedTitle'),
           body: text,
           taskId: id,
           taskTitle: task?.title,
@@ -8179,14 +8182,14 @@ class DirectorService {
         );
         const status = [];
         if (row.health) {
-          status.push(`已跑 ${Math.round(row.health.elapsedMs / 60000)} 分钟`);
-          if (row.idleMinutes >= 2) status.push(`${row.idleMinutes} 分钟没有新事件`);
-          if (row.health.tool) status.push(`最后一步：${row.health.tool}`);
+          status.push(uiText.t('main.director.project.activeElapsed', { minutes: Math.round(row.health.elapsedMs / 60000) }));
+          if (row.idleMinutes >= 2) status.push(uiText.t('main.director.project.activeIdle', { minutes: row.idleMinutes }));
+          if (row.health.tool) status.push(uiText.t('main.director.project.activeLastStep', { tool: row.health.tool }));
         }
         return {
-          name: oneLine(row.name, 40) || '员工',
-          part: part || '正在收尾',
-          status: status.join('，'),
+          name: oneLine(row.name, 40) || uiText.t('main.director.common.employee'),
+          part: part || uiText.t('main.director.project.activeClosing'),
+          status: status.join(uiText.t('main.director.project.statusSeparator')),
         };
       });
   }
@@ -8194,8 +8197,8 @@ class DirectorService {
   /** 一行话版本，给模型汇报的兜底正文用。 */
   projectActiveParts(snapshot) {
     return this.projectActiveLines(snapshot)
-      .map((row) => `${row.name}：${row.part}`)
-      .join('；');
+      .map((row) => uiText.t('main.director.project.partLine', { name: row.name, part: row.part }))
+      .join(uiText.t('main.director.project.partSeparator'));
   }
 
   projectSnapshot(project, now = Date.now()) {
@@ -8229,7 +8232,7 @@ class DirectorService {
     const rows = final.map((item) => {
       const task = this.taskOf(item.taskId);
       const health = this.runHealth(item.taskId, now);
-      const name = item.employeeName || task?.title || '员工';
+      const name = item.employeeName || task?.title || uiText.t('main.director.common.employee');
       return {
         item,
         task,
@@ -8274,7 +8277,7 @@ class DirectorService {
         command: '',
         entryPaths: [],
         kind: 'unknown',
-        notes: ['项目在远程空间或还没有本地路径，入口请从任务里打开。'],
+        notes: [uiText.t('main.director.project.entryRemoteNote')],
       };
     }
     let base = path.resolve(root);
@@ -8381,7 +8384,7 @@ class DirectorService {
     if (scriptName) {
       command = `${pm} ${scriptName === 'start' ? 'start' : `run ${scriptName}`}`;
     } else if (kind === 'web') {
-      command = '直接打开 index.html';
+      command = uiText.t('main.director.project.openIndexHtml');
     } else if (kind === 'python') {
       command = has('manage.py')
         ? 'python manage.py runserver'
@@ -8428,24 +8431,24 @@ class DirectorService {
     const first = entry.entryPaths?.[0] || '';
     steps.push(
       first
-        ? `打开 ${first}（在 ${entry.root || '项目根目录'} 下），确认能正常进入、控制台没有报错`
-        : '按现有启动方式打开项目，确认入口能正常打开，控制台/日志没有报错',
+        ? uiText.t('main.director.project.debugStepOpenFirst', { entry: first, root: entry.root || uiText.t('main.director.project.rootFallback') })
+        : uiText.t('main.director.project.debugStepOpenGeneric'),
     );
-    if (entry.command) steps.push(`用「${entry.command}」启动一次，把主要操作用一遍`);
+    if (entry.command) steps.push(uiText.t('main.director.project.debugStepLaunch', { command: entry.command }));
     // 已经有验收点时直接用它们，不要退回到“登录/账号”这种和项目无关的模板。
     if (points.length > 0) {
-      for (const point of points.slice(0, 3)) steps.push(`确认：${point}`);
+      for (const point of points.slice(0, 3)) steps.push(uiText.t('main.director.project.debugStepConfirmPoint', { point }));
     } else {
-      steps.push('把主要流程完整走一遍：新增、查看、修改、删除这些关键操作');
+      steps.push(uiText.t('main.director.project.debugStepFlow'));
     }
-    steps.push('试异常和边界：空输入、错误格式、重复提交');
+    steps.push(uiText.t('main.director.project.debugStepEdge'));
     steps.push(
       kind === 'web'
-        ? '刷新页面、关掉再打开，确认数据还在；换窄窗口看布局'
-        : '关掉再打开，确认数据/状态还在',
+        ? uiText.t('main.director.project.debugStepWebPersist')
+        : uiText.t('main.director.project.debugStepPersist'),
     );
-    if (kind === 'electron') steps.push('打包后安装运行，检查文件读写、权限和窗口状态');
-    if (kind === 'python') steps.push('在干净环境装一遍依赖，再用启动命令运行一次');
+    if (kind === 'electron') steps.push(uiText.t('main.director.project.debugStepElectron'));
+    if (kind === 'python') steps.push(uiText.t('main.director.project.debugStepPython'));
     return steps.slice(0, 6);
   }
 
@@ -8480,7 +8483,7 @@ class DirectorService {
         '不要建议先发半成品，不要把开发工作再说一遍；入口不明确就写“按现有启动方式打开”。',
         '不要写事实里没有的流程（登录、账号、打包），这个项目没有就别提。',
         '只输出一行 JSON：{"minutes":15,"steps":["调试项"],"note":"一句提醒"}。不要写别的。',
-      ].join('\n'),
+      ].concat(uiLanguageHint() ? [uiLanguageHint()] : []).join('\n'),
       user: facts,
       maxTokens: 500,
       timeoutMs: DEBUG_PLAN_TIMEOUT_MS,
@@ -8536,8 +8539,8 @@ class DirectorService {
       project.debugNotifiedAt = now;
       project.updatedAt = now;
       project.lastReportAt = now;
-      project.lastReport = `开发完成，准备调试（约 ${plan.minutes} 分钟）`;
-      this.addProjectDecision(project.id, '开发完成，已提醒领导进入调试');
+      project.lastReport = uiText.t('main.director.status.lastReportDebugReady', { minutes: plan.minutes });
+      this.addProjectDecision(project.id, uiText.t('main.director.project.decisionDebugReady'));
       this.scheduleSave('projects');
 
       const files = [];
@@ -8545,7 +8548,7 @@ class DirectorService {
         files.push({
           workspaceId: entry.workspaceId,
           path: '.',
-          name: `${project.title}（项目根目录）`,
+          name: uiText.t('main.director.project.fileRootName', { title: project.title }),
           kind: 'directory',
           project: true,
         });
@@ -8559,27 +8562,27 @@ class DirectorService {
         }
       }
       const lines = [
-        `「${project.title}」开发已经完成，可以进入调试了。`,
-        entry.root ? `- 项目入口：${entry.root}` : `- 项目入口：${entry.notes[0]}`,
-        entry.command ? `- 启动：${entry.command}` : '',
-        '- 建议这样调试：',
+        uiText.t('main.director.project.debugReadyLine1', { title: project.title }),
+        uiText.t('main.director.project.debugReadyEntry', { entry: entry.root || entry.notes[0] }),
+        entry.command ? uiText.t('main.director.project.debugReadyStart', { command: entry.command }) : '',
+        uiText.t('main.director.project.debugReadySuggest'),
         ...plan.steps.map((step) => `  - ${step}`),
-        `- 预计还要 ${plan.minutes} 分钟（按 AI 调试速度估的${
-          plan.fromModel ? '' : '，粗估'
-        }）。`,
+        uiText.t('main.director.project.debugReadyEta', { minutes: plan.minutes, rough: plan.fromModel ? '' : uiText.t('main.director.project.debugReadyEtaRough') }),
+          
+        
         snapshot.unverified.length > 0
-          ? `- 注意：其中 ${snapshot.unverified.length} 个员工是未验证收尾，调试时重点看。`
+          ? uiText.t('main.director.project.debugReadyUnverified', { count: snapshot.unverified.length })
           : '',
         plan.note ? `- ${plan.note}` : '',
-        '调试中发现的问题直接告诉我，我安排人修。',
+        uiText.t('main.director.project.debugReadyFooter'),
       ].filter(Boolean);
       this.addInbox({
         kind: 'confirm',
-        title: '开发完成，可以进入调试了',
+        title: uiText.t('main.director.confirm.debugReadyTitle'),
         body: lines.join('\n'),
         taskId: project.kind === 'task' ? project.taskIds[0] : '',
         taskTitle: project.title,
-        actions: [{ id: 'approve', label: '进入调试', style: 'primary' }],
+        actions: [{ id: 'approve', label: uiText.t('main.director.action.enterDebug'), style: 'primary' }],
         payload: {
           kind: 'project-debug',
           projectId: project.id,
@@ -8591,7 +8594,7 @@ class DirectorService {
         kind: 'project:debug',
         taskId: project.kind === 'task' ? project.taskIds[0] : '',
         title: project.title,
-        text: `开发完成，准备调试：${plan.steps.join('；')}；预计 ${plan.minutes} 分钟`,
+        text: uiText.t('main.director.ledger.debugReady', { steps: plan.steps.join(uiText.t('main.director.report.listSeparator')), minutes: plan.minutes }),
       });
       return true;
     } finally {
@@ -8687,7 +8690,7 @@ class DirectorService {
         '开发已经完成、准备进入调试，是必须主动开口的节点：说清有哪些调试、按 AI 调试速度大概还要多久，并把项目入口一起给领导。',
         '动作：silence（不说话）、report（汇报）、ask（问领导/要决定）、stop（叫停最慢的）、instruct（补指令）。',
         '只输出一行 JSON：{"action":"silence|report|ask|stop|instruct","message":"对领导说的话","taskId":"要处理的任务 id，可空","instruction":"action=instruct 时给工人的指令","criteria":"可选","reason":"判断依据"}。不要写别的。',
-      ].join('\n'),
+      ].concat(uiLanguageHint() ? [uiLanguageHint()] : []).join('\n'),
       user: facts,
       maxTokens: 400,
       timeoutMs: 20 * 1000,
@@ -8700,7 +8703,7 @@ class DirectorService {
     // 还有员工在开发时，模型不能说“开发完成/可以调试”。
     if (
       snapshot.active.length > 0 &&
-      /开发完成|已完成|做完了|进入调试|可以调试/.test(message)
+      /开发完成|已完成|做完了|进入调试|可以调试|development (?:is )?complete|all done|ready to debug/i.test(message)
     ) {
       message = '';
     }
@@ -8710,11 +8713,11 @@ class DirectorService {
       this.reportProject(project, {
         body:
           message ||
-          `「${project.title}」还在推进，${snapshot.accepted.length}/${snapshot.rows.length} 个已完成${
-            snapshot.active.length > 0
-              ? `，${this.projectActiveParts(snapshot) || `${snapshot.active.length} 个员工`}还在做`
-              : ''
-          }。`,
+          uiText.t('main.director.report.progressBody', { title: project.title, accepted: snapshot.accepted.length, total: snapshot.rows.length, active: snapshot.active.length > 0 ? uiText.t('main.director.report.progressActive', { parts: this.projectActiveParts(snapshot) || uiText.t('main.director.report.progressActiveFallback', { count: snapshot.active.length }) }) : '' }),
+            
+              
+              
+          
         // 模型原本想“问”，但话被拦掉（比如又提半成品）时降级成普通汇报。
         ask: action === 'ask' && Boolean(message),
         force: Boolean(force),
@@ -8732,22 +8735,22 @@ class DirectorService {
     const mode = this.getState().mode;
     if (mode === 'observe') {
       this.reportProject(project, {
-        body: message || `「${target.name}」看起来偏慢，但我现在是观察级别，只能提醒。`,
+        body: message || uiText.t('main.director.report.slowObserve', { name: target.name }),
         ask: false,
       });
       return;
     }
     if (mode === 'suggest') {
       this.addConfirm(target.item.taskId, {
-        title: '项目偏慢，要不要我处理？',
+        title: uiText.t('main.director.confirm.slowTitle'),
         body:
           message ||
-          `「${project.title}」里「${target.name}」偏慢；${target.idleMinutes} 分钟没有新事件。我建议${
-            action === 'stop' ? '叫停重试' : '补一条更明确的指令'
-          }。`,
+          action === 'stop' ? uiText.t('main.director.confirm.slowBodyStop', { title: project.title, name: target.name, minutes: target.idleMinutes }) : uiText.t('main.director.confirm.slowBodyInstruct', { title: project.title, name: target.name, minutes: target.idleMinutes }),
+            
+          
         actions: [
-          { id: 'approve', label: action === 'stop' ? '叫停重试' : '补指令', style: 'primary' },
-          { id: 'dismiss', label: '再等等' },
+          { id: 'approve', label: action === 'stop' ? uiText.t('main.director.action.stopRetry') : uiText.t('main.director.action.addInstruction'), style: 'primary' },
+          { id: 'dismiss', label: uiText.t('main.director.action.waitMore') },
         ],
         payload: {
           kind: 'stuck-action',
@@ -8772,7 +8775,7 @@ class DirectorService {
       if (queued.ok) {
         this.interruptTask(target.item.taskId);
         this.reportProject(project, {
-          body: message || `「${target.name}」偏慢，我补了一条更明确的指令让它继续。`,
+          body: message || uiText.t('main.director.report.instructedSlow', { name: target.name }),
           ask: false,
         });
         return;
@@ -8780,7 +8783,7 @@ class DirectorService {
     }
     if (this.interruptTask(target.item.taskId).ok) {
       this.reportProject(project, {
-        body: message || `「${target.name}」偏慢，我先叫停这一轮，准备重派或重试。`,
+        body: message || uiText.t('main.director.report.stoppedSlow', { name: target.name }),
         ask: false,
       });
     }
@@ -8858,8 +8861,8 @@ class DirectorService {
             taskId: instruction.taskId,
             title: instruction.taskTitle,
             text: stalled
-              ? `连续 ${PROGRESS_STOP_CALLS} 步没有写入，换成收口指令`
-              : `用到 ${Math.round((elapsed / budgetMs) * 100)}%，换成收口指令`,
+              ? uiText.t('main.director.ledger.wrapProgress', { calls: PROGRESS_STOP_CALLS })
+              : uiText.t('main.director.ledger.wrapBudget', { percent: Math.round((elapsed / budgetMs) * 100) }),
           });
           // 收口指令排在队列里；先停当前这一轮，它才能接上。
           this.interruptTask(instruction.taskId);
@@ -8875,7 +8878,7 @@ class DirectorService {
         kind: 'run:budget',
         taskId: instruction.taskId,
         title: instruction.taskTitle,
-        text: `超过 ${instruction.budgetMinutes} 分钟上限，已叫停`,
+        text: uiText.t('main.director.ledger.budgetOver', { minutes: instruction.budgetMinutes }),
       });
     }
   }
@@ -8929,15 +8932,15 @@ class DirectorService {
     this.scheduleSave('projects');
     this.addInbox({
       kind: ask ? 'confirm' : 'report',
-      title: ask ? '项目进度：要你定一下' : '项目进度',
+      title: ask ? uiText.t('main.director.report.projectTitleAsk') : uiText.t('main.director.report.projectTitle'),
       body: text,
       taskId: project.kind === 'task' ? project.taskIds[0] : '',
       taskTitle: project.title,
       actions: ask
         ? [
             // 只让领导进来看看当前项目，不再提供“先发半成品”这个选项。
-            { id: 'approve', label: '进入项目', style: 'primary' },
-            { id: 'dismiss', label: '继续跑' },
+            { id: 'approve', label: uiText.t('main.director.action.enterProject'), style: 'primary' },
+            { id: 'dismiss', label: uiText.t('main.director.action.keepRunning') },
           ]
         : [],
       payload: ask ? { kind: 'project-time', projectId: project.id } : null,
@@ -8998,17 +9001,17 @@ class DirectorService {
       if (!this.monitored(taskId)) continue;
       if (now - run.lastAt < STALL_MS) continue;
       const idleKey = `${taskId}:stall:${run.lastAt}`;
-      const title = this.taskOf(taskId)?.title ?? '任务';
+      const title = this.taskOf(taskId)?.title ?? uiText.t('main.director.common.task');
       const minutes = Math.round((now - run.lastAt) / 60000);
       // 这轮静止期已经由 judgeStuckRun 提醒过：不重复发。
       if (!run.stuckAlertedAt && !this.lastAlertAt.has(idleKey)) {
         this.lastAlertAt.set(idleKey, now);
         this.addInbox({
           kind: 'alert',
-          title: '任务停住了',
-          body: `「${title}」已经 ${minutes} 分钟没有新动静${
-            run.tool ? `，最后一步是：${run.tool}` : ''
-          }。可以去看看，或让我给工人发一条催办。`,
+          title: uiText.t('main.director.notice.stuckTitle'),
+          body: run.tool ? uiText.t('main.director.notice.stallBodyWithTool', { title, minutes, tool: run.tool }) : uiText.t('main.director.notice.stallBody', { title, minutes }),
+            
+          
           taskId,
           taskTitle: this.taskOf(taskId)?.title,
           urgent: true,
@@ -9031,13 +9034,13 @@ class DirectorService {
           pending.state = 'escalated';
           pending.finishedAt = now;
           pending.unverified = true;
-          pending.resultNote = `任务停住超过 ${Math.round(STALL_GIVEUP_MS / 60000)} 分钟，未收到结果`;
+          pending.resultNote = uiText.t('main.director.status.stallGiveUp', { minutes: Math.round(STALL_GIVEUP_MS / 60000) });
           this.addConfirm(taskId, {
-            title: '任务停住太久，我不再等了',
-            body: `「${title}」已经 ${minutes} 分钟没有动静，这条指令我收不回结果，也不再重复提醒。继续等还是放弃，由你决定。`,
+            title: uiText.t('main.director.confirm.stallGiveUpTitle'),
+            body: uiText.t('main.director.confirm.stallGiveUpBody', { title, minutes }),
             actions: [
-              { id: 'rework', label: '再试一次', style: 'primary' },
-              { id: 'abandon', label: '放弃', style: 'danger' },
+              { id: 'rework', label: uiText.t('main.director.action.retry'), style: 'primary' },
+              { id: 'abandon', label: uiText.t('main.director.action.abandon'), style: 'danger' },
             ],
             payload: { instructionId: pending.id },
             urgent: true,
@@ -9046,8 +9049,8 @@ class DirectorService {
         } else {
           this.addInbox({
             kind: 'alert',
-            title: '任务停住太久',
-            body: `「${title}」已经 ${minutes} 分钟没有动静。我不再重复提醒，需要你手动处理。`,
+            title: uiText.t('main.director.notice.stallGiveUpTitle'),
+            body: uiText.t('main.director.notice.stallGiveUpBody', { title, minutes }),
             taskId,
             taskTitle: title,
             urgent: true,
@@ -9067,10 +9070,10 @@ class DirectorService {
       this.lastAlertAt.set(orphanKey, now);
       this.addInbox({
         kind: 'alert',
-        title: '任务状态对不上',
-        body: `「${task.title}」显示在运行，但已经 ${Math.round(
-          (now - task.updatedAt) / 60000,
-        )} 分钟没有任何记录。可能是异常退出。`,
+        title: uiText.t('main.director.notice.orphanTitle'),
+        body: uiText.t('main.director.notice.orphanBody', { title: task.title, minutes: Math.round((now - task.updatedAt) / 60000) }),
+          
+        
         taskId,
         taskTitle: task.title,
         urgent: true,
@@ -9089,11 +9092,11 @@ class DirectorService {
       if (instruction.failures >= 3) {
         instruction.state = 'escalated';
         this.addConfirm(instruction.taskId, {
-          title: '指令没能执行',
-          body: `「${instruction.taskTitle}」的指令连续 ${instruction.failures} 次没有真正开始。`,
+          title: uiText.t('main.director.confirm.undeliveredTitle'),
+          body: uiText.t('main.director.confirm.undeliveredBody', { task: instruction.taskTitle, count: instruction.failures }),
           actions: [
-            { id: 'rework', label: '再试一次', style: 'primary' },
-            { id: 'abandon', label: '放弃', style: 'danger' },
+            { id: 'rework', label: uiText.t('main.director.action.retry'), style: 'primary' },
+            { id: 'abandon', label: uiText.t('main.director.action.abandon'), style: 'danger' },
           ],
           payload: { instructionId: instruction.id },
           urgent: true,
@@ -9691,6 +9694,16 @@ class DirectorService {
       return null;
     }
   }
+}
+
+/**
+ * 提示模型：界面当前是英文时，凡是要展示给用户的文字都用英文。
+ * 协议字段（JSON 键、结论词）仍按各提示词原有的要求输出。
+ */
+function uiLanguageHint() {
+  return uiText.getLanguage() === 'en'
+    ? 'The user interface is currently in English: write any text that will be shown to the user (titles, reasons, explanations, steps, questions) in English. Keep protocol fields and required literal tokens exactly as specified above.'
+    : '';
 }
 
 module.exports = {

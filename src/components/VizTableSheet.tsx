@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { VizChart } from '../types';
+import { useI18n } from '../i18n';
 import { buildFullChart } from '../lib/vizFullChart';
 import { ChartBody, Legend } from './VizChart';
 import { useElementWidth } from '../lib/useElementWidth';
@@ -42,6 +43,7 @@ const SHEET_BASIS = 1080;
  * table view is one click away, not the only thing on offer.
  */
 export function VizTableSheet({ workspaceId, chart, onClose }: Props) {
+  const { t, locale } = useI18n();
   const refs = chart.table?.refs ?? [];
   const [state, setState] = useState<SheetState>(EMPTY);
   const [query, setQuery] = useState('');
@@ -54,14 +56,14 @@ export function VizTableSheet({ workspaceId, chart, onClose }: Props) {
     const load = async () => {
       const api = window.ezness;
       if (!api?.workspaceVizTableRows || refs.length === 0) {
-        setState({ ...EMPTY, loading: false, error: '这张表没有可读取的原始文件。' });
+        setState({ ...EMPTY, loading: false, error: t('viz.sheet.noSource') });
         return;
       }
       try {
         const result = await api.workspaceVizTableRows({ workspaceId, refs });
         if (!alive) return;
         if (!result?.ok) {
-          setState({ ...EMPTY, loading: false, error: result?.error || '读取失败。' });
+          setState({ ...EMPTY, loading: false, error: result?.error || t('viz.sheet.readFailed') });
           return;
         }
         setState({
@@ -85,7 +87,7 @@ export function VizTableSheet({ workspaceId, chart, onClose }: Props) {
     return () => {
       alive = false;
     };
-  }, [workspaceId, chart]);
+  }, [workspaceId, chart, t]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -104,8 +106,8 @@ export function VizTableSheet({ workspaceId, chart, onClose }: Props) {
   }, [state.rows, query]);
 
   const full = useMemo(
-    () => buildFullChart(chart, state.columns, rows),
-    [chart, state.columns, rows],
+    () => buildFullChart(chart, state.columns, rows, t),
+    [chart, state.columns, rows, t],
   );
 
   // Without a usable numeric column there is nothing to draw; fall back to the
@@ -114,26 +116,34 @@ export function VizTableSheet({ workspaceId, chart, onClose }: Props) {
   const shown = rows.slice(0, RENDER_LIMIT);
 
   return (
-    <div className="viz-sheet" role="dialog" aria-modal="true" aria-label={`${chart.title} 全部数据`}>
+    <div
+      className="viz-sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('viz.sheet.dialogAria', { title: chart.title })}
+    >
       <header className="viz-sheet__head">
         <div className="viz-sheet__titles">
-          <h3>{chart.title} · 全部数据</h3>
+          <h3>{t('viz.sheet.title', { title: chart.title })}</h3>
           <p>
             {state.loading
-              ? '正在读取原始文件…'
-              : `${state.total.toLocaleString('en-US')} 行 · 显示 ${rows.length.toLocaleString('en-US')} 行`}
+              ? t('viz.sheet.loading')
+              : t('viz.sheet.rowSummary', {
+                  total: state.total.toLocaleString(locale),
+                  shown: rows.length.toLocaleString(locale),
+                })}
             {chart.source ? ` · ${chart.source}` : ''}
           </p>
         </div>
         {full && (
-          <div className="viz-sheet__views" role="group" aria-label="展示方式">
+          <div className="viz-sheet__views" role="group" aria-label={t('viz.sheet.viewMode')}>
             <button
               type="button"
               className={`viz-sheet__view ${mode === 'chart' ? 'is-active' : ''}`}
               aria-pressed={mode === 'chart'}
               onClick={() => setView('chart')}
             >
-              图表
+              {t('viz.viewChart')}
             </button>
             <button
               type="button"
@@ -141,7 +151,7 @@ export function VizTableSheet({ workspaceId, chart, onClose }: Props) {
               aria-pressed={mode === 'table'}
               onClick={() => setView('table')}
             >
-              表格
+              {t('viz.viewTable')}
             </button>
           </div>
         )}
@@ -149,19 +159,24 @@ export function VizTableSheet({ workspaceId, chart, onClose }: Props) {
           <SearchIcon size={13} />
           <input
             value={query}
-            placeholder="在全部数据里搜索"
-            aria-label="搜索全部数据"
+            placeholder={t('viz.sheet.searchPlaceholder')}
+            aria-label={t('viz.sheet.searchAria')}
             spellCheck={false}
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        <button type="button" className="viz-sheet__close" aria-label="关闭全部数据" onClick={onClose}>
+        <button
+          type="button"
+          className="viz-sheet__close"
+          aria-label={t('viz.sheet.closeAria')}
+          onClick={onClose}
+        >
           <CloseIcon size={15} />
         </button>
       </header>
 
       <div className="viz-sheet__body">
-        {state.loading && <div className="viz-sheet__note">正在读取原始文件…</div>}
+        {state.loading && <div className="viz-sheet__note">{t('viz.sheet.loading')}</div>}
         {state.error && <div className="viz-sheet__note viz-sheet__note--error">{state.error}</div>}
 
         {!state.loading && !state.error && mode === 'chart' && full && (
@@ -171,9 +186,15 @@ export function VizTableSheet({ workspaceId, chart, onClose }: Props) {
             </div>
             <Legend chart={full.chart} />
             <figcaption className="viz-sheet__note">
-              按「{full.labelColumn}」汇总「{full.valueColumn}」重新绘制：
-              {full.used.toLocaleString('en-US')} 行数据，图表显示{full.drawn === full.used ? '全部' : `前 ${full.drawn} 项`}
-              。切到「表格」可以逐行核对。
+              {t('viz.sheet.caption', {
+                label: full.labelColumn,
+                value: full.valueColumn,
+                used: full.used.toLocaleString(locale),
+                scope:
+                  full.drawn === full.used
+                    ? t('viz.sheet.all')
+                    : t('viz.sheet.topN', { count: full.drawn }),
+              })}
             </figcaption>
           </figure>
         )}
@@ -200,15 +221,17 @@ export function VizTableSheet({ workspaceId, chart, onClose }: Props) {
         )}
 
         {state.truncated && (
-          <p className="viz-sheet__note">文件很大，只读取了前 {state.rows.length} 行。</p>
+          <p className="viz-sheet__note">
+            {t('viz.sheet.truncated', { shown: state.rows.length.toLocaleString(locale) })}
+          </p>
         )}
         {mode === 'table' && rows.length > RENDER_LIMIT && (
           <p className="viz-sheet__note">
-            一次最多显示 {RENDER_LIMIT} 行，用上面的搜索缩小范围。
+            {t('viz.sheet.renderLimit', { limit: RENDER_LIMIT.toLocaleString(locale) })}
           </p>
         )}
         {mode === 'table' && !full && !state.loading && !state.error && (
-          <p className="viz-sheet__note">这张表里没有可以画图的数字列，只能按表格查看。</p>
+          <p className="viz-sheet__note">{t('viz.sheet.noNumeric')}</p>
         )}
       </div>
     </div>

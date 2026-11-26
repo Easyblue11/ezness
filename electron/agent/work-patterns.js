@@ -11,6 +11,8 @@
  * or changes the workspace — it only produces evidence.
  */
 
+const uiText = require('../ui-text');
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const LIMITS = {
@@ -331,16 +333,20 @@ function formatClock(ts) {
 
 function formatDuration(ms) {
   const total = Math.max(0, Math.round((Number(ms) || 0) / 1000));
-  if (total < 60) return `${total}秒`;
+  if (total < 60) return uiText.t('main.work.duration.seconds', { value: total });
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
-  return seconds ? `${minutes}分${seconds}秒` : `${minutes}分钟`;
+  return seconds
+    ? uiText.t('main.work.duration.minutesSeconds', { minutes, seconds })
+    : uiText.t('main.work.duration.minutes', { value: minutes });
 }
 
 function formatTokens(count) {
   const value = Math.max(0, Number(count) || 0);
-  if (value >= 10000) return `${(value / 10000).toFixed(1)}万`;
-  return String(value);
+  if (value < 10000) return String(value);
+  // Chinese counts in 万 (ten-thousands); English uses k.
+  const perUnit = uiText.getLanguage() === 'zh' ? 10000 : 1000;
+  return uiText.t('main.work.tokens.short', { value: (value / perUnit).toFixed(1) });
 }
 
 /** The evidence lines shown on the card and handed to the model. */
@@ -348,12 +354,16 @@ function evidenceLines(pattern, limit = 6) {
   const runs = [...(pattern?.runs ?? [])].sort((a, b) => b.at - a.at).slice(0, limit);
   return runs.map((run) => {
     const parts = [formatClock(run.at)];
-    if (run.taskTitle) parts.push(`「${run.taskTitle}」`);
+    if (run.taskTitle) {
+      parts.push(uiText.t('main.work.evidence.taskTitle', { title: run.taskTitle }));
+    }
     parts.push(formatDuration(run.durationMs));
     const tokens = run.inputTokens + run.outputTokens;
     if (tokens > 0) parts.push(`${formatTokens(tokens)} tok`);
-    if (run.files.length > 0) parts.push(`产出 ${run.files.length} 个文件`);
-    if (run.writes > 0) parts.push(`${run.writes} 次写操作`);
+    if (run.files.length > 0) {
+      parts.push(uiText.t('main.work.evidence.files', { count: run.files.length }));
+    }
+    if (run.writes > 0) parts.push(uiText.t('main.work.evidence.writes', { count: run.writes }));
     const top = run.tools[0];
     if (top) parts.push(`${top.name}×${top.count}`);
     return `· ${parts.join(' ')}`;
@@ -363,9 +373,12 @@ function evidenceLines(pattern, limit = 6) {
 /** Deterministic headline when the model is silent (used in tests/fallbacks). */
 function describe(pattern) {
   const stats = statsOf(pattern);
-  return `${stats.count} 次相似的工作，跨 ${Math.max(stats.tasks, stats.spaces)} 个任务，共 ${formatDuration(
-    stats.totalMs,
-  )}、${formatTokens(stats.totalTokens)} tok`;
+  return uiText.t('main.work.describe', {
+    runs: stats.count,
+    tasks: Math.max(stats.tasks, stats.spaces),
+    time: formatDuration(stats.totalMs),
+    tokens: formatTokens(stats.totalTokens),
+  });
 }
 
 function toolSummary(pattern) {
@@ -377,14 +390,16 @@ function toolSummary(pattern) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6)
     .map(([name, count]) => `${name}×${count}`)
-    .join('、');
+    .join(uiText.t('main.work.list.separator'));
 }
 
 function fileSummary(pattern) {
   const counts = new Map();
+  const folderLabel = uiText.t('main.work.file.folder');
+  const noExtensionLabel = uiText.t('main.work.file.noExtension');
   for (const run of pattern?.runs ?? []) {
     for (const file of run.files) {
-      const key = file.kind === 'directory' ? '项目文件夹' : file.ext || '无扩展名';
+      const key = file.kind === 'directory' ? folderLabel : file.ext || noExtensionLabel;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
@@ -392,7 +407,7 @@ function fileSummary(pattern) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([key, count]) => `${key}×${count}`)
-    .join('、');
+    .join(uiText.t('main.work.list.separator'));
 }
 
 /** 一类重复工作的短名：取最近一次的原话，没有原话就用动作组合。 */
@@ -401,7 +416,9 @@ function titleOf(pattern) {
   const intent = runs.map((run) => oneLine(run.intent, 120)).find(Boolean);
   if (intent) return clip(intent, 30);
   const tools = toolSummary(pattern);
-  return tools ? `用 ${tools}` : '未命名的工作';
+  return tools
+    ? uiText.t('main.work.title.byTools', { tools })
+    : uiText.t('main.work.title.unnamed');
 }
 
 function percent(part, whole) {
@@ -468,22 +485,35 @@ function auditOf(patterns, now = Date.now()) {
   const reclaimTokens = items.reduce((sum, item) => sum + item.reclaimTokens, 0);
   const pending = items.filter((item) => item.candidate && !item.adviceAt).length;
 
+  const windowDays = Math.round(LIMITS.windowMs / DAY_MS);
   let summary;
   if (items.length === 0) {
     summary = runs === 0
-      ? '近 30 天还没有记下带动作的工作：跑几次带工具的任务，审计才有东西可看。'
-      : `近 30 天记下 ${runs} 次有产出的工作，都只做过一次，暂时没有重复投入。`;
+      ? uiText.t('main.work.summary.none', { days: windowDays })
+      : uiText.t('main.work.summary.once', { days: windowDays, runs });
   } else {
     const top = items[0];
-    summary =
-      `近 30 天记下 ${runs} 次有产出的工作，其中 ${items.length} 类重复出现。` +
-      `重复投入了 ${formatDuration(reclaimMs)}、${formatTokens(reclaimTokens)} tok，` +
-      `占全部投入的 ${percent(reclaimMs, allMs)}%（按时间算）。` +
-      `最该预制的是「${top.title}」：出现 ${top.runs} 次、跨 ${top.tasks} 个任务，` +
-      `预计能回收 ${formatDuration(top.reclaimMs)}。`;
-    if (pending > 0) summary += `\n\n有 ${pending} 类已经达到可以预制标准，还没给你发过建议。`;
-    if (muted > 0) summary += `\n\n${muted} 类你说过先不用，暂时不再提。`;
-    if (advice > 0) summary += `\n\n已经给过 ${advice} 条建议，下滑能看到当时的结论。`;
+    summary = [
+      uiText.t('main.work.summary.head', {
+        days: windowDays,
+        runs,
+        patterns: items.length,
+      }),
+      uiText.t('main.work.summary.waste', {
+        time: formatDuration(reclaimMs),
+        tokens: formatTokens(reclaimTokens),
+        share: percent(reclaimMs, allMs),
+      }),
+      uiText.t('main.work.summary.top', {
+        title: top.title,
+        runs: top.runs,
+        tasks: top.tasks,
+        reclaim: formatDuration(top.reclaimMs),
+      }),
+    ].join('');
+    if (pending > 0) summary += `\n\n${uiText.t('main.work.summary.pending', { count: pending })}`;
+    if (muted > 0) summary += `\n\n${uiText.t('main.work.summary.muted', { count: muted })}`;
+    if (advice > 0) summary += `\n\n${uiText.t('main.work.summary.advice', { count: advice })}`;
   }
 
   return {

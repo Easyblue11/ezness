@@ -1,27 +1,39 @@
 import type { CSSProperties } from 'react';
 import type { WebMode } from '../types';
+import { useI18n } from '../i18n';
+import type { Translate } from './AskLevelSlider';
 
 /** The three stops of the 联网 slider. */
-export const WEB_MODES: { mode: WebMode; name: string; hint: string }[] = [
+export const WEB_MODES: {
+  mode: WebMode;
+  nameKey: string;
+  hintKey: string;
+  /** Used by call sites that do not have the i18n hook at hand. */
+  fallbackName: string;
+}[] = [
   {
     mode: 'off',
-    name: '关闭',
-    hint: '回答前不检索网页。每条对话里仍可以单独打开「联网」。',
+    nameKey: 'workspace.webMode.off',
+    hintKey: 'workspace.webMode.offHint',
+    fallbackName: 'Off',
   },
   {
     mode: 'auto',
-    name: '自动',
-    hint: '由 AI 判断这条消息是否需要最新信息，需要才检索。寒暄、改写和通用问题不会白白搜一次。',
+    nameKey: 'workspace.webMode.auto',
+    hintKey: 'workspace.webMode.autoHint',
+    fallbackName: 'Auto',
   },
   {
     mode: 'always',
-    name: '总是',
-    hint: '每次发送前都先检索网页，再把结果交给模型。',
+    nameKey: 'workspace.webMode.always',
+    hintKey: 'workspace.webMode.alwaysHint',
+    fallbackName: 'Always',
   },
 ];
 
-export function webModeName(mode: WebMode): string {
-  return WEB_MODES.find((item) => item.mode === mode)?.name ?? '自动';
+export function webModeName(mode: WebMode, t?: Translate): string {
+  const item = WEB_MODES.find((entry) => entry.mode === mode) ?? WEB_MODES[1];
+  return t ? t(item.nameKey) : item.fallbackName;
 }
 
 interface Props {
@@ -37,6 +49,7 @@ interface Props {
  * keys working, and the labels below double as buttons.
  */
 export function WebModeSlider({ value, onChange, disabled, hideHint }: Props) {
+  const { t } = useI18n();
   const index = Math.max(0, WEB_MODES.findIndex((item) => item.mode === value));
   const percent = (index / (WEB_MODES.length - 1)) * 100;
   const current = WEB_MODES[index] ?? WEB_MODES[1];
@@ -51,7 +64,7 @@ export function WebModeSlider({ value, onChange, disabled, hideHint }: Props) {
         step={1}
         value={index}
         disabled={disabled}
-        aria-label="联网方式"
+        aria-label={t('workspace.webMode.aria')}
         style={{ '--ask-fill': `${percent}%` } as CSSProperties}
         onChange={(event) => {
           const next = WEB_MODES[Number(event.target.value)];
@@ -69,11 +82,11 @@ export function WebModeSlider({ value, onChange, disabled, hideHint }: Props) {
             onClick={() => onChange(item.mode)}
           >
             <span className="ask-slider__dot" />
-            {item.name}
+            {t(item.nameKey)}
           </button>
         ))}
       </div>
-      {!hideHint && <p className="ask-slider__hint">{current.hint}</p>}
+      {!hideHint && <p className="ask-slider__hint">{t(current.hintKey)}</p>}
     </div>
   );
 }

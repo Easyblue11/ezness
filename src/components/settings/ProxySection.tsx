@@ -5,6 +5,7 @@ import {
   proxyProblem,
   proxyRuleId,
 } from '../../data/proxy';
+import { useI18n } from '../../i18n';
 import type {
   ProxyRule,
   ProxyServerSettings,
@@ -19,14 +20,15 @@ interface Props {
   onChange: (proxy: ProxySettings) => void;
 }
 
-const STATUS_TEXT: Record<ProxyStatus['mode'], string> = {
-  direct: '直接连接',
-  system: '系统代理',
-  fixed: '固定代理',
-  auto: '自动切换',
+const STATUS_KEY: Record<ProxyStatus['mode'], string> = {
+  direct: 'settings.proxy.mode.direct',
+  system: 'settings.proxy.mode.system',
+  fixed: 'settings.proxy.mode.fixed',
+  auto: 'settings.proxy.mode.auto',
 };
 
 export function ProxySection({ proxy, onChange }: Props) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<ProxyStatus | null>(null);
   const [applying, setApplying] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -95,12 +97,12 @@ export function ProxySection({ proxy, onChange }: Props) {
   async function apply() {
     const problem = proxyProblem(proxy);
     if (problem) {
-      setMessage({ kind: 'error', text: problem });
+      setMessage({ kind: 'error', text: t(problem.key, problem.vars) });
       return;
     }
     const api = window.ezness;
     if (!api?.proxyApply) {
-      setMessage({ kind: 'error', text: '当前版本不支持代理设置。' });
+      setMessage({ kind: 'error', text: t('settings.proxy.error.unsupported') });
       return;
     }
     setApplying(true);
@@ -114,10 +116,10 @@ export function ProxySection({ proxy, onChange }: Props) {
           ? {
               kind: 'ok',
               text: next.tunnelPort
-                ? `已应用。SSH 隧道监听 127.0.0.1:${next.tunnelPort}，新的请求会走它。`
-                : '已应用。新的请求会使用这个代理。',
+                ? t('settings.proxy.appliedTunnel', { port: next.tunnelPort })
+                : t('settings.proxy.applied'),
             }
-          : { kind: 'error', text: next.error ?? '应用失败。' },
+          : { kind: 'error', text: next.error ?? t('settings.proxy.error.apply') },
       );
     } catch (error) {
       setMessage({
@@ -133,7 +135,7 @@ export function ProxySection({ proxy, onChange }: Props) {
   async function toggleEnabled() {
     const api = window.ezness;
     if (!api?.proxyApply) {
-      setMessage({ kind: 'error', text: '当前版本不支持代理设置。' });
+      setMessage({ kind: 'error', text: t('settings.proxy.error.unsupported') });
       return;
     }
     const next = { ...proxy, enabled: !proxy.enabled };
@@ -147,10 +149,10 @@ export function ProxySection({ proxy, onChange }: Props) {
         onChange(next);
         setMessage({
           kind: 'ok',
-          text: next.enabled ? '代理已开启。' : '代理已关闭，所有请求都会直连。',
+          text: next.enabled ? t('settings.proxy.enabled') : t('settings.proxy.disabled'),
         });
       } else {
-        setMessage({ kind: 'error', text: nextStatus.error ?? '切换失败。' });
+        setMessage({ kind: 'error', text: nextStatus.error ?? t('settings.proxy.error.toggle') });
       }
     } catch (error) {
       setMessage({
@@ -165,7 +167,7 @@ export function ProxySection({ proxy, onChange }: Props) {
   async function testProxy() {
     const api = window.ezness;
     if (!api?.proxyTest) {
-      setMessage({ kind: 'error', text: '当前版本不支持代理测试。' });
+      setMessage({ kind: 'error', text: t('settings.proxy.error.testUnsupported') });
       return;
     }
     setTesting(true);
@@ -176,7 +178,7 @@ export function ProxySection({ proxy, onChange }: Props) {
       setTestResult({
         ok: false,
         latencyMs: 0,
-        detail: '连接失败',
+        detail: t('settings.proxy.error.connect'),
         error: error instanceof Error ? error.message : String(error),
       });
     } finally {
@@ -186,34 +188,31 @@ export function ProxySection({ proxy, onChange }: Props) {
 
   const statusLabel = status
     ? !status.enabled
-      ? '已关闭'
+      ? t('settings.proxy.state.off')
       : status.ok
         ? status.applied
-          ? `已应用 · ${status.detail}`
+          ? t('settings.proxy.state.applied', { detail: status.detail })
           : status.error
-            ? '未生效'
-            : '未应用'
-        : '未生效'
-    : '读取中…';
+            ? t('settings.proxy.state.inactive')
+            : t('settings.proxy.state.notApplied')
+        : t('settings.proxy.state.inactive')
+    : t('settings.proxy.state.reading');
 
   // The switch is the master toggle; the mode still decides what "on" means.
   const capsuleLabel = !proxy.enabled
-    ? '代理已关闭'
+    ? t('settings.proxy.capsule.off')
     : proxy.mode === 'direct'
-      ? '代理已开启（当前直连）'
+      ? t('settings.proxy.capsule.direct')
       : proxy.mode === 'system'
-        ? '代理已开启（系统代理）'
-        : '代理已开启';
+        ? t('settings.proxy.capsule.system')
+        : t('settings.proxy.capsule.on');
 
   return (
     <div className="section">
       <div className="section__head">
         <div>
-          <h2>代理设置</h2>
-          <p>
-            给应用自身的网络请求设置出口：模型接口、联网检索、知识库与语音模型下载都会走这里。
-            模式与 Zero Omega 类似，支持直接连接、系统代理、固定代理和按域名自动切换。
-          </p>
+          <h2>{t('settings.proxy.title')}</h2>
+          <p>{t('settings.proxy.desc')}</p>
         </div>
         <span className={`pill proxy-status ${status?.error ? 'is-bad' : ''}`}>
           <ProxyIcon size={12} />
@@ -226,7 +225,9 @@ export function ProxySection({ proxy, onChange }: Props) {
           type="button"
           role="switch"
           aria-checked={proxy.enabled}
-          aria-label={proxy.enabled ? '关闭代理' : '开启代理'}
+          aria-label={
+            proxy.enabled ? t('settings.proxy.aria.disable') : t('settings.proxy.aria.enable')
+          }
           className={`proxy-switch ${proxy.enabled ? 'is-on' : ''}`}
           disabled={toggling || applying}
           onClick={() => void toggleEnabled()}
@@ -242,28 +243,26 @@ export function ProxySection({ proxy, onChange }: Props) {
           disabled={testing || toggling}
           onClick={() => void testProxy()}
         >
-          {testing ? '连接中…' : '测试连接'}
+          {testing ? t('settings.proxy.testing') : t('settings.proxy.test')}
         </button>
         {testResult && (
           <span className={`proxy-test ${testResult.ok ? 'is-ok' : 'is-bad'}`}>
             {testResult.ok
-              ? `已连接 · ${testResult.latencyMs} ms`
-              : `连接失败${testResult.error ? `：${testResult.error}` : ''}`}
+              ? t('settings.proxy.test.ok', { ms: testResult.latencyMs })
+              : testResult.error
+                ? t('settings.proxy.test.failDetail', { error: testResult.error })
+                : t('settings.proxy.test.fail')}
           </span>
         )}
       </div>
-      <p className="proxy-hint proxy-hint--toolbar">
-        开关立即生效；修改模式、服务器或规则后，仍要点最下方的「应用代理」。
-      </p>
+      <p className="proxy-hint proxy-hint--toolbar">{t('settings.proxy.hint.toolbar')}</p>
 
       <section className="kb-card">
         <div className="kb-card__title">
           <ProxyIcon size={15} />
-          代理模式
+          {t('settings.proxy.modes.title')}
         </div>
-        <p className="kb-card__desc">
-          切换模式后点最下方的「应用代理」才会生效。直接连接和系统代理不需要填服务器。
-        </p>
+        <p className="kb-card__desc">{t('settings.proxy.modes.desc')}</p>
         <div className="proxy-modes">
           {PROXY_MODES.map((item) => (
             <button
@@ -272,8 +271,8 @@ export function ProxySection({ proxy, onChange }: Props) {
               className={`proxy-mode ${proxy.mode === item.mode ? 'is-active' : ''}`}
               onClick={() => patch({ mode: item.mode })}
             >
-              <strong>{item.label}</strong>
-              <span>{item.desc}</span>
+              <strong>{t(item.label)}</strong>
+              <span>{t(item.desc)}</span>
             </button>
           ))}
         </div>
@@ -281,11 +280,11 @@ export function ProxySection({ proxy, onChange }: Props) {
 
       {usesServer && (
         <section className="kb-card">
-          <div className="kb-card__title">代理服务器</div>
+          <div className="kb-card__title">{t('settings.proxy.server.title')}</div>
           <p className="kb-card__desc">
             {proxy.mode === 'auto'
-              ? '自动切换模式下，命中的域名走这台服务器，其余按下面的默认动作处理。'
-              : '所有请求都走这台服务器。SSH 代理会在本机开一个 SOCKS5 隧道。'}
+              ? t('settings.proxy.server.desc.auto')
+              : t('settings.proxy.server.desc.fixed')}
           </p>
 
           <div className="proxy-schemes">
@@ -294,17 +293,17 @@ export function ProxySection({ proxy, onChange }: Props) {
                 key={item.scheme}
                 type="button"
                 className={`proxy-scheme ${server.scheme === item.scheme ? 'is-active' : ''}`}
-                title={item.desc}
+                title={t(item.desc)}
                 onClick={() => patchServer({ scheme: item.scheme })}
               >
-                {item.label}
+                {t(item.label)}
               </button>
             ))}
           </div>
 
           <div className="field-grid">
             <label className="field">
-              <span className="field__label">地址</span>
+              <span className="field__label">{t('settings.proxy.field.host')}</span>
               <input
                 className="input"
                 value={server.host}
@@ -315,9 +314,11 @@ export function ProxySection({ proxy, onChange }: Props) {
             </label>
             <label className="field">
               <span className="field__label">
-                端口
+                {t('settings.proxy.field.port')}
                 <span className="field__hint">
-                  {server.scheme === 'ssh' ? 'SSH 默认 22' : '本地代理常见 7890'}
+                  {server.scheme === 'ssh'
+                    ? t('settings.proxy.field.portHint.ssh')
+                    : t('settings.proxy.field.portHint.local')}
                 </span>
               </span>
               <input
@@ -338,35 +339,39 @@ export function ProxySection({ proxy, onChange }: Props) {
               <div className="field-grid">
                 <label className="field">
                   <span className="field__label">
-                    用户名
-                    <span className="field__hint">可选</span>
+                    {t('settings.proxy.field.username')}
+                    <span className="field__hint">{t('settings.proxy.field.optional')}</span>
                   </span>
                   <input
                     className="input"
                     value={server.username}
-                    placeholder="代理需要认证时填写"
+                    placeholder={t('settings.proxy.field.usernamePlaceholder')}
                     autoComplete="off"
                     onChange={(event) => patchServer({ username: event.target.value })}
                   />
                 </label>
                 <label className="field">
                   <span className="field__label">
-                    密码
-                    <span className="field__hint">可选</span>
+                    {t('settings.proxy.field.password')}
+                    <span className="field__hint">{t('settings.proxy.field.optional')}</span>
                   </span>
                   <div className="input-row">
                     <input
                       className="input"
                       type={showPassword ? 'text' : 'password'}
                       value={server.password}
-                      placeholder="留空表示无需认证"
+                      placeholder={t('settings.proxy.field.passwordPlaceholder')}
                       autoComplete="new-password"
                       onChange={(event) => patchServer({ password: event.target.value })}
                     />
                     <button
                       type="button"
                       className="iconbtn iconbtn--bordered"
-                      title={showPassword ? '隐藏密码' : '显示密码'}
+                      title={
+                        showPassword
+                          ? t('settings.proxy.hidePassword')
+                          : t('settings.proxy.showPassword')
+                      }
                       onClick={() => setShowPassword((value) => !value)}
                     >
                       {showPassword ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
@@ -376,24 +381,21 @@ export function ProxySection({ proxy, onChange }: Props) {
               </div>
               <p className="proxy-hint">
                 {server.scheme === 'https'
-                  ? 'HTTPS 代理表示「到代理服务器这一段用 TLS 加密」；普通 HTTP 代理请选 HTTP 代理。'
-                  : '认证信息保存在本机的 settings.json 里，和其他 API Key 一样不是加密存储。'}
+                  ? t('settings.proxy.hint.https')
+                  : t('settings.proxy.hint.credentials')}
               </p>
             </>
           )}
 
           {server.scheme === 'socks5' && (
-            <p className="proxy-hint">
-              Chromium 的 SOCKS5 客户端不支持用户名/密码认证。代理必须认证时，请改用 HTTP / HTTPS
-              代理，或用 SSH 代理直接登录服务器。
-            </p>
+            <p className="proxy-hint">{t('settings.proxy.hint.socks5')}</p>
           )}
 
           {server.scheme === 'ssh' && (
             <>
               <div className="field-grid">
                 <label className="field">
-                  <span className="field__label">SSH 用户名</span>
+                  <span className="field__label">{t('settings.proxy.ssh.username')}</span>
                   <input
                     className="input"
                     value={server.username}
@@ -403,21 +405,21 @@ export function ProxySection({ proxy, onChange }: Props) {
                   />
                 </label>
                 <label className="field">
-                  <span className="field__label">认证方式</span>
+                  <span className="field__label">{t('settings.proxy.ssh.auth')}</span>
                   <div className="proxy-segment">
                     <button
                       type="button"
                       className={server.sshAuth === 'password' ? 'is-active' : ''}
                       onClick={() => patchServer({ sshAuth: 'password' })}
                     >
-                      密码
+                      {t('settings.proxy.ssh.auth.password')}
                     </button>
                     <button
                       type="button"
                       className={server.sshAuth === 'key' ? 'is-active' : ''}
                       onClick={() => patchServer({ sshAuth: 'key' })}
                     >
-                      私钥
+                      {t('settings.proxy.ssh.auth.key')}
                     </button>
                   </div>
                 </label>
@@ -425,20 +427,24 @@ export function ProxySection({ proxy, onChange }: Props) {
 
               {server.sshAuth === 'password' ? (
                 <label className="field">
-                  <span className="field__label">SSH 密码</span>
+                  <span className="field__label">{t('settings.proxy.ssh.password')}</span>
                   <div className="input-row">
                     <input
                       className="input"
                       type={showPassword ? 'text' : 'password'}
                       value={server.password}
-                      placeholder="登录密码"
+                      placeholder={t('settings.proxy.ssh.passwordPlaceholder')}
                       autoComplete="new-password"
                       onChange={(event) => patchServer({ password: event.target.value })}
                     />
                     <button
                       type="button"
                       className="iconbtn iconbtn--bordered"
-                      title={showPassword ? '隐藏密码' : '显示密码'}
+                      title={
+                        showPassword
+                          ? t('settings.proxy.hidePassword')
+                          : t('settings.proxy.showPassword')
+                      }
                       onClick={() => setShowPassword((value) => !value)}
                     >
                       {showPassword ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
@@ -448,31 +454,33 @@ export function ProxySection({ proxy, onChange }: Props) {
               ) : (
                 <>
                   <label className="field">
-                    <span className="field__label">私钥文件</span>
+                    <span className="field__label">{t('settings.proxy.ssh.keyFile')}</span>
                     <div className="input-row">
                       <input
                         className="input"
                         value={server.privateKeyPath}
-                        placeholder="选择 id_ed25519 / id_rsa"
+                        placeholder={t('settings.proxy.ssh.keyPlaceholder')}
                         spellCheck={false}
                         onChange={(event) => patchServer({ privateKeyPath: event.target.value })}
                       />
                       <button type="button" className="btn" onClick={() => void chooseKey()}>
-                        浏览
+                        {t('settings.proxy.browse')}
                       </button>
                     </div>
                   </label>
                   <label className="field">
                     <span className="field__label">
-                      私钥口令
-                      <span className="field__hint">没有口令就留空</span>
+                      {t('settings.proxy.ssh.passphrase')}
+                      <span className="field__hint">
+                        {t('settings.proxy.ssh.passphraseHint')}
+                      </span>
                     </span>
                     <div className="input-row">
                       <input
                         className="input"
                         type={showPassphrase ? 'text' : 'password'}
                         value={server.privateKeyPassphrase}
-                        placeholder="可选"
+                        placeholder={t('settings.proxy.ssh.passphrasePlaceholder')}
                         autoComplete="new-password"
                         onChange={(event) =>
                           patchServer({ privateKeyPassphrase: event.target.value })
@@ -481,7 +489,11 @@ export function ProxySection({ proxy, onChange }: Props) {
                       <button
                         type="button"
                         className="iconbtn iconbtn--bordered"
-                        title={showPassphrase ? '隐藏口令' : '显示口令'}
+                        title={
+                          showPassphrase
+                            ? t('settings.proxy.hidePassphrase')
+                            : t('settings.proxy.showPassphrase')
+                        }
                         onClick={() => setShowPassphrase((value) => !value)}
                       >
                         {showPassphrase ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
@@ -493,8 +505,8 @@ export function ProxySection({ proxy, onChange }: Props) {
 
               <label className="field">
                 <span className="field__label">
-                  主机指纹
-                  <span className="field__hint">可选，填了会严格校验</span>
+                  {t('settings.proxy.ssh.fingerprint')}
+                  <span className="field__hint">{t('settings.proxy.ssh.fingerprintHint')}</span>
                 </span>
                 <input
                   className="input"
@@ -504,10 +516,7 @@ export function ProxySection({ proxy, onChange }: Props) {
                   onChange={(event) => patchServer({ fingerprint: event.target.value.trim() })}
                 />
               </label>
-              <p className="proxy-hint">
-                SSH 隧道使用应用已有的 Python + paramiko 连接方式，和远程工作空间共用一套认证逻辑。
-                密码与私钥口令保存在本机 settings.json。
-              </p>
+              <p className="proxy-hint">{t('settings.proxy.ssh.hint')}</p>
             </>
           )}
         </section>
@@ -515,14 +524,15 @@ export function ProxySection({ proxy, onChange }: Props) {
 
       {proxy.mode === 'auto' && (
         <section className="kb-card">
-          <div className="kb-card__title">自动切换规则</div>
+          <div className="kb-card__title">{t('settings.proxy.rules.title')}</div>
           <p className="kb-card__desc">
-            按顺序匹配域名，第一条命中的规则生效。规则只匹配域名本身：
-            <code>*.openai.com</code> 匹配子域名，<code>openai.com</code> 只匹配它自己。
+            {t('settings.proxy.rules.desc1')} <code>*.openai.com</code>{' '}
+            {t('settings.proxy.rules.desc2')} <code>openai.com</code>{' '}
+            {t('settings.proxy.rules.desc3')}
           </p>
 
           <div className="proxy-default">
-            <span>没有命中任何规则时</span>
+            <span>{t('settings.proxy.rules.defaultLabel')}</span>
             <select
               className="select"
               value={proxy.autoDefault}
@@ -530,8 +540,8 @@ export function ProxySection({ proxy, onChange }: Props) {
                 patch({ autoDefault: event.target.value === 'direct' ? 'direct' : 'proxy' })
               }
             >
-              <option value="proxy">走代理</option>
-              <option value="direct">直接连接</option>
+              <option value="proxy">{t('settings.proxy.action.proxy')}</option>
+              <option value="direct">{t('settings.proxy.action.direct')}</option>
             </select>
           </div>
 
@@ -554,13 +564,13 @@ export function ProxySection({ proxy, onChange }: Props) {
                     })
                   }
                 >
-                  <option value="proxy">走代理</option>
-                  <option value="direct">直接连接</option>
+                  <option value="proxy">{t('settings.proxy.action.proxy')}</option>
+                  <option value="direct">{t('settings.proxy.action.direct')}</option>
                 </select>
                 <button
                   type="button"
                   className="iconbtn"
-                  title="上移"
+                  title={t('settings.proxy.rules.moveUp')}
                   disabled={index === 0}
                   onClick={() => moveRule(index, -1)}
                 >
@@ -569,7 +579,7 @@ export function ProxySection({ proxy, onChange }: Props) {
                 <button
                   type="button"
                   className="iconbtn"
-                  title="下移"
+                  title={t('settings.proxy.rules.moveDown')}
                   disabled={index === proxy.rules.length - 1}
                   onClick={() => moveRule(index, 1)}
                 >
@@ -578,7 +588,7 @@ export function ProxySection({ proxy, onChange }: Props) {
                 <button
                   type="button"
                   className="iconbtn"
-                  title="删除这条规则"
+                  title={t('settings.proxy.rules.remove')}
                   onClick={() => removeRule(rule.id)}
                 >
                   <TrashIcon size={14} />
@@ -588,13 +598,13 @@ export function ProxySection({ proxy, onChange }: Props) {
           </div>
 
           {proxy.rules.length === 0 && (
-            <div className="proxy-hint">还没有规则，所有请求都会使用上面的默认动作。</div>
+            <div className="proxy-hint">{t('settings.proxy.rules.empty')}</div>
           )}
 
           <div className="kb-card__row">
             <button type="button" className="btn" onClick={addRule}>
               <PlusIcon size={14} />
-              新增规则
+              {t('settings.proxy.rules.add')}
             </button>
           </div>
         </section>
@@ -602,9 +612,10 @@ export function ProxySection({ proxy, onChange }: Props) {
 
       {usesServer && (
         <section className="kb-card">
-          <div className="kb-card__title">不走代理的地址</div>
+          <div className="kb-card__title">{t('settings.proxy.bypass.title')}</div>
           <p className="kb-card__desc">
-            每行一个域名、IP 或 <code>&lt;local&gt;</code>。本机地址默认直连，不会因为开了代理而绕一圈。
+            {t('settings.proxy.bypass.desc.before')} <code>&lt;local&gt;</code>
+            {t('settings.proxy.bypass.desc.after')}
           </p>
           <textarea
             className="textarea"
@@ -618,11 +629,8 @@ export function ProxySection({ proxy, onChange }: Props) {
       )}
 
       <section className="kb-card">
-        <div className="kb-card__title">生效</div>
-        <p className="kb-card__desc">
-          点「应用代理」会立刻切换出口，正在生成的回复会被中断；设置本身会随其他设置一起保存，
-          下次启动自动应用。
-        </p>
+        <div className="kb-card__title">{t('settings.proxy.apply.title')}</div>
+        <p className="kb-card__desc">{t('settings.proxy.apply.desc')}</p>
         <div className="kb-card__row">
           <button
             type="button"
@@ -630,16 +638,18 @@ export function ProxySection({ proxy, onChange }: Props) {
             disabled={applying}
             onClick={() => void apply()}
           >
-            {applying ? '正在应用…' : '应用代理'}
+            {applying ? t('settings.proxy.apply.applying') : t('settings.proxy.apply.button')}
           </button>
           <span className="proxy-hint proxy-hint--inline">
             {status && !status.enabled
-              ? '当前：已关闭（所有请求直连）'
+              ? t('settings.proxy.current.off')
               : status?.applied && status.ok
-                ? `当前：${STATUS_TEXT[status.mode]}${status.tunnelPort ? ` · 隧道 ${status.tunnelPort}` : ''}`
+                ? `${t('settings.proxy.current.applied', {
+                    mode: t(STATUS_KEY[status.mode]),
+                  })}${status.tunnelPort ? t('settings.proxy.current.tunnel', { port: status.tunnelPort }) : ''}`
                 : status?.error
-                  ? `未生效：${status.error}`
-                  : '当前还没有应用代理配置。'}
+                  ? t('settings.proxy.current.error', { error: status.error })
+                  : t('settings.proxy.current.none')}
           </span>
         </div>
         {message && (
@@ -647,10 +657,7 @@ export function ProxySection({ proxy, onChange }: Props) {
             {message.text}
           </div>
         )}
-        <p className="proxy-hint">
-          只作用于应用自身的网络请求；Agent 执行的外部命令（git、curl、pip）和远程工作空间的 SSH
-          连接仍然直连。
-        </p>
+        <p className="proxy-hint">{t('settings.proxy.hint.footer')}</p>
       </section>
     </div>
   );

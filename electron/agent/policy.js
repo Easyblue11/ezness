@@ -22,6 +22,7 @@
  */
 
 const path = require('node:path');
+const uiText = require('../ui-text');
 
 const MODES = new Set(['read-only', 'plan', 'workspace-write', 'danger-full-access']);
 
@@ -241,7 +242,7 @@ function decide({
       return {
         action: 'ask',
         danger: false,
-        reason: '删除功能前需要你确认。',
+        reason: uiText.t('main.policy.deleteTool'),
       };
     }
     return { action: 'allow' };
@@ -262,19 +263,19 @@ function decide({
     // existed fall through to the derived rules below.
     const configured = tool.policy?.[effective];
     if (configured === 'deny') {
-      return { action: 'deny', reason: '当前权限模式禁止这个自定义功能。' };
+      return { action: 'deny', reason: uiText.t('main.policy.customDenied') };
     }
 
     if (effective === 'read-only') {
       return {
         action: 'deny',
-        reason: '当前是只读模式：可以查看文件，但不能修改或执行命令。',
+        reason: uiText.t('main.policy.readOnly'),
       };
     }
     if (effective === 'plan') {
       return {
         action: 'deny',
-        reason: '当前是计划模式：先调研并给出计划，用户确认后再执行。',
+        reason: uiText.t('main.policy.plan'),
       };
     }
 
@@ -285,7 +286,7 @@ function decide({
       return {
         action: 'ask',
         danger: false,
-        reason: '这个功能需要你提供凭据：凭据只交给本机执行器，不会发送给模型。',
+        reason: uiText.t('main.policy.secrets'),
       };
     }
 
@@ -294,7 +295,7 @@ function decide({
       return {
         action: 'ask',
         danger: false,
-        reason: '这个自定义功能需要你确认后才能执行。',
+        reason: uiText.t('main.policy.customConfirm'),
       };
     }
     return { action: 'allow' };
@@ -308,7 +309,10 @@ function decide({
   // Any future write/add/delete is stricter still: it asks at every level, and
   // a delete needs a second confirmation.
   if (tool.dataAccess) {
-    const source = tool.dataSource === 'warehouse' ? '仓库文件' : '知识库内容';
+    const source =
+      tool.dataSource === 'warehouse'
+        ? uiText.t('main.policy.sourceWarehouse')
+        : uiText.t('main.policy.sourceKb');
 
     if (tool.dataAccess === 'meta') return { action: 'allow' };
 
@@ -317,7 +321,7 @@ function decide({
       return {
         action: 'ask',
         danger: false,
-        reason: `读取${source}前需要你确认（读到的内容会发送给当前模型）。`,
+        reason: uiText.t('main.policy.dataRead', { source }),
       };
     }
 
@@ -326,7 +330,7 @@ function decide({
         action: 'ask',
         danger: true,
         doubleConfirm: true,
-        reason: `删除${source}需要你确认，确认后还会再问一次。`,
+        reason: uiText.t('main.policy.dataDelete', { source }),
       };
     }
 
@@ -334,7 +338,7 @@ function decide({
     return {
       action: 'ask',
       danger: true,
-      reason: `修改${source}需要你确认。`,
+      reason: uiText.t('main.policy.dataWrite', { source }),
     };
   }
 
@@ -348,7 +352,7 @@ function decide({
   if (effective === 'read-only') {
     return {
       action: 'deny',
-      reason: '当前是只读模式：可以查看文件，但不能修改或执行命令。',
+      reason: uiText.t('main.policy.readOnly'),
     };
   }
 
@@ -356,7 +360,7 @@ function decide({
   if (effective === 'plan') {
     return {
       action: 'deny',
-      reason: '当前是计划模式：先调研并给出计划，用户确认后再执行。',
+      reason: uiText.t('main.policy.plan'),
     };
   }
 
@@ -375,7 +379,7 @@ function decide({
       return {
         action: 'ask',
         danger: false,
-        reason: '修改文件前需要你确认。',
+        reason: uiText.t('main.policy.fileWrite'),
       };
     }
     return { action: 'allow' };
@@ -395,8 +399,8 @@ function decide({
         action: 'ask',
         danger: true,
         reason: destructive
-          ? '这条命令可能造成不可逆的破坏，需要你确认。'
-          : '这条命令会跨出工作空间，可能改动外面的内容，需要你确认。',
+          ? uiText.t('main.policy.destructiveAsk')
+          : uiText.t('main.policy.escapeAsk'),
       };
     }
     // Level 0 never leaves a destructive or escaping write unchecked: it is
@@ -406,8 +410,8 @@ function decide({
         action: 'review',
         danger: true,
         reason: destructive
-          ? '这条命令可能造成不可逆的破坏，交给独立 AI 评估。'
-          : '这条命令会跨出工作空间，可能改动外面的内容，交给独立 AI 评估。',
+          ? uiText.t('main.policy.destructiveReview')
+          : uiText.t('main.policy.escapeReview'),
       };
     }
     if (rules.has(commandKey(command))) return { action: 'allow' };
@@ -417,7 +421,7 @@ function decide({
       return {
         action: 'ask',
         danger: false,
-        reason: '这条命令要读取工作空间之外的文件，需要你确认。',
+        reason: uiText.t('main.policy.readOutside'),
       };
     }
     if (isSafeCommand(command)) return { action: 'allow' };
@@ -425,7 +429,7 @@ function decide({
       return {
         action: 'ask',
         danger: false,
-        reason: '这条命令不在自动放行的安全清单里，执行一次后可以选择始终允许。',
+        reason: uiText.t('main.policy.unknownCommand'),
       };
     }
     return { action: 'allow' };

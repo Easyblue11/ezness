@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { useI18n } from '../i18n';
 
 export interface CompressionUi {
   /** Rounds kept verbatim, shown in the explanation. */
@@ -53,6 +54,7 @@ export function formatTokens(value: number): string {
 }
 
 export function ContextRing({ used, limit, compression }: Props) {
+  const { t } = useI18n();
   const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 1;
   const ratio = Math.min(1, Math.max(0, used / safeLimit));
   const percent = (used / safeLimit) * 100;
@@ -102,14 +104,17 @@ export function ContextRing({ used, limit, compression }: Props) {
   // A 20px circle: r = 7.6 leaves room for the 2.6px stroke.
   const radius = 7.6;
   const circumference = 2 * Math.PI * radius;
-  const detail = `已用 ${formatTokens(used)} / ${formatTokens(safeLimit)} 词元`;
+  const detail = t('workspace.ctx.detail', {
+    used: formatTokens(used),
+    limit: formatTokens(safeLimit),
+  });
 
   const showNotice =
     ratio >= 0.85 && !noticeDismissed && !open && !compression?.busy;
   const noticeText =
     ratio >= 1
-      ? `上下文已满（${shown}），点圆环压缩`
-      : `上下文已用 ${shown}，点圆环压缩`;
+      ? t('workspace.ctx.noticeFull', { percent: shown })
+      : t('workspace.ctx.noticeUsed', { percent: shown });
 
   return (
     <div className={`ctx ${open ? 'is-open' : ''}`} ref={wrapRef}>
@@ -119,7 +124,7 @@ export function ContextRing({ used, limit, compression }: Props) {
           <span className="ctx-notice__text">{noticeText}</span>
           <button
             className="ctx-notice__close"
-            aria-label="关闭提醒"
+            aria-label={t('workspace.ctx.dismissNotice')}
             onClick={() => setNoticeDismissed(true)}
           >
             ×
@@ -135,10 +140,12 @@ export function ContextRing({ used, limit, compression }: Props) {
         }`}
         aria-expanded={open}
         aria-haspopup={compression ? 'dialog' : undefined}
-        aria-label={`上下文占用 ${shown}（${detail}）${
-          compression ? '，点击压缩上下文' : ''
-        }`}
-        title={compression ? `${detail} · 点击压缩上下文` : detail}
+        aria-label={
+          compression
+            ? t('workspace.ctx.ringAriaAction', { percent: shown, detail })
+            : t('workspace.ctx.ringAria', { percent: shown, detail })
+        }
+        title={compression ? t('workspace.ctx.titleAction', { detail }) : detail}
         onClick={() => {
           if (!compression) return;
           setOpen((value) => !value);
@@ -165,12 +172,16 @@ export function ContextRing({ used, limit, compression }: Props) {
       )}
 
       {compression && open && (
-        <div className="ctx-pop" role="dialog" aria-label="压缩上下文">
+        <div
+          className="ctx-pop"
+          role="dialog"
+          aria-label={t('workspace.ctx.compressAria')}
+        >
           <div className="ctx-pop__head">
-            <span className="ctx-pop__title">上下文</span>
+            <span className="ctx-pop__title">{t('workspace.ctx.title')}</span>
             <button
               className="ctx-pop__close"
-              aria-label="关闭"
+              aria-label={t('workspace.ctx.close')}
               onClick={() => setOpen(false)}
             >
               ×
@@ -185,22 +196,22 @@ export function ContextRing({ used, limit, compression }: Props) {
           </div>
           <p className="ctx-pop__desc">
             {compression.agentBacked
-              ? `把模型实际使用的早期上下文折叠成摘要，并收起最近 ${compression.keepTurns} 轮以前的显示记录。模型上下文压缩后不能逐条恢复，显示记录仍可撤销。`
-              : `把最近 ${compression.keepTurns} 轮以前的对话合并成一份摘要。原文会归档，随时可以撤销。`}
+              ? t('workspace.ctx.descAgent', { turns: compression.keepTurns })
+              : t('workspace.ctx.descChat', { turns: compression.keepTurns })}
           </p>
           {compression.busy ? (
             <div className="ctx-pop__busy">
               <span className="ctx-pop__spinner" aria-hidden="true" />
-              <span>{compression.progress ?? '正在压缩…'}</span>
+              <span>{compression.progress ?? t('workspace.ctx.busy')}</span>
               <button className="ctx-pop__cancel" onClick={compression.onCancel}>
-                取消
+                {t('workspace.ctx.cancel')}
               </button>
             </div>
           ) : compression.disabledReason ? (
             <div className="ctx-pop__disabled">{compression.disabledReason}</div>
           ) : (
             <button className="ctx-pop__go" onClick={compression.onCompress}>
-              压缩上下文
+              {t('workspace.ctx.compress')}
             </button>
           )}
           {compression.error && <div className="ctx-pop__error">{compression.error}</div>}

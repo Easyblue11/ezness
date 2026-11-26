@@ -1,29 +1,31 @@
 import { useState } from 'react';
 import { joinModelKey, SUGGESTED_MODELS } from '../../data/providers';
+import { useI18n } from '../../i18n';
 import type { Defaults, DefaultsKey, OcrSettings, ProviderConfig } from '../../types';
 import { CheckIcon, CopyIcon } from '../Icons';
 import { OcrSection } from './OcrSection';
 
-const CARDS: { key: DefaultsKey; title: string; desc: string }[] = [
+const CARDS: { key: DefaultsKey; titleKey: string; descKey: string }[] = [
   {
     key: 'chat',
-    title: '默认模型',
-    desc: '新建会话默认使用，也是日常对话的主力模型',
+    titleKey: 'settings.defaults.cards.chat.title',
+    descKey: 'settings.defaults.cards.chat.desc',
   },
   {
     key: 'embedding',
-    title: 'Embedding 模型',
-    desc: '知识仓库切片与向量检索使用',
+    titleKey: 'settings.defaults.cards.embedding.title',
+    descKey: 'settings.defaults.cards.embedding.desc',
   },
   {
     key: 'translation',
-    title: '翻译模型',
-    desc: '界面翻译、文档翻译这类轻任务使用，可以选更便宜的',
+    titleKey: 'settings.defaults.cards.translation.title',
+    descKey: 'settings.defaults.cards.translation.desc',
   },
 ];
 
 /** 一条可以直接复制到终端里的本机模型命令。 */
 function SuggestCommand({ command }: { command: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -42,8 +44,8 @@ function SuggestCommand({ command }: { command: string }) {
       <code>{command}</code>
       <button
         className={`default-tip__copy ${copied ? 'is-copied' : ''}`}
-        title={copied ? '已复制' : '复制命令'}
-        aria-label={copied ? '已复制' : '复制命令'}
+        title={copied ? t('settings.defaults.copied') : t('settings.defaults.copyCommand')}
+        aria-label={copied ? t('settings.defaults.copied') : t('settings.defaults.copyCommand')}
         onClick={copy}
       >
         {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
@@ -62,15 +64,12 @@ interface Props {
 }
 
 export function DefaultsSection({ providers, defaults, onChange, ocr, onOcrChange }: Props) {
+  const { t } = useI18n();
   const available = Object.values(providers).filter((provider) => provider.models.length > 0);
 
   return (
     <div className="defaults">
-      {available.length === 0 && (
-        <div className="notice">
-          还没有可用的模型。先去「模型接入」里填好地址并获取模型，这里才会出现可选项。
-        </div>
-      )}
+      {available.length === 0 && <div className="notice">{t('settings.defaults.empty')}</div>}
 
       {CARDS.map((card) => {
         const suggestion =
@@ -80,13 +79,13 @@ export function DefaultsSection({ providers, defaults, onChange, ocr, onOcrChang
           <section key={card.key} className="default-card">
             <div className="default-card__main">
               <div className="default-card__text">
-                <div className="default-card__title">{card.title}</div>
-                <div className="default-card__desc">{card.desc}</div>
+                <div className="default-card__title">{t(card.titleKey)}</div>
+                <div className="default-card__desc">{t(card.descKey)}</div>
               </div>
 
               {suggestion && (
                 <div className="default-tip">
-                  <span className="default-tip__note">{suggestion.note}</span>
+                  <span className="default-tip__note">{t(suggestion.note)}</span>
                   <SuggestCommand command={suggestion.command} />
                 </div>
               )}
@@ -98,7 +97,11 @@ export function DefaultsSection({ providers, defaults, onChange, ocr, onOcrChang
               disabled={available.length === 0}
               onChange={(event) => onChange(card.key, event.target.value)}
             >
-              <option value="">{available.length === 0 ? '暂无可选模型' : '未选择'}</option>
+              <option value="">
+                {available.length === 0
+                  ? t('settings.defaults.noModels')
+                  : t('settings.defaults.unselected')}
+              </option>
               {available.map((provider) => (
                 <optgroup key={provider.id} label={provider.name}>
                   {provider.models.map((model) => (

@@ -17,6 +17,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const pricing = require('./pricing');
+const uiText = require('./ui-text');
 
 const FILE = 'usage.json';
 const MAX_RECORDS = 50000;
@@ -132,8 +133,10 @@ function sanitize(value) {
     at,
     feature: typeof value.feature === 'string' ? value.feature : 'other',
     providerId: String(value.providerId ?? ''),
-    providerName: String(value.providerName ?? value.providerId ?? '未知供应商'),
-    model: String(value.model ?? '未知模型'),
+    providerName: String(
+      value.providerName ?? value.providerId ?? uiText.t('main.usage.unknownProvider'),
+    ),
+    model: String(value.model ?? uiText.t('main.usage.unknownModel')),
     cost: priced ? (alreadyCny ? rawCost : rawCost * CNY_PER_USD) : null,
     currency: 'CNY',
     fxRate,
@@ -242,8 +245,13 @@ class UsageStore {
       at,
       feature,
       providerId: String(provider?.providerId || provider?.id || ''),
-      providerName: String(provider?.providerName || provider?.name || provider?.providerId || '自定义'),
-      model: String(provider?.model || '未知模型'),
+      providerName: String(
+        provider?.providerName ||
+          provider?.name ||
+          provider?.providerId ||
+          uiText.t('main.usage.customProvider'),
+      ),
+      model: String(provider?.model || uiText.t('main.usage.unknownModel')),
       cost,
       currency: 'CNY',
       fxRate: CNY_PER_USD,

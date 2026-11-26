@@ -5,6 +5,27 @@ import type { KbChatSettings, WebEntry, WebMode, WebSettings } from '../types';
  * pages in the main process; `{query}` is replaced with the encoded question.
  * DuckDuckGo is off by default: it is often unreachable from mainland networks.
  */
+/**
+ * Display-name keys for the built-in sources. The stored `name` is a stable
+ * Latin fallback (also used by the main process for result labels); the
+ * settings UI localises it while the entry still carries the default name.
+ */
+/**
+ * Appended by the main process to a search source's error note when the
+ * results it returned do not match the question. It is matched here and never
+ * rendered, so it is a protocol marker rather than translated copy.
+ */
+export const LOW_MATCH_NOTE = '结果与问题不匹配';
+
+export const WEB_ENTRY_NAME_KEYS: Record<string, string> = {
+  bing: 'settings.web.entryName.bing',
+  so: 'settings.web.entryName.so',
+  baidu: 'settings.web.entryName.baidu',
+  shenma: 'settings.web.entryName.shenma',
+  quark: 'settings.web.entryName.quark',
+  duckduckgo: 'settings.web.entryName.duckduckgo',
+};
+
 export const DEFAULT_WEB_ENTRIES: WebEntry[] = [
   {
     id: 'bing',
@@ -16,7 +37,7 @@ export const DEFAULT_WEB_ENTRIES: WebEntry[] = [
   },
   {
     id: 'so',
-    name: '360 搜索',
+    name: '360 Search',
     url: 'https://www.so.com/s?q={query}',
     parser: 'so',
     enabled: true,
@@ -24,7 +45,7 @@ export const DEFAULT_WEB_ENTRIES: WebEntry[] = [
   },
   {
     id: 'baidu',
-    name: '百度',
+    name: 'Baidu',
     url: 'https://www.baidu.com/s?wd={query}',
     parser: 'baidu',
     enabled: true,
@@ -32,7 +53,7 @@ export const DEFAULT_WEB_ENTRIES: WebEntry[] = [
   },
   {
     id: 'shenma',
-    name: '神马搜索',
+    name: 'Shenma',
     url: 'https://m.sm.cn/s?q={query}',
     parser: 'shenma',
     enabled: true,
@@ -40,7 +61,7 @@ export const DEFAULT_WEB_ENTRIES: WebEntry[] = [
   },
   {
     id: 'quark',
-    name: '夸克搜索',
+    name: 'Quark',
     url: 'https://quark.sm.cn/s?q={query}',
     parser: 'quark',
     enabled: false,
@@ -111,7 +132,7 @@ export function normalizeWeb(saved?: WebSettings | null): WebSettings {
     if (!entry || typeof entry.url !== 'string') continue;
     savedEntries.push({
       id: String(entry.id || webEntryId()),
-      name: String(entry.name || '网络入口'),
+      name: String(entry.name || 'Web entry'),
       url: entry.url,
       parser: entry.parser ?? 'html',
       enabled: entry.enabled !== false,

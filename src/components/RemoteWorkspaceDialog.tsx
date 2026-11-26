@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useI18n } from '../i18n';
 
 /**
  * Add a remote workspace over SSH.
@@ -36,6 +37,7 @@ interface Entry {
 }
 
 export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Props) {
+  const { t } = useI18n();
   const [step, setStep] = useState<'auth' | 'browse'>('auth');
   const [host, setHost] = useState('');
   const [port, setPort] = useState('22');
@@ -75,19 +77,19 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
     if (busy) return;
     setError('');
     if (!host.trim()) {
-      setError('请填写主机地址。');
+      setError(t('workspace.remote.error.host'));
       return;
     }
     if (!username.trim()) {
-      setError('请填写用户名。');
+      setError(t('workspace.remote.error.username'));
       return;
     }
     if (authMode === 'password' && !password) {
-      setError('请填写登录密码。');
+      setError(t('workspace.remote.error.password'));
       return;
     }
     if (authMode === 'key' && !keyPath.trim()) {
-      setError('请选择私钥文件。');
+      setError(t('workspace.remote.error.key'));
       return;
     }
 
@@ -102,7 +104,7 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
         privateKeyPassphrase: authMode === 'key' ? passphrase : '',
       });
       if (!result?.ok || !result.sessionId) {
-        setError(result?.error || '连接失败。');
+        setError(result?.error || t('workspace.remote.error.connect'));
         return;
       }
       // The ref is what browse() checks; the effect that syncs it runs after
@@ -129,7 +131,7 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
         path: dir,
       });
       if (!result?.ok) {
-        setError(result?.error || '读取目录失败。');
+        setError(result?.error || t('workspace.remote.error.list'));
         return;
       }
       setCurrent(result.path ?? dir);
@@ -154,7 +156,7 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
         workspaceId,
       });
       if (!result?.ok || !result.root) {
-        setError(result?.error || '打不开这个文件夹。');
+        setError(result?.error || t('workspace.remote.error.open'));
         return;
       }
       sessionRef.current = '';
@@ -187,28 +189,25 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
       }}
     >
       <div className="modal__panel remote-dialog" role="dialog" aria-modal="true">
-        <h2 className="modal__title">添加远程工作空间</h2>
+        <h2 className="modal__title">{t('workspace.remote.title')}</h2>
 
         {step === 'auth' ? (
           <>
-            <p className="modal__message">
-              通过 SSH 连接一台主机，之后在这个工作空间里的读写和命令都在那台机器上执行。
-              凭据只保存在本机（加密），不会发送给模型。
-            </p>
+            <p className="modal__message">{t('workspace.remote.intro')}</p>
             <div className="remote-dialog__grid">
               <label className="remote-field">
-                <span className="remote-field__label">主机</span>
+                <span className="remote-field__label">{t('workspace.remote.host')}</span>
                 <input
                   className="input"
                   value={host}
-                  placeholder="192.168.1.10 或 example.com"
+                  placeholder={t('workspace.remote.hostPlaceholder')}
                   spellCheck={false}
                   autoFocus
                   onChange={(event) => setHost(event.target.value)}
                 />
               </label>
               <label className="remote-field remote-field--port">
-                <span className="remote-field__label">端口</span>
+                <span className="remote-field__label">{t('workspace.remote.port')}</span>
                 <input
                   className="input"
                   value={port}
@@ -218,7 +217,7 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
                 />
               </label>
               <label className="remote-field">
-                <span className="remote-field__label">用户名</span>
+                <span className="remote-field__label">{t('workspace.remote.username')}</span>
                 <input
                   className="input"
                   value={username}
@@ -235,20 +234,20 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
                 className={`btn ${authMode === 'password' ? 'btn--primary' : ''}`}
                 onClick={() => setAuthMode('password')}
               >
-                密码
+                {t('workspace.remote.password')}
               </button>
               <button
                 type="button"
                 className={`btn ${authMode === 'key' ? 'btn--primary' : ''}`}
                 onClick={() => setAuthMode('key')}
               >
-                私钥
+                {t('workspace.remote.privateKey')}
               </button>
             </div>
 
             {authMode === 'password' ? (
               <label className="remote-field">
-                <span className="remote-field__label">登录密码</span>
+                <span className="remote-field__label">{t('workspace.remote.loginPassword')}</span>
                 <div className="perm__secret-text">
                   <input
                     className="input"
@@ -256,7 +255,7 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
                     value={password}
                     autoComplete="off"
                     spellCheck={false}
-                    placeholder="只保存在本机"
+                    placeholder={t('workspace.remote.localOnly')}
                     onChange={(event) => setPassword(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') void connect();
@@ -267,19 +266,21 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
                     className="btn"
                     onClick={() => setShowPassword((value) => !value)}
                   >
-                    {showPassword ? '隐藏' : '显示'}
+                    {showPassword
+                      ? t('workspace.remote.hide')
+                      : t('workspace.remote.show')}
                   </button>
                 </div>
               </label>
             ) : (
               <>
                 <label className="remote-field">
-                  <span className="remote-field__label">私钥文件</span>
+                  <span className="remote-field__label">{t('workspace.remote.keyFile')}</span>
                   <div className="perm__secret-file">
                     <input
                       className="input"
                       value={keyPath}
-                      placeholder="选择本机的私钥文件"
+                      placeholder={t('workspace.remote.keyPlaceholder')}
                       spellCheck={false}
                       onChange={(event) => setKeyPath(event.target.value)}
                     />
@@ -291,12 +292,12 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
                         if (picked) setKeyPath(picked);
                       }}
                     >
-                      选择文件
+                      {t('workspace.remote.chooseFile')}
                     </button>
                   </div>
                 </label>
                 <label className="remote-field">
-                  <span className="remote-field__label">私钥口令（没有就留空）</span>
+                  <span className="remote-field__label">{t('workspace.remote.passphrase')}</span>
                   <input
                     className="input"
                     type="password"
@@ -315,27 +316,25 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
             {error && <div className="notice notice--warn">{error}</div>}
             <div className="modal__actions">
               <button className="btn btn--ghost" onClick={onCancel}>
-                取消
+                {t('workspace.remote.cancel')}
               </button>
               <button className="btn btn--primary" disabled={busy} onClick={() => void connect()}>
-                {busy ? '连接中…' : '连接'}
+                {busy ? t('workspace.remote.connecting') : t('workspace.remote.connect')}
               </button>
             </div>
           </>
         ) : (
           <>
-            <p className="modal__message">
-              选择远程工作空间的根目录。之后打开这个工作空间时，文件树、读写和命令都按这个目录工作。
-            </p>
+            <p className="modal__message">{t('workspace.remote.pickRoot')}</p>
             <div className="remote-path">
               <button
                 type="button"
                 className="btn remote-path__up"
                 disabled={busy || !parent}
-                title="上一级"
+                title={t('workspace.remote.up')}
                 onClick={() => void browse(parent)}
               >
-                ↑ 上一级
+                ↑ {t('workspace.remote.up')}
               </button>
               <span className="remote-path__value" title={current}>
                 {label || current}
@@ -344,16 +343,24 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
                 type="button"
                 className="btn"
                 disabled={busy}
-                title="回到登录目录"
+                title={t('workspace.remote.homeTitle')}
                 onClick={() => void browse(home)}
               >
-                主目录
+                {t('workspace.remote.home')}
               </button>
             </div>
 
-            <div className="remote-list" role="listbox" aria-label="远程目录">
-              {busy && entries.length === 0 && <div className="ws-hint">读取中…</div>}
-              {!busy && entries.length === 0 && <div className="ws-hint">这个文件夹里没有子文件夹。</div>}
+            <div
+              className="remote-list"
+              role="listbox"
+              aria-label={t('workspace.remote.listAria')}
+            >
+              {busy && entries.length === 0 && (
+                <div className="ws-hint">{t('workspace.remote.loading')}</div>
+              )}
+              {!busy && entries.length === 0 && (
+                <div className="ws-hint">{t('workspace.remote.emptyDir')}</div>
+              )}
               {entries.map((entry) => (
                 <button
                   key={entry.path}
@@ -383,17 +390,17 @@ export function RemoteWorkspaceDialog({ workspaceId, onCancel, onCreated }: Prop
                   setStep('auth');
                 }}
               >
-                换一个地址
+                {t('workspace.remote.otherAddress')}
               </button>
               <button className="btn btn--ghost" disabled={busy} onClick={onCancel}>
-                取消
+                {t('workspace.remote.cancel')}
               </button>
               <button
                 className="btn btn--primary"
                 disabled={busy || !current}
                 onClick={() => void choosePath(current)}
               >
-                使用这个文件夹
+                {t('workspace.remote.useFolder')}
               </button>
             </div>
           </>

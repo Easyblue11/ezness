@@ -87,7 +87,7 @@ function normalizeVariables(raw: unknown): PromptVariable[] {
   return variables;
 }
 
-function normalizeSnapshot(raw: unknown): PromptSnapshot | null {
+function normalizeSnapshot(raw: unknown, fallbackName: string): PromptSnapshot | null {
   if (!raw || typeof raw !== 'object') return null;
   const record = raw as Record<string, unknown>;
   const text = (key: string) => (typeof record[key] === 'string' ? (record[key] as string) : '');
@@ -95,7 +95,7 @@ function normalizeSnapshot(raw: unknown): PromptSnapshot | null {
   const name = text('name').trim();
   if (!body && !name) return null;
   return {
-    name: name || '未命名模板',
+    name: name || fallbackName,
     nameEn: text('nameEn'),
     description: text('description'),
     descriptionEn: text('descriptionEn'),
@@ -107,13 +107,13 @@ function normalizeSnapshot(raw: unknown): PromptSnapshot | null {
   };
 }
 
-function normalizeHistory(raw: unknown): PromptVersion[] {
+function normalizeHistory(raw: unknown, fallbackName: string): PromptVersion[] {
   if (!Array.isArray(raw)) return [];
   const versions: PromptVersion[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue;
     const record = entry as Record<string, unknown>;
-    const snapshot = normalizeSnapshot(record.snapshot);
+    const snapshot = normalizeSnapshot(record.snapshot, fallbackName);
     if (!snapshot) continue;
     versions.push({
       // Fresh ids: an imported file must never collide with local history.
@@ -129,7 +129,10 @@ function normalizeHistory(raw: unknown): PromptVersion[] {
  * Accepts either an exported envelope (`{ format, version, template }`) or a
  * bare template object, and drops anything that doesn't look like one.
  */
-export function normalizeTemplate(raw: unknown): PromptTemplate | null {
+export function normalizeTemplate(
+  raw: unknown,
+  fallbackName = 'Untitled template',
+): PromptTemplate | null {
   if (!raw || typeof raw !== 'object') return null;
   let record = raw as Record<string, unknown>;
   const envelope = record.template;
@@ -137,7 +140,7 @@ export function normalizeTemplate(raw: unknown): PromptTemplate | null {
     record = envelope as Record<string, unknown>;
   }
 
-  const snapshot = normalizeSnapshot(record);
+  const snapshot = normalizeSnapshot(record, fallbackName);
   if (!snapshot) return null;
 
   return {
@@ -147,14 +150,14 @@ export function normalizeTemplate(raw: unknown): PromptTemplate | null {
       typeof record.updatedAt === 'number' && Number.isFinite(record.updatedAt)
         ? record.updatedAt
         : Date.now(),
-    history: normalizeHistory(record.history),
+    history: normalizeHistory(record.history, fallbackName),
   };
 }
 
-export function createBlankTemplate(): PromptTemplate {
+export function createBlankTemplate(fallbackName = 'Untitled template'): PromptTemplate {
   return {
     id: uid(),
-    name: '新模板',
+    name: fallbackName,
     nameEn: '',
     description: '',
     descriptionEn: '',

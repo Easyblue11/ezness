@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { useI18n } from '../../i18n';
 import type { StorageInfo } from '../../types';
 import {
   AgentIcon,
   BillingIcon,
   BookIcon,
   ChatIcon,
+  ClockIcon,
   DirectorIcon,
   GlobeIcon,
   SparkleIcon,
@@ -15,45 +17,56 @@ import {
 const FEATURES = [
   {
     icon: ChatIcon,
-    title: '对话',
-    desc: '多模型切换、附件、流式输出，随时可以中断。',
+    titleKey: 'settings.about.features.chat.title',
+    descKey: 'settings.about.features.chat.desc',
   },
   {
     icon: DirectorIcon,
-    title: '工作总监',
-    desc: '常驻的总监盯进度、派工、验收；有新情况才汇报，没事不刷屏。',
+    titleKey: 'settings.about.features.director.title',
+    descKey: 'settings.about.features.director.desc',
   },
   {
     icon: WorkspaceIcon,
-    title: '工作空间与文件',
-    desc: '本地目录或 SSH 远程工作区；目录树按需展开，文本高亮、图片预览与编辑。',
+    titleKey: 'settings.about.features.workspace.title',
+    descKey: 'settings.about.features.workspace.desc',
   },
   {
     icon: AgentIcon,
-    title: 'Agent 与 AI 能力',
-    desc: '独立的提示词、知识库与记忆；权限分四级；Agent 和能力分类可整包导出导入。',
+    titleKey: 'settings.about.features.agent.title',
+    descKey: 'settings.about.features.agent.desc',
   },
   {
     icon: BookIcon,
-    title: '知识库与仓库',
-    desc: '本地切片检索，分类与文档级范围；对话附件收进仓库长期留存。',
+    titleKey: 'settings.about.features.kb.title',
+    descKey: 'settings.about.features.kb.desc',
   },
   {
     icon: SparkleIcon,
-    title: '提示词模板',
-    desc: '模板存在你自己的数据目录里，随时调用，也可以自己加。',
+    titleKey: 'settings.about.features.prompts.title',
+    descKey: 'settings.about.features.prompts.desc',
   },
   {
     icon: GlobeIcon,
-    title: '联网、OCR 与语音',
-    desc: '搜索从本机发出，OCR 和语音识别也在本地跑，不经过模型厂商。',
+    titleKey: 'settings.about.features.web.title',
+    descKey: 'settings.about.features.web.desc',
   },
   {
     icon: BillingIcon,
-    title: '模型接入与计费',
-    desc: '常见厂家的地址已经列好，选一家补上密钥就行；也能自填地址对接自建网关。',
+    titleKey: 'settings.about.features.billing.title',
+    descKey: 'settings.about.features.billing.desc',
   },
 ] as const;
+
+/** Everything solved since the 1.0.0 release; the version is rendered live. */
+const CHANGELOG = [
+  'about.changelog.line1',
+  'about.changelog.line2',
+  'about.changelog.line3',
+  'about.changelog.line4',
+  'about.changelog.line5',
+  'about.changelog.line6',
+] as const;
+const CHANGELOG_DATE = '2026-11-26';
 
 const PLATFORM_LABEL: Record<string, string> = {
   win32: 'Windows',
@@ -71,6 +84,7 @@ function formatSize(bytes: number): string {
 }
 
 export function AboutSection() {
+  const { t } = useI18n();
   const api = window.ezness;
   const [info, setInfo] = useState<StorageInfo | null>(null);
   const [copied, setCopied] = useState<'root' | 'diag' | ''>('');
@@ -118,25 +132,24 @@ export function AboutSection() {
     if (!api || !info) return;
     setError('');
     const result = await api.storageOpenRoot();
-    if (result && !result.ok) setError(result.error ?? '打不开这个目录');
+    if (result && !result.ok) setError(result.error ?? t('system.storage.openError'));
   }
 
   const diagnostics = [
     `Ezness v${version}`,
-    `系统：${platform}`,
+    t('settings.about.diagnostics.os', { platform }),
     `Electron ${electron} / Chromium ${chrome} / Node ${node}`,
-    `数据目录：${root || '未知'}`,
+    t('settings.about.diagnostics.dataDir', {
+      root: root || t('settings.about.diagnostics.unknown'),
+    }),
   ].join('\n');
 
   return (
     <div className="section">
       <div className="section__head">
         <div>
-          <h2>关于我们</h2>
-          <p>
-            Ezness 由 EasyBlue 独立开发。模型接入、知识库、工作区和用量记录都留在你自己的电脑上，
-            没有账号，也没有云端中转。
-          </p>
+          <h2>{t('settings.about.title')}</h2>
+          <p>{t('settings.about.intro')}</p>
         </div>
         <span className="about__version">v{version}</span>
       </div>
@@ -148,18 +161,14 @@ export function AboutSection() {
             <h3>Ezness</h3>
             <span className="about-brand__by">by EasyBlue</span>
           </div>
-          <p className="about-brand__role">独立开发者 · Ezness 作者</p>
-          <p className="about-brand__lead">把笨重的东西拆开，留下真正有用的部分。</p>
-          <p className="kb-card__desc about-brand__text">
-            Ezness 是一个本地优先的桌面 AI 工作台。对话、工作总监、工作空间与任务、文件浏览、知识库、
-            仓库和提示词都在同一个窗口里完成；模型可以接云端 API，也可以用 Ollama 在本机跑；
-            联网搜索、OCR 和语音识别按需开启，不用的部分不会在后台常驻。
-          </p>
+          <p className="about-brand__role">{t('settings.about.role')}</p>
+          <p className="about-brand__lead">{t('settings.about.tagline')}</p>
+          <p className="kb-card__desc about-brand__text">{t('settings.about.description')}</p>
           <div className="about-brand__tags">
-            <span>本地优先</span>
-            <span>无账号</span>
-            <span>数据自持</span>
-            <span>可接本地模型</span>
+            <span>{t('settings.about.tags.localFirst')}</span>
+            <span>{t('settings.about.tags.noAccount')}</span>
+            <span>{t('settings.about.tags.ownData')}</span>
+            <span>{t('settings.about.tags.localModels')}</span>
           </div>
         </div>
       </section>
@@ -167,20 +176,18 @@ export function AboutSection() {
       <section className="kb-card">
         <div className="kb-card__title">
           <WorkspaceIcon size={15} />
-          现在能做什么
+          {t('settings.about.features.title')}
         </div>
-        <p className="kb-card__desc">
-          功能按需组合：常用的一直在，少用的才打开，不替你安排工作流。
-        </p>
+        <p className="kb-card__desc">{t('settings.about.features.desc')}</p>
         <div className="about-features">
-          {FEATURES.map(({ icon: Icon, title, desc }) => (
-            <div key={title} className="about-feature">
+          {FEATURES.map(({ icon: Icon, titleKey, descKey }) => (
+            <div key={titleKey} className="about-feature">
               <span className="about-feature__icon">
                 <Icon size={16} />
               </span>
               <div>
-                <div className="about-feature__title">{title}</div>
-                <div className="about-feature__desc">{desc}</div>
+                <div className="about-feature__title">{t(titleKey)}</div>
+                <div className="about-feature__desc">{t(descKey)}</div>
               </div>
             </div>
           ))}
@@ -190,47 +197,60 @@ export function AboutSection() {
       <section className="kb-card">
         <div className="kb-card__title">
           <SparkleIcon size={15} />
-          设计原则
+          {t('settings.about.principles.title')}
         </div>
         <div className="about-values">
           <div className="about-value">
-            <h4>轻</h4>
-            <p>不引组件库，不挂常驻后台服务，启动就是启动。</p>
+            <h4>{t('settings.about.values.light.title')}</h4>
+            <p>{t('settings.about.values.light.desc')}</p>
           </div>
           <div className="about-value">
-            <h4>可控</h4>
-            <p>每个接入、每个模型、每个默认项、每项工具权限都摆在你面前，没有隐藏的默认行为。</p>
+            <h4>{t('settings.about.values.control.title')}</h4>
+            <p>{t('settings.about.values.control.desc')}</p>
           </div>
           <div className="about-value">
-            <h4>本地优先</h4>
-            <p>设置、会话与文件留在本机，密钥只保存在本机配置里。</p>
+            <h4>{t('settings.about.values.local.title')}</h4>
+            <p>{t('settings.about.values.local.desc')}</p>
           </div>
           <div className="about-value">
-            <h4>透明</h4>
-            <p>没有账号系统，也不做埋点；请求只在你主动发起时离开本机。</p>
+            <h4>{t('settings.about.values.transparent.title')}</h4>
+            <p>{t('settings.about.values.transparent.desc')}</p>
           </div>
         </div>
-        <p className="about-note">
-          设置、会话、知识库、仓库、提示词模板和用量记录都保存在下面的数据目录里；应用本身没有云端账号，
-          也不会上传这些内容。换机器时把整个目录拷走即可。
-        </p>
+        <p className="about-note">{t('settings.about.note')}</p>
+      </section>
+
+      <section className="kb-card">
+        <div className="kb-card__title">
+          <ClockIcon size={15} />
+          {t('about.changelog.title')}
+        </div>
+        <div className="about-changelog">
+          <div className="about-changelog__head">
+            <span className="about-changelog__version">v{version}</span>
+            <span className="about-changelog__date">{CHANGELOG_DATE}</span>
+          </div>
+          <ul className="about-changelog__list">
+            {CHANGELOG.map((key) => (
+              <li key={key}>{t(key)}</li>
+            ))}
+          </ul>
+        </div>
       </section>
 
       <section className="kb-card">
         <div className="kb-card__title">
           <StackIcon size={15} />
-          运行环境与数据
+          {t('settings.about.env.title')}
         </div>
-        <p className="kb-card__desc">
-          版本信息用于排查问题；下面的用量来自本地统计，不包含密钥、会话内容或文件正文。
-        </p>
+        <p className="kb-card__desc">{t('settings.about.env.desc')}</p>
         <dl className="about-env">
           <div className="about-env__item">
-            <dt>应用版本</dt>
+            <dt>{t('settings.about.env.appVersion')}</dt>
             <dd>v{version}</dd>
           </div>
           <div className="about-env__item">
-            <dt>系统</dt>
+            <dt>{t('settings.about.env.os')}</dt>
             <dd>{platform}</dd>
           </div>
           <div className="about-env__item">
@@ -246,28 +266,45 @@ export function AboutSection() {
             <dd>{node}</dd>
           </div>
           <div className="about-env__item">
-            <dt>知识库</dt>
-            <dd>{stats ? `${stats.kbDocuments} 篇 · ${stats.kbChunks} 片` : '读取中…'}</dd>
+            <dt>{t('settings.about.env.knowledge')}</dt>
+            <dd>
+              {stats
+                ? t('settings.about.env.knowledgeValue', {
+                    documents: stats.kbDocuments,
+                    chunks: stats.kbChunks,
+                  })
+                : t('settings.about.env.reading')}
+            </dd>
           </div>
           <div className="about-env__item">
-            <dt>仓库</dt>
-            <dd>{stats ? `${stats.warehouseFiles} 个文件` : '读取中…'}</dd>
+            <dt>{t('settings.about.env.warehouse')}</dt>
+            <dd>
+              {stats
+                ? t('settings.about.env.warehouseValue', { count: stats.warehouseFiles })
+                : t('settings.about.env.reading')}
+            </dd>
           </div>
           <div className="about-env__item">
-            <dt>本地语音</dt>
-            <dd>{stats ? (stats.voiceReady ? '已就绪' : '未安装') : '读取中…'}</dd>
+            <dt>{t('settings.about.env.voice')}</dt>
+            <dd>
+              {stats
+                ? stats.voiceReady
+                  ? t('settings.about.env.voiceReady')
+                  : t('settings.about.env.voiceMissing')
+                : t('settings.about.env.reading')}
+            </dd>
           </div>
           <div className="about-env__item">
-            <dt>数据占用</dt>
-            <dd>{stats ? formatSize(usedBytes) : '读取中…'}</dd>
+            <dt>{t('settings.about.env.storage')}</dt>
+            <dd>{stats ? formatSize(usedBytes) : t('settings.about.env.reading')}</dd>
           </div>
           <div className="about-env__item about-env__item--wide">
-            <dt>数据目录</dt>
+            <dt>{t('settings.about.env.dataDir')}</dt>
             <dd className="about-env__path">
-              <code title={root}>{root || '读取中…'}</code>
+              <code title={root}>{root || t('settings.about.env.reading')}</code>
               <span className="about-env__actions">
                 <button type="button" className="btn btn--sm btn--ghost" onClick={() => void openRoot()} disabled={!info}>
-                  打开目录
+                  {t('system.storage.open')}
                 </button>
                 <button
                   type="button"
@@ -275,7 +312,7 @@ export function AboutSection() {
                   onClick={() => void copy(root, 'root')}
                   disabled={!root}
                 >
-                  {copied === 'root' ? '已复制' : '复制路径'}
+                  {copied === 'root' ? t('settings.about.copied') : t('settings.about.copyPath')}
                 </button>
               </span>
             </dd>
@@ -287,7 +324,7 @@ export function AboutSection() {
             className="btn btn--sm"
             onClick={() => void copy(diagnostics, 'diag')}
           >
-            {copied === 'diag' ? '已复制诊断信息' : '复制诊断信息'}
+            {copied === 'diag' ? t('settings.about.copiedDiag') : t('settings.about.copyDiag')}
           </button>
           {error && <span className="about-env__error">{error}</span>}
         </div>

@@ -16,6 +16,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { resolveInside } = require('./paths');
+const uiText = require('../ui-text');
 
 const MAX_OUTPUT = 30000;
 
@@ -245,7 +246,7 @@ class LocalWorkspaceFs {
 /** The adapter to use for this tool call; local unless the run supplied one. */
 function workspaceFsOf(ctx) {
   if (ctx?.ws) return ctx.ws;
-  if (!ctx?.root) throw new Error('没有工作空间目录。');
+  if (!ctx?.root) throw new Error(uiText.t('main.workspace.noRoot'));
   return new LocalWorkspaceFs(ctx.root);
 }
 

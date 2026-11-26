@@ -14,6 +14,7 @@
  */
 
 const { appFetch } = require('./app-net');
+const uiText = require('./ui-text');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -29,28 +30,28 @@ const DEFAULT_ENTRIES = [
   },
   {
     id: 'so',
-    name: '360 搜索',
+    name: '360 Search',
     url: 'https://www.so.com/s?q={query}',
     parser: 'so',
     enabled: true,
   },
   {
     id: 'baidu',
-    name: '百度',
+    name: 'Baidu',
     url: 'https://www.baidu.com/s?wd={query}',
     parser: 'baidu',
     enabled: true,
   },
   {
     id: 'shenma',
-    name: '神马搜索',
+    name: 'Shenma',
     url: 'https://m.sm.cn/s?q={query}',
     parser: 'shenma',
     enabled: true,
   },
   {
     id: 'quark',
-    name: '夸克搜索',
+    name: 'Quark',
     url: 'https://quark.sm.cn/s?q={query}',
     parser: 'quark',
     enabled: false,
@@ -424,7 +425,12 @@ async function fetchHtml(url) {
 }
 
 function entryName(entry) {
-  return String(entry.name || entry.id || '网络入口');
+  return String(entry.name || entry.id || uiText.t('main.web.entryFallback'));
+}
+
+/** Error lines are joined the way the current language punctuates a list. */
+function joinErrors(errors) {
+  return errors.join(uiText.getLanguage() === 'en' ? '; ' : '；');
 }
 
 function entryUsable(entry) {
@@ -471,7 +477,7 @@ function looksBlocked(html) {
 async function searchEntry(entry, query, perEntry) {
   const url = expandUrl(entry.url, query);
   const html = await fetchHtml(url);
-  if (looksBlocked(html)) throw new Error('触发了人机验证，稍后再试');
+  if (looksBlocked(html)) throw new Error(uiText.t('main.web.blocked'));
   const parse = PARSERS[entry.parser] ?? parseGeneric;
   const results = parse(html, url).slice(0, perEntry);
   const { score, minimum } = results.length > 0 ? relevance(results, query) : { score: 0, minimum: 1 };
@@ -536,17 +542,17 @@ async function webSearch(rawQuery, options = {}) {
     Array.isArray(options.entries) && options.entries.length > 0 ? options.entries : DEFAULT_ENTRIES;
   const enabled = requested.filter((entry) => entry && entry.enabled !== false);
   if (enabled.length === 0) {
-    return { ok: false, error: '没有启用的网络入口，请到「设置 → 网络设置」打开至少一个。' };
+    return { ok: false, error: uiText.t('main.web.noEntries') };
   }
 
   const errors = [];
   const usable = [];
   for (const entry of enabled) {
     if (entryUsable(entry)) usable.push(entry);
-    else errors.push(`${entryName(entry)}: 地址需要是 http(s)，并包含 {query}`);
+    else errors.push(uiText.t('main.web.badEntryUrl', { name: entryName(entry) }));
   }
   if (usable.length === 0) {
-    return { ok: false, error: errors.join('；') };
+    return { ok: false, error: joinErrors(errors) };
   }
 
   // All enabled entries are asked at once; one slow or blocked site must not
@@ -575,7 +581,7 @@ async function webSearch(rawQuery, options = {}) {
     }
 
     if (results.length === 0) {
-      errors.push(`${name}: 没有解析到结果`);
+      errors.push(uiText.t('main.web.noResults', { name }));
       return;
     }
     if (score >= minimum) {
@@ -585,7 +591,7 @@ async function webSearch(rawQuery, options = {}) {
 
     // Keep the closest match in case no entry does well.
     if (!weak || score > weak.score) weak = { entry, results, score };
-    errors.push(`${name}: 结果与问题不匹配`);
+    errors.push(uiText.t('main.web.mismatch', { name }));
   });
 
   // Better-matching entries come first, then results interleave so every
@@ -640,7 +646,7 @@ async function webSearch(rawQuery, options = {}) {
     };
   }
 
-  return { ok: false, error: errors.join('；') || '联网检索不可用' };
+  return { ok: false, error: joinErrors(errors) || uiText.t('main.web.unavailable') };
 }
 
 module.exports = { webSearch, DEFAULT_ENTRIES };

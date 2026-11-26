@@ -8,22 +8,26 @@
  * Idle rows keep the same slot (just an invisible dot) so titles never shift
  * horizontally when a run starts or ends.
  */
+import { useI18n } from '../i18n';
+
 export type ActivityStatus = 'running' | 'attention' | 'done';
 
 const LABELS: Record<ActivityStatus, string> = {
-  running: '正在运行',
-  attention: '等待你的确认',
-  done: '已完成，尚未查看',
+  running: 'activity.running',
+  attention: 'activity.attention',
+  done: 'activity.done',
 };
 
 export function ActivityDot({ status }: { status: ActivityStatus | null }) {
+  const { t } = useI18n();
+  const label = status ? t(LABELS[status]) : undefined;
   return (
     <span
       className={`activity-dot${status ? ` is-${status}` : ''}`}
       role={status ? 'img' : undefined}
-      aria-label={status ? LABELS[status] : undefined}
+      aria-label={label}
       aria-hidden={status ? undefined : true}
-      title={status ? LABELS[status] : undefined}
+      title={label}
     />
   );
 }

@@ -12,6 +12,7 @@
 const path = require('node:path');
 const sherpa = require('sherpa-onnx-node');
 const { modelDir, status } = require('./models');
+const uiText = require('../ui-text');
 
 const SAMPLE_RATE = 16000;
 const MIN_SEGMENT_SECONDS = 0.2;
@@ -39,10 +40,10 @@ class VoiceEngine {
 
     const info = status(this.root);
     if (!info.ready) {
-      throw new Error('语音模型还没有下载，请到「设置 → 语音配置」下载后再试。');
+      throw new Error(uiText.t('main.voice.error.modelsMissing'));
     }
 
-    this.emit({ type: 'loading', message: '正在加载语音模型…' });
+    this.emit({ type: 'loading', message: uiText.t('main.voice.status.loading') });
     const dir = modelDir(this.root);
 
     this.loading = (async () => {
@@ -132,7 +133,10 @@ class VoiceEngine {
 
       this.drain(session);
     } catch (error) {
-      this.emit({ type: 'error', error: `音频处理失败：${error?.message || error}` });
+      this.emit({
+        type: 'error',
+        error: uiText.t('main.voice.error.audioFailed', { error: error?.message || error }),
+      });
     }
     return true;
   }
@@ -162,7 +166,10 @@ class VoiceEngine {
         }
       } catch (error) {
         if (!session.canceled) {
-          this.emit({ type: 'error', error: `识别失败：${error?.message || error}` });
+          this.emit({
+            type: 'error',
+            error: uiText.t('main.voice.error.recognizeFailed', { error: error?.message || error }),
+          });
         }
       }
     });
@@ -182,7 +189,10 @@ class VoiceEngine {
     try {
       this.drain(session);
     } catch (error) {
-      this.emit({ type: 'error', error: `音频处理失败：${error?.message || error}` });
+      this.emit({
+        type: 'error',
+        error: uiText.t('main.voice.error.audioFailed', { error: error?.message || error }),
+      });
     }
     await this.queue;
     this.emit({ type: 'stopped' });

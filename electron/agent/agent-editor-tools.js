@@ -10,6 +10,8 @@
  * page re-reads the list the next time it becomes visible.
  */
 
+const uiText = require('../ui-text');
+
 let bridge = null;
 
 function setAgentEditorBridge(next) {
@@ -19,7 +21,7 @@ function setAgentEditorBridge(next) {
 function scopeOf(ctx) {
   const scope = ctx?.toolScope;
   if (!scope || scope.kind !== 'agent-editor' || !scope.agentId) {
-    throw new Error('这个会话没有绑定 Agent。');
+    throw new Error(uiText.t('main.agent.errNoAgentScope'));
   }
   return scope;
 }
@@ -27,7 +29,7 @@ function scopeOf(ctx) {
 function call(method, ctx, payload) {
   const scope = scopeOf(ctx);
   if (!bridge || typeof bridge[method] !== 'function') {
-    throw new Error('Agent 编辑服务不可用。');
+    throw new Error(uiText.t('main.agent.errAgentEditorUnavailable'));
   }
   return bridge[method](scope, payload ?? {});
 }

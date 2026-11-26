@@ -7,27 +7,28 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const uiText = require('../ui-text');
 
 const PACKAGE = 'pdfmarkdown-ppocrv5-models';
 
 const FILES = [
   {
     key: 'det',
-    label: '文字检测模型',
+    labelKey: 'main.ocr.model.det',
     file: 'detection/PP-OCRv5_mobile_det_infer.ort',
     expected: 4_896_928,
     minSize: 4_000_000,
   },
   {
     key: 'rec',
-    label: '文字识别模型',
+    labelKey: 'main.ocr.model.rec',
     file: 'recognition/PP-OCRv5_mobile_rec_infer.onnx',
     expected: 16_559_278,
     minSize: 15_000_000,
   },
   {
     key: 'dict',
-    label: '字符字典',
+    labelKey: 'main.ocr.model.dict',
     file: 'recognition/ppocrv5_dict.txt',
     expected: 74_014,
     minSize: 70_000,
@@ -55,7 +56,7 @@ function filePath(entry) {
 function paths() {
   const dir = packageDir();
   if (!dir) {
-    throw new Error('没有找到 PP-OCRv5 模型包（pdfmarkdown-ppocrv5-models），请重新安装依赖');
+    throw new Error(uiText.t('main.ocr.error.packageMissing'));
   }
   return {
     dir,
@@ -80,7 +81,7 @@ function status() {
     }
     return {
       key: entry.key,
-      label: entry.label,
+      label: uiText.t(entry.labelKey),
       file,
       path: full,
       size,

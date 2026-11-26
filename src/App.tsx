@@ -8,7 +8,7 @@ import { PromptsPage } from './components/PromptsPage';
 import { RailNav } from './components/RailNav';
 import { SensoryPage } from './components/SensoryPage';
 import { SettingsPage } from './components/SettingsPage';
-import { I18nProvider } from './i18n';
+import { I18nProvider, useI18n } from './i18n';
 import { Sidebar } from './components/Sidebar';
 import { TitleBar } from './components/TitleBar';
 import { WarehousePage } from './components/WarehousePage';
@@ -18,6 +18,7 @@ import { renderPrompt } from './data/prompts';
 import { DEFAULT_WEB, normalizeWeb, readWebMode } from './data/web';
 import { DEFAULT_PROXY, normalizeProxy } from './data/proxy';
 import { DEFAULT_WORK, normalizeWork } from './data/work';
+import { isDefaultTitle, sessionTitle } from './lib/sessionTitle';
 import {
   buildRagSystemPrompt,
   buildWebSystemPrompt,
@@ -85,12 +86,9 @@ const uid = () =>
  * are close to one token each, everything else averages ~4 characters per token.
  */
 function estimateTokens(text: string): number {
-  const cjk = text.match(/[㐀-䶿一-鿿豈-﫿]/g)?.length ?? 0;
+  const cjk = text.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g)?.length ?? 0;
   return cjk + (text.length - cjk) / 4;
 }
-
-const NO_TARGET_MESSAGE =
-  '还没有连接模型。先去「设置 → 模型接入」填好地址并获取模型，再在「默认模型」里选一个对话模型。';
 
 const EMPTY_WORKSPACE_LIBRARY: WorkspaceLibrary = {
   workspaces: [],
@@ -190,9 +188,24 @@ function ViewSlot({ active, children }: { active: boolean; children: ReactNode }
 }
 
 export default function App() {
-  const [theme, setTheme] = useState<Theme>(initialTheme);
-  /** 界面语言；默认中文，其他语言由内置包或 locales/ 里的自定义包提供。 */
   const [language, setLanguage] = useState<string>(initialLanguage);
+  return (
+    <I18nProvider language={language} onLanguageChange={setLanguage}>
+      <AppBody language={language} onLanguageChange={setLanguage} />
+    </I18nProvider>
+  );
+}
+
+function AppBody({
+  language,
+  onLanguageChange,
+}: {
+  /** 界面语言；默认中文，其他语言由内置包或 locales/ 里的自定义包提供。 */
+  language: string;
+  onLanguageChange: (code: string) => void;
+}) {
+  const { t, locale } = useI18n();
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   /** Whether localStorage already had a choice before this launch's cache write. */
   const hadCachedLanguage = useRef(cachedLanguage() !== null);
   /** 系统设置里的「金额动画」开关；关掉后花费不再触发金币动画。 */
@@ -270,6 +283,11 @@ export default function App() {
     /** 自动联网 judge request, so Stop does not leave it running. */
     judgeRequestId?: string;
   } | null>(null);
+
+  // The stream listener below is registered once; read the current translator
+  // from a ref so switching language does not re-subscribe mid-stream.
+  const tRef = useRef(t);
+  tRef.current = t;
 
   // The stream event listener below is registered once, so it reads the
   // current session from a ref: a run that finishes while the user is in
@@ -506,7 +524,7 @@ export default function App() {
         typeof saved?.language === 'string' &&
         LANGUAGE_CODE.test(saved.language)
       ) {
-        setLanguage(saved.language);
+        onLanguageChange(saved.language);
       }
       // settings.json is debounced by 500ms; the localStorage copy is written
       // the instant the toggle flips. A refresh right after a switch must not
@@ -742,7 +760,7 @@ export default function App() {
         setMessages((prev) =>
           prev.map((message) =>
             message.id === messageId && !message.content.trim()
-              ? { ...message, content: '（模型没有返回内容）' }
+              ? { ...message, content: tRef.current('app.chat.emptyReply') }
               : message,
           ),
         );
@@ -753,14 +771,16 @@ export default function App() {
         setMessages((prev) =>
           prev.map((message) =>
             message.id === messageId
-              ? { ...message, stopped: true, content: message.content || '（已停止）' }
+              ? { ...message, stopped: true, content: message.content || tRef.current('app.chat.stopped') }
               : message,
           ),
         );
         return;
       }
 
-      const note = `调用模型失败：${event.error ?? '未知错误'}`;
+      const note = tRef.current('app.chat.requestFailed', {
+        error: event.error ?? tRef.current('app.error.unknown'),
+      });
       setMessages((prev) =>
         prev.map((message) =>
           message.id === messageId
@@ -850,7 +870,7 @@ export default function App() {
       perSession.set(key, make());
     };
 
-    const titles = new Map(sessions.map((session) => [session.id, session.title]));
+    const titles = new Map(sessions.map((session) => [session.id, sessionTitle(session.title, t)]));
     for (const message of messages) {
       if (!message.attachments || message.attachments.length === 0) continue;
       for (const file of message.attachments) {
@@ -860,7 +880,7 @@ export default function App() {
           () => ({
             kind: 'chat',
             sessionId: message.sessionId,
-            sessionTitle: titles.get(message.sessionId) ?? '未命名对话',
+            sessionTitle: titles.get(message.sessionId) ?? t('app.session.untitled'),
             messageId: message.id,
             at: message.createdAt,
             count: 1,
@@ -886,9 +906,9 @@ export default function App() {
           () => ({
             kind: 'workspace',
             sessionId: chat.id,
-            sessionTitle: chat.title || '未命名对话',
+            sessionTitle: chat.title || t('app.session.untitled'),
             workspaceId: chat.workspaceId,
-            workspaceName: workspaceNames.get(chat.workspaceId) ?? '工作空间',
+            workspaceName: workspaceNames.get(chat.workspaceId) ?? t('app.workspace.untitled'),
             messageId: message.id,
             at: message.createdAt,
             count: 1,
@@ -904,7 +924,7 @@ export default function App() {
       result[itemId] = [...perSession.values()].sort((a, b) => b.at - a.at);
     }
     return result;
-  }, [messages, sessions, workspaceLibrary]);
+  }, [messages, sessions, workspaceLibrary, t]);
 
   function handleJumpToMessage(usage: WarehouseUsage) {
     if (usage.kind === 'workspace' && usage.workspaceId) {
@@ -1003,13 +1023,13 @@ export default function App() {
     const session = sessions.find((item) => item.id === sessionId);
     if (!session) return;
     if (streamingId !== null && sessionId === activeId) {
-      setCompressionError({ sessionId, message: '等当前回答结束后再压缩。' });
+      setCompressionError({ sessionId, message: t('app.compression.wait') });
       return;
     }
 
     const target = resolveTarget(modelForSession(session));
     if (!target) {
-      setCompressionError({ sessionId, message: '当前没有可用的模型，先去设置里接入一个。' });
+      setCompressionError({ sessionId, message: t('app.compression.noModelReady') });
       return;
     }
     target.sessionId = sessionId;
@@ -1017,7 +1037,7 @@ export default function App() {
     const all = messages.filter((message) => message.sessionId === sessionId);
     const selected = selectCompressible(all, work.compressionKeepTurns);
     if (selected.length < 2) {
-      setCompressionError({ sessionId, message: '更早的消息太少，暂时不需要压缩。' });
+      setCompressionError({ sessionId, message: t('app.compression.tooFew') });
       return;
     }
 
@@ -1033,6 +1053,7 @@ export default function App() {
         messages: selected,
         token,
         onProgress: (progress) => setCompressionStep({ sessionId, ...progress }),
+        t,
       });
       if (token.canceled) return;
 
@@ -1242,7 +1263,7 @@ export default function App() {
     ]);
 
     const patch: Partial<Session> = { updatedAt: timestamp };
-    if (activeSession?.title === '新对话') {
+    if (isDefaultTitle(activeSession?.title)) {
       const title = text.trim() || attachments[0]?.name || '';
       if (title) patch.title = title.slice(0, 24);
     }
@@ -1261,7 +1282,7 @@ export default function App() {
       setMessages((prev) =>
         prev.map((message) =>
           message.id === stalled.messageId
-            ? { ...message, stopped: true, content: message.content || '（已停止）' }
+            ? { ...message, stopped: true, content: message.content || tRef.current('app.chat.stopped') }
             : message,
         ),
       );
@@ -1275,7 +1296,7 @@ export default function App() {
       setMessages((prev) =>
         prev.map((message) =>
           message.id === previous.messageId
-            ? { ...message, stopped: true, content: message.content || '（已停止）' }
+            ? { ...message, stopped: true, content: message.content || tRef.current('app.chat.stopped') }
             : message,
         ),
       );
@@ -1301,13 +1322,13 @@ export default function App() {
     };
 
     if (!api) {
-      fail('对话只在桌面端可用。');
+      fail(t('app.error.desktopChatOnly'));
       return;
     }
 
     const target = resolveTarget(activeModel);
     if (!target) {
-      fail(NO_TARGET_MESSAGE);
+      fail(t('app.error.noModel'));
       return;
     }
     target.sessionId = sessionId;
@@ -1394,7 +1415,7 @@ export default function App() {
         if (shouldSearch) {
           webContext = (await api.webSearch(searchQuery, entries)) ?? {
             ok: false,
-            error: '联网检索不可用',
+            error: t('app.error.webUnavailable'),
           };
           if (retrieval.canceled) return;
         }
@@ -1403,7 +1424,7 @@ export default function App() {
           ? buildRagSystemPrompt({ hits, mode: kb.mode, categoryName, note, web: webContext })
           : buildWebSystemPrompt(webContext);
         sources = collectSources(hits, webContext);
-        citations = collectCitations(hits, webContext);
+        citations = collectCitations(hits, webContext, t);
       } catch {
         // Retrieval failure is a technical detail, not part of the answer.
         // Answer from the model's own knowledge instead of injecting a
@@ -1456,7 +1477,7 @@ export default function App() {
     setMessages((prev) =>
       prev.map((message) =>
         message.id === retrieval.messageId
-          ? { ...message, stopped: true, content: message.content || '（已停止）' }
+          ? { ...message, stopped: true, content: message.content || tRef.current('app.chat.stopped') }
           : message,
       ),
     );
@@ -1474,7 +1495,9 @@ export default function App() {
     const result = await window.ezness?.reloadRuntime?.().catch(() => null);
     if (result && !result.ok) {
       setReloading(false);
-      window.alert(`重新加载失败：${result.error ?? '未知错误'}`);
+      window.alert(
+        t('app.reload.failed', { error: result.error ?? t('app.error.unknown') }),
+      );
       return;
     }
     // The main process now holds the fresh definitions; remounting the window
@@ -1490,14 +1513,16 @@ export default function App() {
     const session = sessions.find((item) => item.id === id);
     if (!session) return;
 
-    const label = modelOptions.find((option) => option.id === session.model)?.label ?? '未指定';
+    const label =
+      modelOptions.find((option) => option.id === session.model)?.label ??
+      t('app.export.unspecifiedModel');
     const result = await window.ezness?.exportSession?.({
-      title: session.title || '对话',
-      markdown: buildSessionMarkdown(session, messages, label),
+      title: sessionTitle(session.title, t) || t('app.export.untitledSession'),
+      markdown: buildSessionMarkdown(session, messages, label, { t, locale }),
     });
 
     if (result && !result.ok && !result.canceled) {
-      window.alert(`导出失败：${result.error ?? '未知错误'}`);
+      window.alert(t('app.export.failed', { error: result.error ?? t('app.error.unknown') }));
     }
   }
 
@@ -1516,7 +1541,12 @@ export default function App() {
 
     const rest = sessions.filter((item) => !removed.has(item.id));
     if (rest.length === 0) {
-      const fresh: Session = { id: uid(), title: '新对话', updatedAt: Date.now(), model: fallbackModel };
+      const fresh: Session = {
+        id: uid(),
+        title: t('app.session.defaultTitle'),
+        updatedAt: Date.now(),
+        model: fallbackModel,
+      };
       setSessions([fresh]);
       setActiveId(fresh.id);
       return;
@@ -1528,14 +1558,19 @@ export default function App() {
 
   function handleDeleteSession(id: string) {
     const target = sessions.find((item) => item.id === id);
-    if (!window.confirm(`删除会话「${target?.title ?? ''}」？此操作不可撤销。`)) return;
+    if (!window.confirm(t('app.confirm.deleteSession', { title: sessionTitle(target?.title, t) }))) return;
     removeSessions([id]);
   }
 
   function handleNew() {
     const id = uid();
     setSessions((prev) => [
-      { id, title: '新对话', updatedAt: Date.now(), model: fallbackModel },
+      {
+        id,
+        title: t('app.session.defaultTitle'),
+        updatedAt: Date.now(),
+        model: fallbackModel,
+      },
       ...prev,
     ]);
     setActiveId(id);
@@ -1590,26 +1625,31 @@ export default function App() {
   const compressionProgressLabel =
     compressionStep && compressionStep.sessionId === activeId
       ? compressionStep.phase === 'reduce'
-        ? `正在合并摘要…（第 ${compressionStep.step}/${compressionStep.total} 步）`
-        : `正在压缩… 第 ${compressionStep.step}/${compressionStep.total} 段`
+        ? t('app.compression.merging', {
+            step: compressionStep.step,
+            total: compressionStep.total,
+          })
+        : t('app.compression.mapping', {
+            step: compressionStep.step,
+            total: compressionStep.total,
+          })
       : null;
   const compressionErrorText =
     compressionError && compressionError.sessionId === activeId ? compressionError.message : null;
   const compressionDisabledReason = (() => {
     if (compressionBusy) return null;
-    if (streamingId !== null) return '等当前回答结束后再压缩。';
-    if (!resolveTarget(activeModel)) return '当前没有可用的模型。';
+    if (streamingId !== null) return t('app.compression.wait');
+    if (!resolveTarget(activeModel)) return t('app.compression.noModel');
     const older = selectCompressible(
       messages.filter((message) => message.sessionId === activeId),
       work.compressionKeepTurns,
     );
-    return older.length < 2 ? '更早的消息太少，暂时不需要压缩。' : null;
+    return older.length < 2 ? t('app.compression.tooFew') : null;
   })();
 
   return (
-    <I18nProvider language={language} onLanguageChange={setLanguage}>
-      <div className="app">
-        <TitleBar />
+    <div className="app">
+      <TitleBar />
 
         <div className="workspace">
           <RailNav
@@ -1767,7 +1807,6 @@ export default function App() {
             />
           </ViewSlot>
         </div>
-      </div>
-    </I18nProvider>
+    </div>
   );
 }

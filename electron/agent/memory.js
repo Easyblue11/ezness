@@ -18,6 +18,7 @@
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
+const uiText = require('../ui-text');
 
 const STORE_VERSION = 1;
 const DIR_NAME = 'memories';
@@ -269,13 +270,15 @@ function similarity(a, b) {
 function normalizeEntry(input, options = {}) {
   const now = Number.isFinite(Number(options.now)) ? Number(options.now) : nowMs();
   const agentId = safeId(options.agentId ?? input?.agentId);
-  if (!agentId) return { ok: false, error: 'Agent 不存在。' };
-  if (!input || typeof input !== 'object') return { ok: false, error: '记忆内容格式不对。' };
+  if (!agentId) return { ok: false, error: uiText.t('main.memory.error.agentMissing') };
+  if (!input || typeof input !== 'object') {
+    return { ok: false, error: uiText.t('main.memory.error.invalidContent') };
+  }
 
   const previous = options.previous && typeof options.previous === 'object' ? options.previous : null;
   const title = text(input.title, MAX_TITLE);
   const content = text(input.content, MAX_CONTENT);
-  if (!title && !content) return { ok: false, error: '记忆的标题和内容不能同时为空。' };
+  if (!title && !content) return { ok: false, error: uiText.t('main.memory.error.empty') };
 
   const type = TYPES.has(input.type) ? input.type : 'fact';
   const origin = ORIGINS.has(input.origin)
@@ -298,7 +301,7 @@ function normalizeEntry(input, options = {}) {
   const updatedAt = now;
 
   const id = text(input.id ?? previous?.id, 64) || `mem_${crypto.randomUUID()}`;
-  if (!ID_RE.test(id)) return { ok: false, error: '记忆 id 不合法。' };
+  if (!ID_RE.test(id)) return { ok: false, error: uiText.t('main.memory.error.invalidId') };
 
   return {
     ok: true,
@@ -367,7 +370,7 @@ async function loadStore(agentDir, agentId) {
 
 async function saveStore(agentDir, agentId, store) {
   const file = storePath(agentDir, agentId);
-  if (!file) throw new Error('Agent 的存储目录不可用');
+  if (!file) throw new Error(uiText.t('main.memory.error.noStore'));
   await fs.mkdir(path.dirname(file), { recursive: true });
   const body = {
     version: STORE_VERSION,
@@ -429,45 +432,53 @@ function daysBetween(from, to) {
 function freshnessOf(entry, now = nowMs()) {
   const temporal = entry?.temporal ?? {};
   if (entry?.status === 'rejected') {
-    return { state: 'archived', label: '已驳回', warning: '这条记忆已被驳回，不参与回答。' };
+    return {
+      state: 'archived',
+      label: uiText.t('main.memory.freshness.rejected.label'),
+      warning: uiText.t('main.memory.freshness.rejected.warning'),
+    };
   }
   if (entry?.status === 'archived') {
-    return { state: 'archived', label: '已归档', warning: '这条记忆已归档，不参与回答。' };
+    return {
+      state: 'archived',
+      label: uiText.t('main.memory.freshness.archived.label'),
+      warning: uiText.t('main.memory.freshness.archived.warning'),
+    };
   }
   if (entry?.status === 'disputed') {
     return {
       state: 'disputed',
-      label: '有争议',
-      warning: '来源之间存在冲突，这条记忆在解决前不参与回答。',
+      label: uiText.t('main.memory.freshness.disputed.label'),
+      warning: uiText.t('main.memory.freshness.disputed.warning'),
     };
   }
   if (temporal.validUntil && now >= temporal.validUntil) {
     return {
       state: 'expired',
-      label: '已过期',
-      warning: '这条记忆已超过预计有效期，不能当作当前事实；涉及当前状态时必须重新核实。',
+      label: uiText.t('main.memory.freshness.expired.label'),
+      warning: uiText.t('main.memory.freshness.expired.warning'),
       daysSinceVerified: temporal.lastVerifiedAt ? daysBetween(temporal.lastVerifiedAt, now) : null,
     };
   }
   if (temporal.unverified) {
     return {
       state: 'stale',
-      label: '未核实',
-      warning: '最近一次核验没有找到可靠来源，这条记忆可能已经过时。',
+      label: uiText.t('main.memory.freshness.stale.label'),
+      warning: uiText.t('main.memory.freshness.stale.warning'),
       daysSinceVerified: temporal.lastVerifiedAt ? daysBetween(temporal.lastVerifiedAt, now) : null,
     };
   }
   if (temporal.nextCheckAt && now >= temporal.nextCheckAt) {
     return {
       state: 'due',
-      label: '待复核',
-      warning: '到了复核时间，涉及版本、价格、政策或当前状态时请先联网核实。',
+      label: uiText.t('main.memory.freshness.due.label'),
+      warning: uiText.t('main.memory.freshness.due.warning'),
       daysSinceVerified: temporal.lastVerifiedAt ? daysBetween(temporal.lastVerifiedAt, now) : null,
     };
   }
   return {
     state: 'fresh',
-    label: '新鲜',
+    label: uiText.t('main.memory.freshness.fresh.label'),
     warning: '',
     daysSinceVerified: temporal.lastVerifiedAt ? daysBetween(temporal.lastVerifiedAt, now) : null,
     daysUntilRecheck: temporal.nextCheckAt ? daysBetween(now, temporal.nextCheckAt) : null,
@@ -721,10 +732,10 @@ function snapshotEntry(target, options = {}) {
 function applyVerdict(store, memoryId, verdict, options = {}) {
   const now = Number.isFinite(Number(options.now)) ? Number(options.now) : nowMs();
   const entry = (store?.entries ?? []).find((item) => item.id === memoryId);
-  if (!entry) return { ok: false, error: '记忆不存在。' };
+  if (!entry) return { ok: false, error: uiText.t('main.memory.error.notFound') };
   const kind = verdict?.kind;
   if (!['unchanged', 'changed', 'unverifiable', 'disputed'].includes(kind)) {
-    return { ok: false, error: '未知的复核结果。' };
+    return { ok: false, error: uiText.t('main.memory.error.unknownVerdict') };
   }
 
   const mustAsk =
@@ -741,7 +752,7 @@ function applyVerdict(store, memoryId, verdict, options = {}) {
         evidence: verdict.evidence ?? entry.evidence,
         confidence: verdict.confidence ?? entry.confidence,
         temporal: verdict.temporal,
-        reason: verdict.reason || '复核发现内容有变化',
+        reason: verdict.reason || uiText.t('main.memory.proposal.reason.verdict'),
         verdict: 'changed',
         createdAt: now,
       },
@@ -784,7 +795,7 @@ function applyVerdict(store, memoryId, verdict, options = {}) {
 
   // changed
   const snapshot = snapshotEntry(entry);
-  snapshot.reason = text(verdict.reason, 400) || '复核发现内容已变化';
+  snapshot.reason = text(verdict.reason, 400) || uiText.t('main.memory.proposal.reason.snapshot');
   snapshot.verifiedBy = options.verifiedBy || 'auto';
   entry.history = [...(entry.history ?? []), snapshot].slice(-MAX_HISTORY);
   entry.revision = (entry.revision ?? 1) + 1;
@@ -838,8 +849,8 @@ function applyVerdict(store, memoryId, verdict, options = {}) {
 function applyProposal(store, memoryId, accept, options = {}) {
   const now = Number.isFinite(Number(options.now)) ? Number(options.now) : nowMs();
   const entry = (store?.entries ?? []).find((item) => item.id === memoryId);
-  if (!entry) return { ok: false, error: '记忆不存在。' };
-  if (!entry.proposal) return { ok: false, error: '这条记忆没有待处理的更新。' };
+  if (!entry) return { ok: false, error: uiText.t('main.memory.error.notFound') };
+  if (!entry.proposal) return { ok: false, error: uiText.t('main.memory.error.noProposal') };
   if (!accept) {
     entry.proposal = null;
     entry.updatedAt = now;

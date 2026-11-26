@@ -20,7 +20,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     initials: 'OL',
     apiType: 'ollama',
     baseUrl: 'http://localhost:11434',
-    description: '本机运行的模型，不用密钥。',
+    description: 'settings.providers.presets.ollama.desc',
     keyOptional: true,
   },
   {
@@ -29,7 +29,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     initials: 'AN',
     apiType: 'anthropic',
     baseUrl: 'https://api.anthropic.com/v1',
-    description: 'Claude 系列，走 Messages 接口。',
+    description: 'settings.providers.presets.anthropic.desc',
   },
   {
     id: 'deepseek',
@@ -37,7 +37,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     initials: 'DS',
     apiType: 'openai',
     baseUrl: 'https://api.deepseek.com/v1',
-    description: 'OpenAI 兼容接口，密钥在开放平台申请。',
+    description: 'settings.providers.presets.deepseek.desc',
   },
   {
     id: 'kimi',
@@ -45,7 +45,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     initials: 'KM',
     apiType: 'openai',
     baseUrl: 'https://api.moonshot.cn/v1',
-    description: 'Moonshot 开放平台，OpenAI 兼容。',
+    description: 'settings.providers.presets.kimi.desc',
   },
   {
     id: 'opencode',
@@ -53,7 +53,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     initials: 'OC',
     apiType: 'openai',
     baseUrl: 'https://opencode.ai/zen/v1',
-    description: 'OpenCode 官方模型目录，OpenAI 兼容。',
+    description: 'settings.providers.presets.opencode.desc',
   },
   {
     id: 'opencode-go',
@@ -61,15 +61,15 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     initials: 'GO',
     apiType: 'openai',
     baseUrl: 'https://opencode.ai/zen/go/v1',
-    description: 'OpenCode Go 套餐，走 Go 专用端点。',
+    description: 'settings.providers.presets.opencode-go.desc',
   },
   {
     id: 'custom',
-    name: '自定义接入',
+    name: 'Custom',
     initials: '＋',
     apiType: 'openai',
     baseUrl: '',
-    description: '地址、密钥和模型都自己填。',
+    description: 'settings.providers.presets.custom.desc',
     editable: true,
   },
 ];
@@ -96,11 +96,11 @@ export const SUGGESTED_MODELS: Partial<
   Record<'embedding' | 'translation', { note: string; command: string }>
 > = {
   embedding: {
-    note: '建议使用 qwen3-embedding:0.6b：中文检索效果好，显存占用小',
+    note: 'settings.defaults.suggest.embedding',
     command: 'ollama pull xagi/qwen3-embedding:0.6b-q4_k_m-1024',
   },
   translation: {
-    note: '建议使用 hy-mt2.7b：专用翻译模型，比通用大模型更省',
+    note: 'settings.defaults.suggest.translation',
     command: 'ollama pull kaelri/hy-mt2.7b-q4_K_M',
   },
 };

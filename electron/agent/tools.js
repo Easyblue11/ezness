@@ -16,6 +16,7 @@ const { spawn } = require('node:child_process');
 const { LocalWorkspaceFs, workspaceFsOf } = require('./workspace-fs');
 const { webSearch } = require('../websearch');
 const { appFetch } = require('../app-net');
+const uiText = require('../ui-text');
 
 /**
  * The main process owns the knowledge base and warehouse, so their read
@@ -29,7 +30,7 @@ function setDataBridge(bridge) {
 }
 
 function requireDataBridge() {
-  if (!dataBridge) throw new Error('资料访问还没有配置');
+  if (!dataBridge) throw new Error(uiText.t('main.tool.errDataBridge'));
   return dataBridge;
 }
 
@@ -183,13 +184,18 @@ async function readFile(ctx, args = {}) {
   const target = await ws.resolve(args.path);
   const stat = await ws.stat(target);
   if (stat.isDirectory) {
-    throw new Error('这是一个目录，不是文件；要看目录内容用 list_files 或 director_inspect 的 tree 部分。');
+    throw new Error(uiText.t('main.tool.errIsDirectory'));
   }
   if (stat.size > MAX_READ_BYTES) {
-    throw new Error(`文件太大（${formatSize(stat.size)}），只读工具上限 ${formatSize(MAX_READ_BYTES)}；请指定 offset/limit 读取片段。`);
+    throw new Error(
+      uiText.t('main.tool.errFileTooLarge', {
+        size: formatSize(stat.size),
+        max: formatSize(MAX_READ_BYTES),
+      }),
+    );
   }
   const text = await ws.readText(target);
-  if (text.includes('\u0000')) throw new Error('这是二进制文件，无法作为文本读取');
+  if (text.includes('\u0000')) throw new Error(uiText.t('main.tool.errBinary'));
 
   const lines = text.split('\n');
   const offset = Math.max(Number(args.offset ?? 1), 1);
@@ -290,7 +296,7 @@ async function readManyTool(ctx, args = {}) {
     seen.add(item);
     paths.push(item);
   }
-  if (paths.length === 0) throw new Error('paths 不能为空');
+  if (paths.length === 0) throw new Error(uiText.t('main.tool.errPathsEmpty'));
 
   const picked = paths.slice(0, READ_MANY_LIMIT);
   const limit = Math.min(Math.max(Number(args.limit ?? 200) || 200, 1), 800);
@@ -350,7 +356,7 @@ async function globSearch(ctx, args = {}) {
 
 async function grepSearch(ctx, args = {}) {
   const pattern = String(args.pattern ?? '');
-  if (!pattern) throw new Error('pattern 不能为空');
+  if (!pattern) throw new Error(uiText.t('main.tool.errPatternEmpty'));
   const ws = workspaceFsOf(ctx);
   const target = await ws.resolve(args.path ?? '.');
   const shown = ws.display(target);
@@ -397,7 +403,14 @@ async function writeFile(ctx, args = {}) {
   const target = await ws.resolve(args.path);
   const content = String(args.content ?? '');
   const bytes = Buffer.byteLength(content, 'utf8');
-  if (bytes > MAX_WRITE_BYTES) throw new Error(`内容太大（${formatSize(bytes)}），单次写入上限 ${formatSize(MAX_WRITE_BYTES)}`);
+  if (bytes > MAX_WRITE_BYTES) {
+    throw new Error(
+      uiText.t('main.tool.errWriteTooLarge', {
+        size: formatSize(bytes),
+        max: formatSize(MAX_WRITE_BYTES),
+      }),
+    );
+  }
 
   await ws.mkdir(ws.dirname(target), { recursive: true });
   await ws.writeText(target, content);
@@ -409,16 +422,16 @@ async function editFile(ctx, args = {}) {
   const target = await ws.resolve(args.path);
   const oldText = String(args.old_string ?? '');
   const newText = String(args.new_string ?? '');
-  if (!oldText) throw new Error('old_string 不能为空');
+  if (!oldText) throw new Error(uiText.t('main.tool.errOldStringEmpty'));
 
   const content = await ws.readText(target);
   const first = content.indexOf(oldText);
   if (first === -1) {
-    throw new Error('在文件里找不到 old_string。请先用 read_file 确认原文（缩进、换行必须完全一致）。');
+    throw new Error(uiText.t('main.tool.errOldStringMissing'));
   }
   const occurrences = content.split(oldText).length - 1;
   if (occurrences > 1 && !args.replace_all) {
-    throw new Error(`old_string 出现了 ${occurrences} 次；请补充上下文使其唯一，或设置 replace_all=true。`);
+    throw new Error(uiText.t('main.tool.errOldStringMultiple', { count: occurrences }));
   }
 
   const next = args.replace_all
@@ -448,12 +461,9 @@ function killsAllNamedProcesses(command) {
 
 async function runCommand(ctx, args = {}) {
   const command = String(args.command ?? '').trim();
-  if (!command) throw new Error('command 不能为空');
+  if (!command) throw new Error(uiText.t('main.tool.errCommandRequired'));
   if (killsAllNamedProcesses(command)) {
-    throw new Error(
-      '这条命令会按进程名杀掉所有 node/electron 进程（包括 Ezness 自己），已拒绝执行。' +
-        '停自己起的服务请用 taskkill /PID <pid> /T /F，或者直接用 smoke_check 的自动清理。',
-    );
+    throw new Error(uiText.t('main.tool.errKillsAllProcesses'));
   }
   const ws = workspaceFsOf(ctx);
   const cwd = args.cwd ? await ws.resolve(args.cwd) : ws.root;
@@ -508,17 +518,17 @@ const SMOKE_BODY_BYTES = 200 * 1024;
 /** 把 steps 数组规整成可直接执行的请求；写错的参数当场报出来，不猜。 */
 function normalizeSmokeSteps(value, limit) {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new Error('steps、cleanup、after_restart 必须是数组。');
+  if (!Array.isArray(value)) throw new Error(uiText.t('main.tool.errSmokeArrays'));
   return value.slice(0, limit).map((raw, index) => {
     const item = raw && typeof raw === 'object' ? raw : {};
     const pathValue = String(item.path ?? '').trim();
-    if (!pathValue) throw new Error(`第 ${index + 1} 个请求缺少 path。`);
+    if (!pathValue) throw new Error(uiText.t('main.tool.errSmokeStepPath', { index: index + 1 }));
     if (/^[a-z]+:\/\//i.test(pathValue)) {
-      throw new Error(`第 ${index + 1} 个请求只能打本机服务，不要写完整 URL。`);
+      throw new Error(uiText.t('main.tool.errSmokeStepLocal', { index: index + 1 }));
     }
     const method = String(item.method ?? 'GET').toUpperCase();
     if (!SMOKE_METHODS.has(method)) {
-      throw new Error(`第 ${index + 1} 个请求的 method 不支持：${method}`);
+      throw new Error(uiText.t('main.tool.errSmokeStepMethod', { index: index + 1, method }));
     }
     const headers = {};
     if (item.headers && typeof item.headers === 'object') {
@@ -708,12 +718,14 @@ function judgeSmokeStep(step, result) {
 async function smokeCheck(ctx, args = {}) {
   const ws = workspaceFsOf(ctx);
   if (ws.remote) {
-    throw new Error('smoke_check 只支持本地工作空间；远程空间请用 run_command 手动启动和停止。');
+    throw new Error(uiText.t('main.tool.errSmokeLocalOnly'));
   }
   const command = String(args.command ?? '').trim();
-  if (!command) throw new Error('command 不能为空：写清怎么启动，例如 python app.py');
+  if (!command) throw new Error(uiText.t('main.tool.errSmokeCommandEmpty'));
   const port = Number(args.port) || 0;
-  if (!port || port < 1 || port > 65535) throw new Error('port 不能为空：写服务监听的端口，例如 5000');
+  if (!port || port < 1 || port > 65535) {
+    throw new Error(uiText.t('main.tool.errSmokePortEmpty'));
+  }
   const cwd = args.cwd ? await ws.resolve(args.cwd) : ws.root;
   const waitMs = Math.min(Math.max(Number(args.wait_ms ?? 15000), 2000), 60000);
   const paths = (Array.isArray(args.paths) ? args.paths : [])
@@ -803,7 +815,7 @@ async function smokeCheck(ctx, args = {}) {
     while (Date.now() < deadline) {
       if (ctx.signal?.aborted) {
         await state.stop();
-        throw new Error('已中断');
+        throw new Error(uiText.t('main.agent.interrupted'));
       }
       if (state.exited) break;
       if (await probePort(port, 400)) {
@@ -1071,16 +1083,16 @@ function advanceTodos(todos, call, succeeded) {
 
 async function todoWrite(ctx, args = {}) {
   const todos = normalizeTodos(args);
-  if (todos.length === 0) throw new Error('todos 不能为空');
+  if (todos.length === 0) throw new Error(uiText.t('main.tool.errTodosEmpty'));
   const mark = { pending: '[ ]', in_progress: '[~]', completed: '[x]' };
   return todos.map((todo) => `${mark[todo.status]} ${todo.content}`).join('\n');
 }
 
 async function webSearchTool(ctx, args = {}) {
   const query = String(args.query ?? '').trim();
-  if (!query) throw new Error('query 不能为空');
+  if (!query) throw new Error(uiText.t('main.tool.errQueryEmpty'));
   if (!ctx.webEnabled) {
-    throw new Error('用户没有开启联网：请基于本地文件和已有知识回答，或请用户打开「联网」开关。');
+    throw new Error(uiText.t('main.tool.errWebOff'));
   }
 
   const result = await webSearch(query, { entries: ctx.webEntries ?? [] });
@@ -1116,10 +1128,10 @@ function searchQueryList(value) {
  */
 async function webSearchManyTool(ctx, args = {}) {
   if (!ctx.webEnabled) {
-    throw new Error('用户没有开启联网：请基于本地文件和已有知识回答，或请用户打开「联网」开关。');
+    throw new Error(uiText.t('main.tool.errWebOff'));
   }
   const queries = searchQueryList(args.queries);
-  if (queries.length === 0) throw new Error('queries 不能为空');
+  if (queries.length === 0) throw new Error(uiText.t('main.tool.errQueriesEmpty'));
   if (queries.length === 1) return webSearchTool(ctx, { query: queries[0] });
 
   const outputs = new Array(queries.length);
@@ -1245,7 +1257,7 @@ function htmlToText(html, baseUrl) {
 
 async function webFetchTool(ctx, args = {}) {
   if (!ctx.webEnabled) {
-    throw new Error('用户没有开启联网：请让用户打开「联网」开关后再抓取网页。');
+    throw new Error(uiText.t('main.tool.errWebOffFetch'));
   }
 
   const raw = String(args.url ?? '').trim();
@@ -1253,9 +1265,9 @@ async function webFetchTool(ctx, args = {}) {
   try {
     target = new URL(raw);
   } catch {
-    throw new Error('URL 无效，请提供完整的 http(s) 地址。');
+    throw new Error(uiText.t('main.tool.errUrlInvalid'));
   }
-  if (!/^https?:$/.test(target.protocol)) throw new Error('只支持 http/https 链接。');
+  if (!/^https?:$/.test(target.protocol)) throw new Error(uiText.t('main.tool.errUrlScheme'));
 
   const signals = [AbortSignal.timeout(FETCH_TIMEOUT)];
   if (ctx.signal) signals.push(ctx.signal);
@@ -1273,14 +1285,25 @@ async function webFetchTool(ctx, args = {}) {
       signal,
     });
   } catch (error) {
-    throw new Error(`抓取失败：${error?.message || String(error)}`);
+    throw new Error(uiText.t('main.tool.errFetchFailed', { error: error?.message || String(error) }));
   }
-  if (!response.ok) throw new Error(`抓取失败：HTTP ${response.status} ${response.statusText}`);
+  if (!response.ok) {
+    throw new Error(
+      uiText.t('main.tool.errFetchHttp', {
+        status: response.status,
+        statusText: response.statusText,
+      }),
+    );
+  }
 
   const contentType = response.headers.get('content-type') || '';
   const buffer = Buffer.from(await response.arrayBuffer());
   if (buffer.length > FETCH_MAX_BYTES) {
-    throw new Error(`页面太大（${(buffer.length / 1024 / 1024).toFixed(1)} MB），请换一个更精简的页面。`);
+    throw new Error(
+      uiText.t('main.tool.errPageTooLarge', {
+        size: (buffer.length / 1024 / 1024).toFixed(1),
+      }),
+    );
   }
   if (!looksTextual(contentType, buffer)) {
     return `链接返回的是二进制内容（${contentType || '未知类型'}），无法作为文本读取：${response.url}`;
@@ -2022,7 +2045,7 @@ const DIRECTOR_READ_TOOLS = new Set([
 
 function directorServiceOf(ctx) {
   const service = ctx?.toolContext?.director?.service;
-  if (!service) throw new Error('工作总监服务没有启动');
+  if (!service) throw new Error(uiText.t('main.tool.errDirectorDown'));
   return service;
 }
 
@@ -2032,14 +2055,12 @@ function directorServiceOf(ctx) {
  */
 function directorTaskFs(service, taskId) {
   const id = String(taskId ?? '').trim();
-  if (!id) throw new Error('需要 taskId：从 director_board 取任务 id。');
-  if (!service.monitored(id)) throw new Error('这个任务不在总监的分管范围里，不能读。');
+  if (!id) throw new Error(uiText.t('main.tool.errNeedsTaskId'));
+  if (!service.monitored(id)) throw new Error(uiText.t('main.tool.errNotMonitoredRead'));
   const task = service.tasks.get(id);
   const root = String(task?.workspacePath ?? '').trim();
   if (!root) {
-    throw new Error(
-      '这个任务没有本地工作空间路径（可能是远程空间），读不了磁盘文件。用 director_inspect 看对话、工具调用和留存答复。',
-    );
+    throw new Error(uiText.t('main.tool.errTaskRemoteFiles'));
   }
   return new LocalWorkspaceFs(root);
 }
@@ -2299,7 +2320,7 @@ const DIRECTOR_TOOLS = [
       const wanted = Array.isArray(args.paths)
         ? args.paths.map((item) => String(item ?? '').trim()).filter(Boolean).slice(0, 20)
         : [];
-      if (wanted.length === 0) throw new Error('没有要发送的路径。');
+      if (wanted.length === 0) throw new Error(uiText.t('main.tool.errNoSendPaths'));
       const note = String(args.note ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
       const taskId = String(args.taskId ?? '').trim();
       const payloadTasks = Array.isArray(ctx?.toolContext?.director?.tasks)
@@ -2307,7 +2328,7 @@ const DIRECTOR_TOOLS = [
         : [];
       const taskInfo = taskId ? service.tasks.get(taskId) : null;
       if (taskId && (!taskInfo || !service.monitored(taskId))) {
-        throw new Error('这个任务不在总监的分管范围里，不能发送它的文件。');
+        throw new Error(uiText.t('main.tool.errNotMonitoredSend'));
       }
       const fromPayload = payloadTasks.find((item) => item?.id === taskId);
       const baseRoot = taskInfo?.workspacePath || fromPayload?.workspacePath || '';
@@ -2329,7 +2350,7 @@ const DIRECTOR_TOOLS = [
         if (roots.some((entry) => entry.workspaceId === task.workspaceId)) continue;
         roots.push({ root: task.workspacePath, workspaceId: task.workspaceId });
       }
-      if (roots.length === 0) throw new Error('还不知道这些文件在哪个工作空间，先看任务清单。');
+      if (roots.length === 0) throw new Error(uiText.t('main.tool.errUnknownWorkspace'));
 
       const realRoots = [];
       for (const entry of roots) {
@@ -2339,7 +2360,7 @@ const DIRECTOR_TOOLS = [
           /* 目录不在这台机器上（远程工作空间）就跳过 */
         }
       }
-      if (realRoots.length === 0) throw new Error('这些工作空间不在本机上，没法直接打开。');
+      if (realRoots.length === 0) throw new Error(uiText.t('main.tool.errWorkspacesRemote'));
 
       const files = [];
       const skipped = [];
@@ -2348,7 +2369,7 @@ const DIRECTOR_TOOLS = [
         let absolute = raw;
         if (!path.isAbsolute(raw)) {
           if (!baseRoot) {
-            skipped.push(`${raw}：相对路径需要先指定任务。`);
+            skipped.push(uiText.t('main.tool.errSkipRelativeNoTask', { path: raw }));
             continue;
           }
           absolute = path.resolve(baseRoot, raw);
@@ -2357,7 +2378,7 @@ const DIRECTOR_TOOLS = [
         try {
           real = await fs.realpath(absolute);
         } catch {
-          skipped.push(`${raw}：文件不存在或已经被移走。`);
+          skipped.push(uiText.t('main.tool.errSkipMissing', { path: raw }));
           continue;
         }
         const owner = realRoots.find((entry) => {
@@ -2365,7 +2386,7 @@ const DIRECTOR_TOOLS = [
           return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
         });
         if (!owner) {
-          skipped.push(`${raw}：不在总监分管的工作空间里，不能发送。`);
+          skipped.push(uiText.t('main.tool.errSkipOutsideScope', { path: raw }));
           continue;
         }
         const relative = path.relative(owner.real, real).split(path.sep).join('/') || '.';
@@ -2376,7 +2397,7 @@ const DIRECTOR_TOOLS = [
         try {
           stat = await fs.stat(real);
         } catch {
-          skipped.push(`${raw}：读不到这个位置。`);
+          skipped.push(uiText.t('main.tool.errSkipUnreadable', { path: raw }));
           continue;
         }
         files.push({
@@ -2389,7 +2410,7 @@ const DIRECTOR_TOOLS = [
         });
       }
       if (files.length === 0) {
-        throw new Error(skipped.join('\n') || '没有可以发送的文件。');
+        throw new Error(skipped.join('\n') || uiText.t('main.tool.errNothingToSend'));
       }
       return JSON.stringify({ note, files, skipped });
     },
@@ -3017,7 +3038,7 @@ function summarize(name, args = {}) {
       return (Array.isArray(args.names) ? args.names : [args.names])
         .map((item) => String(item ?? '').trim())
         .filter(Boolean)
-        .join('、');
+        .join(uiText.t('main.tool.listSeparator'));
     case 'run_command':
       return String(args.command ?? '');
     case 'read_file':
@@ -3028,12 +3049,14 @@ function summarize(name, args = {}) {
       const paths = (Array.isArray(args.paths) ? args.paths : [])
         .map((value) => String(value ?? '').trim())
         .filter(Boolean);
-      const head = paths.slice(0, 3).join('、');
-      return paths.length > 3 ? `${head} 等 ${paths.length} 个文件` : head;
+      const head = paths.slice(0, 3).join(uiText.t('main.tool.listSeparator'));
+      return paths.length > 3
+        ? uiText.t('main.tool.moreFiles', { head, count: paths.length })
+        : head;
     }
     case 'list_files': {
       const target = String(args.path ?? '').trim();
-      return !target || target === '.' ? '工作空间根目录' : target;
+      return !target || target === '.' ? uiText.t('main.tool.workspaceRoot') : target;
     }
     case 'glob_search':
     case 'grep_search':
@@ -3042,41 +3065,48 @@ function summarize(name, args = {}) {
       return String(args.query ?? '');
     case 'web_search_many': {
       const queries = searchQueryList(args.queries);
-      const head = queries.slice(0, 3).join('、');
-      return queries.length > 3 ? `${head} 等 ${queries.length} 个搜索词` : head;
+      const head = queries.slice(0, 3).join(uiText.t('main.tool.listSeparator'));
+      return queries.length > 3
+        ? uiText.t('main.tool.moreQueries', { head, count: queries.length })
+        : head;
     }
     case 'web_fetch':
       return String(args.url ?? '');
     case 'todo_write':
-      return `${normalizeTodos(args).length} 项待办`;
+      return uiText.t('main.tool.todoCount', { count: normalizeTodos(args).length });
     case 'ask_user':
       return String(args.question ?? '');
     case 'kb_categories':
-      return '已激活的知识库分类';
+      return uiText.t('main.tool.kbActiveCategories');
     case 'kb_search':
       return String(args.query ?? '');
     case 'kb_read':
       return String(args.docId ?? '');
     case 'warehouse_list':
-      return String(args.query ?? '').trim() || '最近的文件';
+      return String(args.query ?? '').trim() || uiText.t('main.tool.recentFiles');
     case 'warehouse_read':
       return String(args.id ?? '');
     case 'agent_memory_search':
       return String(args.query ?? '');
     case 'tool_editor_list':
-      return '查看当前分类';
+      return uiText.t('main.tool.viewCategory');
     case 'tool_editor_get':
     case 'tool_editor_delete':
     case 'tool_editor_test':
       return String(args.name ?? '');
     case 'tool_editor_create':
-      return String(args.definition?.name ?? '新增功能');
+      return String(args.definition?.name ?? uiText.t('main.tool.newTool'));
     case 'tool_editor_update':
-      return `${String(args.name ?? '')} · ${Object.keys(args.changes ?? {}).join('、')}`;
+      return `${String(args.name ?? '')} · ${Object.keys(args.changes ?? {}).join(
+        uiText.t('main.tool.listSeparator'),
+      )}`;
     case 'agent_editor_get':
-      return '读取当前 Agent 定义';
+      return uiText.t('main.tool.readAgent');
     case 'agent_editor_update':
-      return Object.keys(args.changes ?? {}).join('、') || '更新 Agent 定义';
+      return (
+        Object.keys(args.changes ?? {}).join(uiText.t('main.tool.listSeparator')) ||
+        uiText.t('main.tool.updateAgent')
+      );
     default:
       // Custom tools: show the first string argument so the UI has something
       // concrete to display while the call runs.

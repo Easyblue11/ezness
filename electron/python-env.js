@@ -24,6 +24,7 @@ const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { appFetch } = require('./app-net');
+const uiText = require('./ui-text');
 
 const RUNTIMES_DIR = 'runtimes';
 const ENV_DIR = 'python';
@@ -127,7 +128,9 @@ function childEnv(extra = {}) {
 
 function clip(text, limit = MAX_OUTPUT) {
   const value = String(text ?? '');
-  return value.length <= limit ? value : `${value.slice(0, limit)}\n…（输出已截断）`;
+  return value.length <= limit
+    ? value
+    : `${value.slice(0, limit)}\n${uiText.t('main.python.clip.truncated')}`;
 }
 
 function exec(argv, { cwd, timeoutMs = 120000, env } = {}) {
@@ -141,7 +144,11 @@ function exec(argv, { cwd, timeoutMs = 120000, env } = {}) {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
-      resolve({ ok: false, code: -1, output: `无法启动：${error?.message || String(error)}` });
+      resolve({
+        ok: false,
+        code: -1,
+        output: uiText.t('main.python.error.spawn', { error: error?.message || String(error) }),
+      });
       return;
     }
 
@@ -166,7 +173,11 @@ function exec(argv, { cwd, timeoutMs = 120000, env } = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ ok: false, code: -1, output: `无法启动：${error?.message || String(error)}` });
+      resolve({
+        ok: false,
+        code: -1,
+        output: uiText.t('main.python.error.spawn', { error: error?.message || String(error) }),
+      });
     });
     child.on('close', (code) => {
       if (settled) return;
@@ -194,8 +205,10 @@ async function download(url, file, timeoutMs = 300000) {
     await pipeline(Readable.fromWeb(response.body), fsSync.createWriteStream(temp));
     await fs.rename(temp, file);
   } catch (error) {
-    const reason = controller.signal.aborted ? '下载超时' : error?.message || String(error);
-    throw new Error(`下载失败：${reason}`);
+    const reason = controller.signal.aborted
+      ? uiText.t('main.python.error.downloadTimeout')
+      : error?.message || String(error);
+    throw new Error(uiText.t('main.python.error.downloadFailed', { reason }));
   } finally {
     clearTimeout(timer);
   }
@@ -234,14 +247,22 @@ async function extractZip(zip, dest) {
       { timeoutMs: 180000 },
     );
     if (result.ok) return;
-    throw new Error(`解压失败：${result.output || '系统没有可用的解压工具'}`);
+    throw new Error(
+      uiText.t('main.python.error.unzipFailed', {
+        reason: result.output || uiText.t('main.python.error.noUnzip'),
+      }),
+    );
   }
 
   const unzip = await exec(['unzip', '-q', zip, '-d', dest], { timeoutMs: 120000 });
   if (unzip.ok) return;
   const tar = await exec(['tar', '-xf', zip, '-C', dest], { timeoutMs: 120000 });
   if (tar.ok) return;
-  throw new Error(`解压失败：${unzip.output || tar.output || '系统没有可用的解压工具'}`);
+  throw new Error(
+    uiText.t('main.python.error.unzipFailed', {
+      reason: unzip.output || tar.output || uiText.t('main.python.error.noUnzip'),
+    }),
+  );
 }
 
 /**
@@ -287,7 +308,11 @@ async function simpleIndexFiles(indexUrl, project) {
       'User-Agent': 'Ezness',
     },
   });
-  if (!response.ok) throw new Error(`索引 ${project} 返回 HTTP ${response.status}`);
+  if (!response.ok) {
+    throw new Error(
+      uiText.t('main.python.error.indexHttp', { project, status: response.status }),
+    );
+  }
   const type = response.headers.get('content-type') || '';
   if (/json/i.test(type)) {
     const data = await response.json();
@@ -316,7 +341,7 @@ async function bootstrapPipFromIndex(exe, dir, indexUrl) {
   const wheels = files
     .filter((file) => /^pip-\d+(?:\.\d+)*[-.]?(?:py3|py2\.py3)-none-any\.whl$/i.test(file.filename))
     .sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true }));
-  if (wheels.length === 0) throw new Error('索引里没有找到 pip 的 wheel');
+  if (wheels.length === 0) throw new Error(uiText.t('main.python.error.noPipWheel'));
 
   const target = path.join(dir, 'Lib', 'site-packages');
   await fs.mkdir(target, { recursive: true });
@@ -329,7 +354,7 @@ async function bootstrapPipFromIndex(exe, dir, indexUrl) {
   }
 
   const version = await pipVersion(exe);
-  if (!version) throw new Error('从索引安装 pip 后仍然无法运行 pip');
+  if (!version) throw new Error(uiText.t('main.python.error.pipStillBroken'));
   return version;
 }
 
@@ -351,12 +376,14 @@ async function bootstrapPipFromScript(exe, dir) {
       [exe, temp, '--no-warn-script-location', '--disable-pip-version-check'],
       { cwd: dir, timeoutMs: 300000 },
     );
-    if (!result.ok) throw new Error(result.output || 'get-pip.py 执行失败');
+    if (!result.ok) {
+      throw new Error(result.output || uiText.t('main.python.error.getPipFailed'));
+    }
   } finally {
     await fs.rm(temp, { force: true }).catch(() => undefined);
   }
   const version = await pipVersion(exe);
-  if (!version) throw new Error('get-pip.py 之后仍然无法运行 pip');
+  if (!version) throw new Error(uiText.t('main.python.error.pipStillBrokenScript'));
   return version;
 }
 
@@ -402,7 +429,7 @@ async function ensure(root, hooks = {}) {
 
   let exe = pythonExe(root);
   if (!exe) {
-    progress('download', '正在下载 Python 安装包…');
+    progress('download', uiText.t('main.python.progress.download'));
     const zip = path.join(runtimesDir(root), '.python-embed.zip');
     let lastError = '';
     for (const url of ZIP_URLS) {
@@ -410,7 +437,9 @@ async function ensure(root, hooks = {}) {
         await download(url, zip, 300000);
         const digest = await sha256(zip);
         if (ZIP_SHA256 && digest !== ZIP_SHA256) {
-          throw new Error(`安装包校验失败（sha256 ${digest.slice(0, 12)}…）`);
+          throw new Error(
+            uiText.t('main.python.error.packageChecksum', { digest: digest.slice(0, 12) }),
+          );
         }
         lastError = '';
         break;
@@ -419,9 +448,9 @@ async function ensure(root, hooks = {}) {
         await fs.rm(zip, { force: true }).catch(() => undefined);
       }
     }
-    if (lastError) throw new Error(`Python 下载失败。${lastError}`);
+    if (lastError) throw new Error(uiText.t('main.python.error.pythonDownload', { detail: lastError }));
 
-    progress('extract', '正在解压 Python…');
+    progress('extract', uiText.t('main.python.progress.extract'));
     try {
       await extractZip(zip, dir);
       await patchPth(dir);
@@ -429,42 +458,49 @@ async function ensure(root, hooks = {}) {
       await fs.rm(zip, { force: true }).catch(() => undefined);
     }
     exe = pythonExe(root);
-    if (!exe) throw new Error('解压后没有找到 python.exe');
+    if (!exe) throw new Error(uiText.t('main.python.error.noPythonExe'));
   }
 
   let pip = await pipVersion(exe);
   if (!pip) {
-    progress('pip', '正在准备 pip…');
+    progress('pip', uiText.t('main.python.progress.pip'));
     try {
       pip = await bootstrapPipFromIndex(exe, dir, config.indexUrl);
     } catch (first) {
-      progress('pip', '镜像里没有合适的 pip，改用官方引导脚本…');
+      progress('pip', uiText.t('main.python.progress.pipMirror'));
       try {
         pip = await bootstrapPipFromScript(exe, dir);
       } catch (second) {
-        throw new Error(`pip 安装失败：${first.message}；${second.message}`);
+        throw new Error(
+          uiText.t('main.python.error.pipInstall', {
+            first: first.message,
+            second: second.message,
+          }),
+        );
       }
     }
   }
 
   await writeConfig(root, { pythonVersion: PY_VERSION });
-  progress('done', 'Python 环境已就绪');
+  progress('done', uiText.t('main.python.progress.done'));
   return { ...(await status(root)), pipVersion: pip };
 }
 
 async function listModules(root) {
   const exe = pythonExe(root);
-  if (!exe) throw new Error('还没有部署独立的 Python 环境，请先点「检查并补全环境」。');
+  if (!exe) throw new Error(uiText.t('main.python.error.noEnv'));
   const result = await exec(
     [exe, '-m', 'pip', 'list', '--format=json', '--disable-pip-version-check'],
     { timeoutMs: 60000 },
   );
-  if (!result.ok) throw new Error(result.output || '读取模块列表失败');
+  if (!result.ok) throw new Error(result.output || uiText.t('main.python.error.listFailed'));
   let parsed;
   try {
     parsed = JSON.parse(result.output);
   } catch {
-    throw new Error(`模块列表格式无法解析：${result.output.slice(0, 200)}`);
+    throw new Error(
+      uiText.t('main.python.error.listParse', { detail: result.output.slice(0, 200) }),
+    );
   }
   return (Array.isArray(parsed) ? parsed : [])
     .map((item) => ({
@@ -477,15 +513,15 @@ async function listModules(root) {
 
 async function installModule(root, spec) {
   const exe = pythonExe(root);
-  if (!exe) throw new Error('还没有部署独立的 Python 环境，请先点「检查并补全环境」。');
+  if (!exe) throw new Error(uiText.t('main.python.error.noEnv'));
   if (!(await pipVersion(exe))) {
-    throw new Error('这个环境里没有 pip，请先点「检查并补全环境」。');
+    throw new Error(uiText.t('main.python.error.noPip'));
   }
 
   const name = String(spec ?? '').trim();
-  if (!name) throw new Error('请输入要安装的模块名。');
+  if (!name) throw new Error(uiText.t('main.python.error.emptyModule'));
   if (name.length > 200 || !INSTALL_SPEC_RE.test(name)) {
-    throw new Error('模块名不合法。可以写 requests，也可以写 pandas==2.2.3，不要带命令参数。');
+    throw new Error(uiText.t('main.python.error.invalidModule'));
   }
 
   const { indexUrl } = await readConfig(root);
@@ -504,14 +540,14 @@ async function installModule(root, spec) {
     ],
     { timeoutMs: 600000 },
   );
-  if (!result.ok) throw new Error(result.output || '安装失败');
+  if (!result.ok) throw new Error(result.output || uiText.t('main.python.error.installFailed'));
   return { ok: true, spec: name, output: result.output };
 }
 
 async function setIndexUrl(root, value) {
   const indexUrl = normalizeIndex(value);
-  if (!indexUrl) throw new Error('安装源必须是 http:// 或 https:// 开头的完整地址。');
-  if (indexUrl.length > MAX_INDEX_LENGTH) throw new Error('安装源地址太长。');
+  if (!indexUrl) throw new Error(uiText.t('main.python.error.indexScheme'));
+  if (indexUrl.length > MAX_INDEX_LENGTH) throw new Error(uiText.t('main.python.error.indexTooLong'));
   await writeConfig(root, { indexUrl });
   return { indexUrl };
 }

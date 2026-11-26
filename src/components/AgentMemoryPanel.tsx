@@ -9,6 +9,7 @@ import type {
   AgentMemoryType,
   AgentMemoryVolatility,
 } from '../types';
+import { useI18n } from '../i18n';
 import { CheckIcon, PlusIcon, RefreshIcon, TrashIcon } from './Icons';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -23,47 +24,55 @@ import { ConfirmDialog } from './ConfirmDialog';
 
 const VOLATILITY_FALLBACK: Record<
   AgentMemoryVolatility,
-  { ttlDays: number; recheckDays: number; label: string }
+  { ttlDays: number; recheckDays: number }
 > = {
-  static: { ttlDays: 1825, recheckDays: 365, label: '稳定' },
-  slow: { ttlDays: 730, recheckDays: 180, label: '慢变' },
-  medium: { ttlDays: 180, recheckDays: 90, label: '中变' },
-  fast: { ttlDays: 30, recheckDays: 14, label: '快变' },
-  realtime: { ttlDays: 2, recheckDays: 1, label: '实时' },
+  static: { ttlDays: 1825, recheckDays: 365 },
+  slow: { ttlDays: 730, recheckDays: 180 },
+  medium: { ttlDays: 180, recheckDays: 90 },
+  fast: { ttlDays: 30, recheckDays: 14 },
+  realtime: { ttlDays: 2, recheckDays: 1 },
 };
 
-const TYPE_LABEL: Record<AgentMemoryType, string> = {
-  fact: '事实',
-  insight: '经验',
-  preference: '偏好',
-  procedure: '方法',
-  note: '笔记',
+const VOLATILITY_LABEL_KEY: Record<AgentMemoryVolatility, string> = {
+  static: 'director.memory.volatility.static',
+  slow: 'director.memory.volatility.slow',
+  medium: 'director.memory.volatility.medium',
+  fast: 'director.memory.volatility.fast',
+  realtime: 'director.memory.volatility.realtime',
 };
 
-const STATUS_LABEL: Record<AgentMemoryStatus, string> = {
-  candidate: '待审核',
-  confirmed: '已确认',
-  rejected: '已驳回',
-  archived: '已归档',
-  disputed: '有争议',
+const TYPE_LABEL_KEY: Record<AgentMemoryType, string> = {
+  fact: 'director.memory.type.fact',
+  insight: 'director.memory.type.insight',
+  preference: 'director.memory.type.preference',
+  procedure: 'director.memory.type.procedure',
+  note: 'director.memory.type.note',
 };
 
-const ORIGIN_LABEL: Record<string, string> = {
-  learned: 'AI 学到',
-  manual: '手动添加',
-  imported: '导入',
+const STATUS_LABEL_KEY: Record<AgentMemoryStatus, string> = {
+  candidate: 'director.memory.status.candidate',
+  confirmed: 'director.memory.status.confirmed',
+  rejected: 'director.memory.status.rejected',
+  archived: 'director.memory.status.archived',
+  disputed: 'director.memory.status.disputed',
+};
+
+const ORIGIN_LABEL_KEY: Record<string, string> = {
+  learned: 'director.memory.origin.learned',
+  manual: 'director.memory.origin.manual',
+  imported: 'director.memory.origin.imported',
 };
 
 type StatusFilter = 'all' | AgentMemoryStatus | 'attention';
 
-const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'candidate', label: '待审核' },
-  { key: 'confirmed', label: '已确认' },
-  { key: 'attention', label: '需复核' },
-  { key: 'rejected', label: '已驳回' },
-  { key: 'archived', label: '已归档' },
-  { key: 'disputed', label: '有争议' },
+const STATUS_FILTERS: { key: StatusFilter; labelKey: string }[] = [
+  { key: 'all', labelKey: 'director.memory.filter.all' },
+  { key: 'candidate', labelKey: 'director.memory.filter.candidate' },
+  { key: 'confirmed', labelKey: 'director.memory.filter.confirmed' },
+  { key: 'attention', labelKey: 'director.memory.filter.attention' },
+  { key: 'rejected', labelKey: 'director.memory.filter.rejected' },
+  { key: 'archived', labelKey: 'director.memory.filter.archived' },
+  { key: 'disputed', labelKey: 'director.memory.filter.disputed' },
 ];
 
 interface EditorState {
@@ -89,18 +98,18 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function dateOf(value: number | undefined | null): string {
+function dateOf(value: number | undefined | null, locale: string): string {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString('zh-CN');
+  return date.toLocaleDateString(locale);
 }
 
-function dateTimeOf(value: number | undefined | null): string {
+function dateTimeOf(value: number | undefined | null, locale: string): string {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(locale, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -132,13 +141,13 @@ function emptyEditor(volatility: AgentMemoryVolatility = 'medium'): EditorState 
   };
 }
 
-function editorOf(entry: AgentMemoryEntry): EditorState {
+function editorOf(entry: AgentMemoryEntry, separator: string): EditorState {
   return {
     id: entry.id,
     type: entry.type,
     title: entry.title,
     content: entry.content,
-    tags: entry.tags.join('、'),
+    tags: entry.tags.join(separator),
     confidence: entry.confidence,
     volatility: entry.temporal.volatility,
     ttlDays: entry.temporal.ttlDays,
@@ -148,6 +157,7 @@ function editorOf(entry: AgentMemoryEntry): EditorState {
 }
 
 export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
+  const { t, locale } = useI18n();
   const api = window.ezness;
   const [snapshot, setSnapshot] = useState<AgentMemorySnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -169,7 +179,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
     try {
       const next = await api.agentsMemorySnapshot(agentId);
       if (!next.ok) {
-        setError(next.error || '读取记忆失败');
+        setError(next.error || t('director.memory.error.read'));
         return;
       }
       setSnapshot(next);
@@ -240,7 +250,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
     try {
       const result = await action();
       if (!result.ok) {
-        setError(result.error || '操作失败');
+        setError(result.error || t('director.memory.error.failed'));
         return;
       }
       await refresh();
@@ -254,7 +264,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
   async function saveEditor() {
     if (!api || !editor) return;
     if (!editor.title.trim() && !editor.content.trim()) {
-      setError('标题和内容不能同时为空。');
+      setError(t('director.memory.error.empty'));
       return;
     }
     const input: AgentMemoryInput = {
@@ -281,7 +291,9 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
         const result = await api.agentsMemorySave(agentId, input);
         if (result.ok) {
           setEditor(null);
-          setNotice(editor.id ? '已保存修改' : '已新增记忆');
+          setNotice(
+            editor.id ? t('director.memory.notice.saved') : t('director.memory.notice.added'),
+          );
         }
         return result;
       },
@@ -295,7 +307,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
     try {
       const result = await api.agentsMemoryConfig(agentId, patch);
       if (!result.ok || !result.memory || !result.agents) {
-        setError(result.error || '保存设置失败');
+        setError(result.error || t('director.memory.error.saveSettings'));
         return;
       }
       onSettings(result.memory, result.agents);
@@ -309,8 +321,8 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
   if (!agentId) {
     return (
       <div className="agent-empty agent-empty--inline">
-        <h2>先保存 Agent</h2>
-        <p>保存后，它会在多次对话中逐渐积累自己的长期记忆。</p>
+        <h2>{t('director.memory.noAgent.title')}</h2>
+        <p>{t('director.memory.noAgent.desc')}</p>
       </div>
     );
   }
@@ -320,27 +332,39 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
       <div className="agent-memory__bar">
         <div className="agent-memory__stats">
           <span>
-            共 <b>{stats?.total ?? 0}</b> 条
+            {t('director.memory.stat.totalBefore')}
+            <b>{stats?.total ?? 0}</b>
+            {t('director.memory.stat.totalAfter')}
           </span>
           <span>
-            已确认 <b>{stats?.confirmed ?? 0}</b>
+            {t('director.memory.stat.confirmedBefore')}
+            <b>{stats?.confirmed ?? 0}</b>
+            {t('director.memory.stat.confirmedAfter')}
           </span>
           <span className={stats?.candidate ? 'is-warn' : ''}>
-            待审核 <b>{stats?.candidate ?? 0}</b>
+            {t('director.memory.stat.candidateBefore')}
+            <b>{stats?.candidate ?? 0}</b>
+            {t('director.memory.stat.candidateAfter')}
           </span>
           <span className={stats?.due ? 'is-warn' : ''}>
-            需复核 <b>{stats?.due ?? 0}</b>
+            {t('director.memory.stat.dueBefore')}
+            <b>{stats?.due ?? 0}</b>
+            {t('director.memory.stat.dueAfter')}
           </span>
-          {Boolean(stats?.disputed) && <span className="is-danger">有争议 {stats?.disputed}</span>}
+          {Boolean(stats?.disputed) && (
+            <span className="is-danger">
+              {t('director.memory.stat.disputed', { count: stats?.disputed ?? 0 })}
+            </span>
+          )}
         </div>
         <div className="agent-memory__actions">
           <button className="btn btn--ghost" onClick={() => void refresh()} disabled={loading}>
             <RefreshIcon size={14} />
-            {loading ? '读取中…' : '刷新'}
+            {loading ? t('director.memory.refresh.loading') : t('director.memory.refresh')}
           </button>
           <button className="btn btn--primary" onClick={() => setEditor(emptyEditor())}>
             <PlusIcon size={14} />
-            新增记忆
+            {t('director.memory.add')}
           </button>
         </div>
       </div>
@@ -353,7 +377,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
             disabled={busy === 'settings'}
             onChange={(event) => void toggleSettings({ enabled: event.target.checked })}
           />
-          <span>对话后自动学习</span>
+          <span>{t('director.memory.autoLearn')}</span>
         </label>
         <label className="agent-switch">
           <input
@@ -362,7 +386,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
             disabled={busy === 'settings' || !settings.enabled}
             onChange={(event) => void toggleSettings({ autoConfirm: event.target.checked })}
           />
-          <span>自动确认学到的记忆（免逐条审核）</span>
+          <span>{t('director.memory.autoConfirm')}</span>
         </label>
         <label className="agent-switch">
           <input
@@ -371,14 +395,11 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
             disabled={busy === 'settings'}
             onChange={(event) => void toggleSettings({ allowWebRecheck: event.target.checked })}
           />
-          <span>到期后自动联网复核</span>
+          <span>{t('director.memory.webRecheck')}</span>
         </label>
       </div>
 
-      <p className="agent-hint">
-        只有「已确认」且未过期的记忆会进入回答。学到的内容默认自动确认并立即生效，你可以在下面随时修改、驳回或删除；
-        关闭开关后，新记忆会先停在待审核。需要复核时它会重新搜索并更新，内容发生变化时保留旧版本，方便你对照。
-      </p>
+      <p className="agent-hint">{t('director.memory.intro')}</p>
 
       <div className="agent-memory__filters">
         <div className="agent-memory__tabs">
@@ -388,27 +409,27 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
               className={`agent-memory__tab ${filter === item.key ? 'is-on' : ''}`}
               onClick={() => setFilter(item.key)}
             >
-              {item.label}
+              {t(item.labelKey)}
             </button>
           ))}
         </div>
         <select
           className="agent-doc__select"
           value={typeFilter}
-          aria-label="记忆类型"
+          aria-label={t('director.memory.typeAria')}
           onChange={(event) => setTypeFilter(event.target.value as 'all' | AgentMemoryType)}
         >
-          <option value="all">全部类型</option>
-          {Object.entries(TYPE_LABEL).map(([value, label]) => (
+          <option value="all">{t('director.memory.allTypes')}</option>
+          {Object.entries(TYPE_LABEL_KEY).map(([value, labelKey]) => (
             <option key={value} value={value}>
-              {label}
+              {t(labelKey)}
             </option>
           ))}
         </select>
         <input
           className="input agent-memory__search"
           value={query}
-          placeholder="搜索标题、内容或标签"
+          placeholder={t('director.memory.searchPlaceholder')}
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
@@ -424,20 +445,20 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
       {editor && (
         <section className="agent-memory__editor">
           <div className="agent-memory__editor-head">
-            <h3>{editor.id ? '编辑记忆' : '新增记忆'}</h3>
+            <h3>{editor.id ? t('director.memory.editor.editTitle') : t('director.memory.add')}</h3>
             <div className="agent-memory__editor-actions">
               <button className="btn btn--ghost" onClick={() => setEditor(null)} disabled={busy === 'save'}>
-                取消
+                {t('director.common.cancel')}
               </button>
               <button className="btn btn--primary" onClick={() => void saveEditor()} disabled={busy === 'save'}>
-                {busy === 'save' ? '保存中…' : '保存'}
+                {busy === 'save' ? t('director.common.saving') : t('director.common.save')}
               </button>
             </div>
           </div>
 
           <div className="agent-form__row">
             <label className="field">
-              <span className="field__label">类型</span>
+              <span className="field__label">{t('director.memory.field.type')}</span>
               <select
                 className="input"
                 value={editor.type}
@@ -445,15 +466,15 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                   setEditor({ ...editor, type: event.target.value as AgentMemoryType })
                 }
               >
-                {Object.entries(TYPE_LABEL).map(([value, label]) => (
+                {Object.entries(TYPE_LABEL_KEY).map(([value, labelKey]) => (
                   <option key={value} value={value}>
-                    {label}
+                    {t(labelKey)}
                   </option>
                 ))}
               </select>
             </label>
             <label className="field">
-              <span className="field__label">置信度</span>
+              <span className="field__label">{t('director.memory.field.confidence')}</span>
               <input
                 className="input"
                 type="number"
@@ -469,44 +490,44 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
           </div>
 
           <label className="field">
-            <span className="field__label">标题</span>
+            <span className="field__label">{t('director.memory.field.title')}</span>
             <input
               className="input"
               value={editor.title}
               maxLength={160}
-              placeholder="一句话说明这条记忆"
+              placeholder={t('director.memory.field.titlePlaceholder')}
               onChange={(event) => setEditor({ ...editor, title: event.target.value })}
             />
           </label>
 
           <label className="field">
-            <span className="field__label">内容</span>
+            <span className="field__label">{t('director.memory.field.content')}</span>
             <textarea
               className="input agent-form__textarea"
               rows={4}
               value={editor.content}
               maxLength={8000}
-              placeholder="可直接阅读的事实、经验或方法。"
+              placeholder={t('director.memory.field.contentPlaceholder')}
               onChange={(event) => setEditor({ ...editor, content: event.target.value })}
             />
           </label>
 
           <label className="field">
             <span className="field__label">
-              标签
-              <span className="field__hint">用顿号或逗号分隔</span>
+              {t('director.memory.field.tags')}
+              <span className="field__hint">{t('director.memory.field.tagsHint')}</span>
             </span>
             <input
               className="input"
               value={editor.tags}
-              placeholder="例如：Electron、构建、版本"
+              placeholder={t('director.memory.field.tagsPlaceholder')}
               onChange={(event) => setEditor({ ...editor, tags: event.target.value })}
             />
           </label>
 
           <div className="agent-form__row">
             <label className="field">
-              <span className="field__label">可改变程度</span>
+              <span className="field__label">{t('director.memory.field.volatility')}</span>
               <select
                 className="input"
                 value={editor.volatility}
@@ -521,13 +542,16 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
               >
                 {(Object.keys(VOLATILITY_FALLBACK) as AgentMemoryVolatility[]).map((key) => (
                   <option key={key} value={key}>
-                    {VOLATILITY_FALLBACK[key].label} · 复核 {volatilityMap[key]?.recheckDays ?? 0} 天
+                    {t('director.memory.volatilityOption', {
+                      label: t(VOLATILITY_LABEL_KEY[key]),
+                      days: volatilityMap[key]?.recheckDays ?? 0,
+                    })}
                   </option>
                 ))}
               </select>
             </label>
             <label className="field">
-              <span className="field__label">有效期（天）</span>
+              <span className="field__label">{t('director.memory.field.ttlDays')}</span>
               <input
                 className="input"
                 type="number"
@@ -543,14 +567,14 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
 
           <label className="field">
             <span className="field__label">
-              时效判断依据
-              <span className="field__hint">为什么这个内容能保持这么久</span>
+              {t('director.memory.field.ttlReason')}
+              <span className="field__hint">{t('director.memory.field.ttlReasonHint')}</span>
             </span>
             <input
               className="input"
               value={editor.ttlReason}
               maxLength={400}
-              placeholder="例如：协议规范，短期不会改动。"
+              placeholder={t('director.memory.field.ttlReasonPlaceholder')}
               onChange={(event) => setEditor({ ...editor, ttlReason: event.target.value })}
             />
           </label>
@@ -561,24 +585,28 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
               checked={editor.locked}
               onChange={(event) => setEditor({ ...editor, locked: event.target.checked })}
             />
-            <span>锁定：自动复核发现变化时，先向我确认再改</span>
+            <span>{t('director.memory.lockHint')}</span>
           </label>
         </section>
       )}
 
       {loading && !snapshot ? (
-        <p className="agent-hint">正在读取长期记忆…</p>
+        <p className="agent-hint">{t('director.memory.loading')}</p>
       ) : visible.length === 0 ? (
         <div className="agent-empty agent-empty--inline">
-          <h2>{entries.length === 0 ? '还没有长期记忆' : '没有符合筛选条件的记忆'}</h2>
+          <h2>
+            {entries.length === 0
+              ? t('director.memory.empty.title')
+              : t('director.memory.empty.filteredTitle')}
+          </h2>
           <p>
             {entries.length === 0
-              ? '完成几次对话后，它会把相对可靠、以后仍有用的内容整理到这里，先作为待审核条目。'
-              : '换一个筛选条件，或清空搜索关键词。'}
+              ? t('director.memory.empty.desc')
+              : t('director.memory.empty.filteredDesc')}
           </p>
           <button className="btn btn--primary" onClick={() => setEditor(emptyEditor())}>
             <PlusIcon size={14} />
-            手动添加一条
+            {t('director.memory.empty.add')}
           </button>
         </div>
       ) : (
@@ -593,18 +621,22 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                   onClick={() => setExpanded(open ? '' : entry.id)}
                 >
                   <span className={`agent-memory__badge is-${entry.status}`}>
-                    {STATUS_LABEL[entry.status]}
+                    {t(STATUS_LABEL_KEY[entry.status])}
                   </span>
                   <span className="agent-memory__title">{entry.title}</span>
                   <span className="agent-memory__meta">
-                    <span>{TYPE_LABEL[entry.type]}</span>
-                    <span>{ORIGIN_LABEL[entry.origin] ?? entry.origin}</span>
+                    <span>{t(TYPE_LABEL_KEY[entry.type])}</span>
+                    <span>
+                      {ORIGIN_LABEL_KEY[entry.origin]
+                        ? t(ORIGIN_LABEL_KEY[entry.origin])
+                        : entry.origin}
+                    </span>
                     {fresh && (
                       <span className={`agent-memory__fresh ${freshTone(fresh.state)}`}>
                         {fresh.label}
                       </span>
                     )}
-                    <span>{dateOf(entry.updatedAt)}</span>
+                    <span>{dateOf(entry.updatedAt, locale)}</span>
                   </span>
                 </button>
 
@@ -614,11 +646,15 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
 
                     {entry.proposal && (
                       <div className="agent-memory__proposal">
-                        <h4>复核发现内容有变化</h4>
+                        <h4>{t('director.memory.proposal.title')}</h4>
                         <p className="agent-memory__proposal-title">{entry.proposal.title}</p>
                         <p className="agent-memory__content">{entry.proposal.content}</p>
                         {entry.proposal.reason && (
-                          <p className="agent-hint">原因：{entry.proposal.reason}</p>
+                          <p className="agent-hint">
+                            {t('director.memory.proposal.reason', {
+                              reason: entry.proposal.reason,
+                            })}
+                          </p>
                         )}
                         <div className="agent-memory__row-actions">
                           <button
@@ -630,7 +666,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                               )
                             }
                           >
-                            采用新内容
+                            {t('director.memory.proposal.accept')}
                           </button>
                           <button
                             className="btn btn--ghost"
@@ -641,7 +677,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                               )
                             }
                           >
-                            保持原样
+                            {t('director.memory.proposal.keep')}
                           </button>
                         </div>
                       </div>
@@ -649,45 +685,48 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
 
                     <dl className="agent-memory__facts">
                       <div>
-                        <dt>观察时间</dt>
-                        <dd>{dateTimeOf(entry.temporal.observedAt)}</dd>
+                        <dt>{t('director.memory.fact.observedAt')}</dt>
+                        <dd>{dateTimeOf(entry.temporal.observedAt, locale)}</dd>
                       </div>
                       <div>
-                        <dt>上次核验</dt>
-                        <dd>{dateTimeOf(entry.temporal.lastVerifiedAt)}</dd>
+                        <dt>{t('director.memory.fact.lastVerifiedAt')}</dt>
+                        <dd>{dateTimeOf(entry.temporal.lastVerifiedAt, locale)}</dd>
                       </div>
                       <div>
-                        <dt>有效期至</dt>
-                        <dd>{dateOf(entry.temporal.validUntil)}</dd>
+                        <dt>{t('director.memory.fact.validUntil')}</dt>
+                        <dd>{dateOf(entry.temporal.validUntil, locale)}</dd>
                       </div>
                       <div>
-                        <dt>下次复核</dt>
-                        <dd>{dateOf(entry.temporal.nextCheckAt)}</dd>
+                        <dt>{t('director.memory.fact.nextCheckAt')}</dt>
+                        <dd>{dateOf(entry.temporal.nextCheckAt, locale)}</dd>
                       </div>
                       <div>
-                        <dt>可改变程度</dt>
+                        <dt>{t('director.memory.field.volatility')}</dt>
                         <dd>
-                          {volatilityMap[entry.temporal.volatility]?.label ??
-                            entry.temporal.volatility}{' '}
-                          · {entry.temporal.ttlDays} 天
+                          {t('director.memory.fact.volatilityValue', {
+                            label: t(VOLATILITY_LABEL_KEY[entry.temporal.volatility]),
+                            days: entry.temporal.ttlDays,
+                          })}
                         </dd>
                       </div>
                       <div>
-                        <dt>置信度</dt>
+                        <dt>{t('director.memory.field.confidence')}</dt>
                         <dd>{entry.confidence.toFixed(2)}</dd>
                       </div>
                       <div>
-                        <dt>版本</dt>
-                        <dd>第 {entry.revision} 版</dd>
+                        <dt>{t('director.memory.fact.version')}</dt>
+                        <dd>{t('director.memory.fact.revision', { count: entry.revision })}</dd>
                       </div>
                       <div>
-                        <dt>被引用</dt>
-                        <dd>{entry.useCount} 次</dd>
+                        <dt>{t('director.memory.fact.useCount')}</dt>
+                        <dd>{t('director.memory.fact.usedTimes', { count: entry.useCount })}</dd>
                       </div>
                     </dl>
 
                     {entry.temporal.ttlReason && (
-                      <p className="agent-hint">时效依据：{entry.temporal.ttlReason}</p>
+                      <p className="agent-hint">
+                        {t('director.memory.ttlReasonNote', { reason: entry.temporal.ttlReason })}
+                      </p>
                     )}
                     {fresh?.warning && <p className="agent-memory__warning">{fresh.warning}</p>}
 
@@ -701,7 +740,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
 
                     {entry.sources.length > 0 && (
                       <div className="agent-memory__sources">
-                        <h4>来源</h4>
+                        <h4>{t('director.memory.sources')}</h4>
                         <ul>
                           {entry.sources.map((source, index) => (
                             <li key={`${source.kind}-${index}`}>
@@ -710,9 +749,9 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                                   {source.title || source.url}
                                 </a>
                               ) : source.kind === 'conversation' ? (
-                                '来自对话记录'
+                                t('director.memory.source.conversation')
                               ) : (
-                                '手动添加'
+                                t('director.memory.source.manual')
                               )}
                             </li>
                           ))}
@@ -722,7 +761,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
 
                     {entry.evidence.length > 0 && (
                       <div className="agent-memory__sources">
-                        <h4>依据摘录</h4>
+                        <h4>{t('director.memory.evidence')}</h4>
                         <ul>
                           {entry.evidence.map((item, index) => (
                             <li key={index}>{item}</li>
@@ -733,11 +772,16 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
 
                     {entry.history.length > 0 && (
                       <details className="agent-memory__history">
-                        <summary>历史版本（{entry.history.length}）</summary>
+                        <summary>
+                          {t('director.memory.history', { count: entry.history.length })}
+                        </summary>
                         {[...entry.history].reverse().map((item, index) => (
                           <div key={`${item.revision}-${index}`} className="agent-memory__history-item">
                             <span>
-                              第 {item.revision} 版 · {dateTimeOf(item.replacedAt)}
+                              {t('director.memory.historyItem', {
+                                revision: item.revision,
+                                date: dateTimeOf(item.replacedAt, locale),
+                              })}
                             </span>
                             <b>{item.title}</b>
                             <p>{item.content}</p>
@@ -758,7 +802,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                             )
                           }
                         >
-                          确认采用
+                          {t('director.memory.action.confirm')}
                         </button>
                       )}
                       {entry.status !== 'rejected' && (
@@ -771,7 +815,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                             )
                           }
                         >
-                          驳回
+                          {t('director.memory.action.reject')}
                         </button>
                       )}
                       {entry.status === 'confirmed' && (
@@ -784,7 +828,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                             )
                           }
                         >
-                          归档
+                          {t('director.memory.action.archive')}
                         </button>
                       )}
                       {(entry.status === 'archived' || entry.status === 'rejected') && (
@@ -797,13 +841,13 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                             )
                           }
                         >
-                          恢复使用
+                          {t('director.memory.action.restore')}
                         </button>
                       )}
                       <button
                         className="btn btn--ghost"
                         disabled={busy === entry.id}
-                        title="联网核对这条记忆现在是否仍然正确"
+                        title={t('director.memory.action.recheckTitle')}
                         onClick={() =>
                           void (async () => {
                             setBusy(entry.id);
@@ -811,18 +855,19 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                             setNotice('');
                             try {
                               const result = await api!.agentsMemoryRecheck(agentId, entry.id);
-                              if (!result.ok) setError(result.error || '复核失败');
+                              if (!result.ok)
+                                setError(result.error || t('director.memory.error.recheck'));
                               else {
                                 const kindLabel =
                                   result.kind === 'unchanged'
-                                    ? '仍然正确，已刷新核验时间'
+                                    ? t('director.memory.recheck.unchanged')
                                     : result.kind === 'changed'
                                       ? result.proposal
-                                        ? '发现变化，已生成待确认的更新'
-                                        : '发现变化，已写入新版本'
+                                        ? t('director.memory.recheck.changedProposal')
+                                        : t('director.memory.recheck.changedApplied')
                                       : result.kind === 'disputed'
-                                        ? '来源互相矛盾，已标记为有争议'
-                                        : '没有找到可靠来源，已标记为未核实';
+                                        ? t('director.memory.recheck.disputed')
+                                        : t('director.memory.recheck.unverified');
                                 setNotice(kindLabel);
                                 await refresh();
                               }
@@ -834,17 +879,21 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                           })()
                         }
                       >
-                        {busy === entry.id ? '复核中…' : '立即复核'}
+                        {busy === entry.id
+                          ? t('director.memory.action.rechecking')
+                          : t('director.memory.action.recheck')}
                       </button>
                       <button
                         className="btn btn--ghost"
                         disabled={busy === entry.id}
                         onClick={() => {
-                          setEditor(editorOf(entry));
+                          setEditor(
+                            editorOf(entry, t('director.memory.tagsSeparator')),
+                          );
                           setNotice('');
                         }}
                       >
-                        编辑
+                        {t('director.memory.action.edit')}
                       </button>
                       <button
                         className="btn btn--danger"
@@ -852,7 +901,7 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
                         onClick={() => setConfirmDelete(entry)}
                       >
                         <TrashIcon size={14} />
-                        删除
+                        {t('director.memory.action.delete')}
                       </button>
                     </div>
                   </div>
@@ -865,9 +914,9 @@ export function AgentMemoryPanel({ agentId, settings, onSettings }: Props) {
 
       {confirmDelete && (
         <ConfirmDialog
-          title="删除这条记忆？"
-          message={`「${confirmDelete.title}」会从长期记忆中移除，以后不会再用到。历史版本也会一起删除。`}
-          confirmLabel="删除"
+          title={t('director.memory.delete.title')}
+          message={t('director.memory.delete.message', { title: confirmDelete.title })}
+          confirmLabel={t('director.memory.action.delete')}
           danger
           onConfirm={() => {
             const target = confirmDelete;

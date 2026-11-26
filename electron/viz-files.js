@@ -15,6 +15,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const uiText = require('./ui-text');
 
 const MAX_FILES = 14;
 const MAX_TABLES = 10;
@@ -67,6 +68,19 @@ function clip(value, max) {
     .replace(/\s+/g, ' ')
     .trim();
   return text.length <= max ? text : `${text.slice(0, max)}…`;
+}
+
+/** Source line shown on a table card, e.g. "File: out/sales.csv". */
+function fileSource(rel) {
+  return uiText.t('main.viz.fileSource', { path: rel });
+}
+
+function databaseSource(rel) {
+  return uiText.t('main.viz.dbSource', { path: rel });
+}
+
+function sampleNote(shown, total) {
+  return uiText.t('main.viz.sampleNote', { shown, total });
 }
 
 function fitRow(cells, count) {
@@ -262,7 +276,11 @@ async function fromExcel(file, name, source, ref = null, limit = MAX_ROWS_PER_FI
     const table = fromMatrix(
       matrix,
       label,
-      `${source}${sheet.rowCount > matrix.length ? `（抽样 ${matrix.length - 1}/${Math.max(0, sheet.rowCount - 1)} 行）` : ''}`,
+      `${source}${
+        sheet.rowCount > matrix.length
+          ? sampleNote(matrix.length - 1, Math.max(0, sheet.rowCount - 1))
+          : ''
+      }`,
       Math.max(0, sheet.rowCount - 1),
       ref ? { ...ref, sheet: sheet.name } : null,
       limit,
@@ -278,7 +296,7 @@ async function fromExcel(file, name, source, ref = null, limit = MAX_ROWS_PER_FI
 function sqliteValue(value) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'bigint') return value.toString();
-  if (value instanceof Uint8Array) return '<二进制>';
+  if (value instanceof Uint8Array) return uiText.t('main.viz.binary');
   return String(value);
 }
 
@@ -314,7 +332,10 @@ function fromSqlite(file, name, source, ref = null, limit = MAX_ROWS_PER_FILE) {
       const columns = Object.keys(rows[0]).slice(0, MAX_COLUMNS);
       if (columns.length < 2) continue;
       const matrix = [columns, ...rows.map((row) => columns.map((key) => sqliteValue(row[key])))];
-      const note = total > rows.length ? `（抽样 ${rows.length}/${total} 行）` : `（${total} 行）`;
+      const note =
+        total > rows.length
+          ? sampleNote(rows.length, total)
+          : uiText.t('main.viz.rowCount', { count: total });
       const table = fromMatrix(
         matrix,
         `${name} · ${tableName}`,
@@ -374,7 +395,7 @@ async function walk(root) {
 async function parseFile(entry) {
   const stat = await fs.stat(entry.file);
   const name = path.basename(entry.rel).replace(/\.[^.]+$/, '');
-  const source = `文件：${entry.rel}`;
+  const source = fileSource(entry.rel);
   const ref = { rel: entry.rel };
 
   if (entry.ext === '.xlsx' || entry.ext === '.xlsm') {
@@ -383,12 +404,7 @@ async function parseFile(entry) {
   }
   if (entry.ext === '.sqlite' || entry.ext === '.sqlite3' || entry.ext === '.db') {
     if (stat.size > MAX_SQLITE_BYTES) return [];
-    return fromSqlite(
-      entry.file,
-      name,
-      source.replace(/^文件：/, '数据库：'),
-      { ...ref, kind: 'sqlite' },
-    );
+    return fromSqlite(entry.file, name, databaseSource(entry.rel), { ...ref, kind: 'sqlite' });
   }
   if (stat.size > MAX_TEXT_BYTES) return [];
 
@@ -440,15 +456,26 @@ function mergeSameShape(parsed) {
   for (const group of groups.values()) {
     const rows = group.rows.slice(0, MAX_ROWS_PER_TABLE);
     const sampled = group.totals > rows.length;
-    // "抽样 60/120 行" tells the model how much of the file it is seeing, and
-    // gives the card its "查看全部" label.
-    const sampleNote = `（抽样 ${rows.length}/${group.totals} 行）`;
+    // "sampled 60/120 rows" tells the model how much of the file it is seeing,
+    // and gives the card its "view all" label.
+    const note = sampleNote(rows.length, group.totals);
     const source =
       group.files.length > 1
-        ? `${group.files[0]} 等 ${group.files.length} 个同结构文件${sampled ? sampleNote : ''}`
-        : `${group.files[0]}${sampled && !group.files[0].includes('抽样') ? sampleNote : ''}`;
+        ? uiText.t('main.viz.sameShapeFiles', {
+            source: group.files[0],
+            count: group.files.length,
+            note: sampled ? note : '',
+          })
+        : `${group.files[0]}${
+            sampled && !group.files[0].includes(uiText.t('main.viz.sampleMarker'))
+              ? note
+              : ''
+          }`;
     merged.push({
-      title: group.files.length > 1 ? `${group.title} 等 ${group.files.length} 个文件` : group.title,
+      title:
+        group.files.length > 1
+          ? uiText.t('main.viz.moreFiles', { title: group.title, count: group.files.length })
+          : group.title,
       source,
       columns: group.columns,
       rows,
@@ -480,19 +507,19 @@ async function collectWorkspaceTables(root) {
 async function readAllTables(full, rel, ext, limit) {
   const name = path.basename(rel).replace(/\.[^.]+$/, '');
   if (ext === '.xlsx' || ext === '.xlsm') {
-    return fromExcel(full, name, `文件：${rel}`, null, limit);
+    return fromExcel(full, name, fileSource(rel), null, limit);
   }
   if (ext === '.sqlite' || ext === '.sqlite3' || ext === '.db') {
-    return fromSqlite(full, name, `数据库：${rel}`, null, limit);
+    return fromSqlite(full, name, databaseSource(rel), null, limit);
   }
   const text = (await fs.readFile(full, 'utf8')).replace(/^﻿/, '');
   if (ext === '.csv' || ext === '.tsv') {
     const { rows, total } = parseDelimited(text, guessDelimiter(text, rel), limit);
-    const table = fromMatrix(rows, name, `文件：${rel}`, Math.max(0, total - 1), null, limit);
+    const table = fromMatrix(rows, name, fileSource(rel), Math.max(0, total - 1), null, limit);
     return table ? [table] : [];
   }
-  if (ext === '.json') return fromJson(text, name, `文件：${rel}`, null, limit);
-  return fromMarkdown(text, name, `文件：${rel}`, null, limit);
+  if (ext === '.json') return fromJson(text, name, fileSource(rel), null, limit);
+  return fromMarkdown(text, name, fileSource(rel), null, limit);
 }
 
 /**

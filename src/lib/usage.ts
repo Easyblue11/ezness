@@ -18,16 +18,20 @@ export const EMPTY_SUMMARY: UsageSummary = {
   unpricedRequests: 0,
 };
 
+/**
+ * i18n keys for each ledger feature. Resolve them with `t()` at the render
+ * site; this module is shared by components that already hold the translator.
+ */
 export const FEATURE_LABELS: Record<UsageFeature | string, string> = {
-  chat: '对话',
-  compression: '上下文压缩',
-  prompt: '提示词生成',
-  workspace: '工作空间',
-  review: '安全审查',
-  sensory: 'AI能力',
-  'agent-review': 'Agent 审查',
-  'workspace-viz': '工作空间可视化',
-  other: '其他',
+  chat: 'app.usage.feature.chat',
+  compression: 'app.usage.feature.compression',
+  prompt: 'app.usage.feature.prompt',
+  workspace: 'app.usage.feature.workspace',
+  review: 'app.usage.feature.review',
+  sensory: 'app.usage.feature.sensory',
+  'agent-review': 'app.usage.feature.agentReview',
+  'workspace-viz': 'app.usage.feature.workspaceViz',
+  other: 'app.usage.feature.other',
 };
 
 export function summarize(records: UsageRecord[]): UsageSummary {

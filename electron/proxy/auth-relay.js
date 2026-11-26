@@ -16,6 +16,7 @@ const http = require('node:http');
 const https = require('node:https');
 const net = require('node:net');
 const tls = require('node:tls');
+const uiText = require('../ui-text');
 
 const MAX_HEAD = 64 * 1024;
 const CONNECT_TIMEOUT = 20000;
@@ -88,7 +89,7 @@ class AuthRelay {
     upstream.on('error', () => {
       if (!res.headersSent) {
         res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
-        res.end('代理转发失败。');
+        res.end(uiText.t('main.proxy.error.forwardFailed'));
       } else {
         res.destroy();
       }

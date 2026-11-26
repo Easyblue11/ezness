@@ -17,6 +17,7 @@ const { chunkPages } = require('./chunk');
 const { embedTexts, embedQuery } = require('./embed');
 const { KbIndex, hybridSearch } = require('./retrieve');
 const { llmRerank } = require('./rerank-llm');
+const uiText = require('../ui-text');
 
 const DEFAULT_CONFIG = {
   storageRoot: '',
@@ -91,7 +92,10 @@ class KbEngine {
       if (!doc.sha256 || !doc.storedPath) {
         this.store.deleteDocument(doc.id);
       } else {
-        this.store.updateDocument(doc.id, { status: 'error', error: '上次导入被中断，删掉重新添加即可' });
+        this.store.updateDocument(doc.id, {
+          status: 'error',
+          error: uiText.t('main.kb.error.importInterrupted'),
+        });
       }
     }
   }
@@ -102,19 +106,21 @@ class KbEngine {
    * ingest is running or when the target already holds a library.
    */
   async migrate(rawTarget) {
-    if (!rawTarget) throw new Error('没有选择新的存储位置');
+    if (!rawTarget) throw new Error(uiText.t('main.kb.error.noTarget'));
 
     const store = this.requireStore();
     const current = path.resolve(this.config.storageRoot);
     const target = path.resolve(String(rawTarget));
 
-    if (this.working || this.queue.length > 0) throw new Error('正在导入文件，请等导入完成后再迁移');
+    if (this.working || this.queue.length > 0) {
+      throw new Error(uiText.t('main.kb.error.importRunning'));
+    }
     if (target === current) return this.snapshot();
     if (target.startsWith(current + path.sep) || current.startsWith(target + path.sep)) {
-      throw new Error('不能在知识库目录内部互相迁移，请选择其他位置');
+      throw new Error(uiText.t('main.kb.error.nestedTarget'));
     }
     if (fs.existsSync(path.join(target, 'kb.sqlite'))) {
-      throw new Error('目标文件夹里已经有一个知识库，请换一个位置');
+      throw new Error(uiText.t('main.kb.error.targetHasLibrary'));
     }
 
     const before = store.stats();
@@ -132,7 +138,7 @@ class KbEngine {
     } catch (error) {
       this.store = new KbStore(current).open();
       await fsp.rm(target, { recursive: true, force: true }).catch(() => {});
-      throw new Error(`迁移失败：${error.message}`);
+      throw new Error(uiText.t('main.kb.error.migrateFailed', { error: error.message }));
     }
 
     const moved = new KbStore(target).open();
@@ -143,7 +149,7 @@ class KbEngine {
       moved.close();
       this.store = new KbStore(current).open();
       await fsp.rm(target, { recursive: true, force: true }).catch(() => {});
-      throw new Error('迁移后数据不一致，已恢复原库');
+      throw new Error(uiText.t('main.kb.error.migrateMismatch'));
     }
 
     this.store = moved;
@@ -160,7 +166,7 @@ class KbEngine {
   }
 
   requireStore() {
-    if (!this.store) throw new Error('知识库还没有初始化');
+    if (!this.store) throw new Error(uiText.t('main.kb.error.notInitialized'));
     return this.store;
   }
 
@@ -179,7 +185,7 @@ class KbEngine {
 
   createCategory(name, kind = 'files', includes = []) {
     const trimmed = String(name || '').trim();
-    if (!trimmed) throw new Error('分类名不能为空');
+    if (!trimmed) throw new Error(uiText.t('main.kb.error.emptyName'));
     const store = this.requireStore();
     const members = kind === 'group' ? this.validateIncludes(store, '', includes) : [];
     store.createCategory(trimmed, kind, members);
@@ -188,7 +194,7 @@ class KbEngine {
 
   renameCategory(id, name) {
     const trimmed = String(name || '').trim();
-    if (!trimmed) throw new Error('分类名不能为空');
+    if (!trimmed) throw new Error(uiText.t('main.kb.error.emptyName'));
     this.requireStore().renameCategory(id, trimmed);
     return this.snapshot();
   }
@@ -205,8 +211,8 @@ class KbEngine {
   setCategoryIncludes(id, includes) {
     const store = this.requireStore();
     const category = store.listCategories().find((item) => item.id === id);
-    if (!category) throw new Error('分类不存在');
-    if (category.kind !== 'group') throw new Error('只有组合分类可以包含其他分类');
+    if (!category) throw new Error(uiText.t('main.kb.error.categoryMissing'));
+    if (category.kind !== 'group') throw new Error(uiText.t('main.kb.error.groupOnly'));
     store.setCategoryIncludes(id, this.validateIncludes(store, id, includes));
     return this.snapshot();
   }
@@ -224,7 +230,9 @@ class KbEngine {
   moveDocument(docId, categoryId) {
     const store = this.requireStore();
     const target = store.listCategories().find((item) => item.id === categoryId);
-    if (!target || target.kind === 'group') throw new Error('组合分类不能存放文件，请选择其他分类');
+    if (!target || target.kind === 'group') {
+      throw new Error(uiText.t('main.kb.error.groupNoFiles'));
+    }
     store.updateDocument(docId, { category_id: categoryId });
     return this.snapshot();
   }
@@ -239,9 +247,9 @@ class KbEngine {
   reviewDocument(docId, state) {
     const store = this.requireStore();
     if (!['confirmed', 'candidate', 'rejected'].includes(state)) {
-      throw new Error('未知的审核状态');
+      throw new Error(uiText.t('main.kb.error.unknownReviewState'));
     }
-    if (!store.getDocument(docId)) throw new Error('文件不存在');
+    if (!store.getDocument(docId)) throw new Error(uiText.t('main.kb.error.docMissing'));
     store.updateDocument(docId, { review_state: state });
     this.index = null;
     return this.snapshot();
@@ -264,7 +272,12 @@ class KbEngine {
     const accepted = [];
     for (const filePath of paths) {
       if (!isSupported(filePath)) {
-        this.emit({ type: 'ingest', stage: 'skipped', name: path.basename(filePath), message: '不支持的文件类型' });
+        this.emit({
+          type: 'ingest',
+          stage: 'skipped',
+          name: path.basename(filePath),
+          message: uiText.t('main.kb.ingest.unsupported'),
+        });
         continue;
       }
       const name = path.basename(filePath);
@@ -292,7 +305,12 @@ class KbEngine {
           source,
         });
       } catch (error) {
-        this.emit({ type: 'ingest', stage: 'skipped', name, message: error?.message || '无法加入知识库' });
+        this.emit({
+          type: 'ingest',
+          stage: 'skipped',
+          name,
+          message: error?.message || uiText.t('main.kb.ingest.addFailed'),
+        });
         continue;
       }
 
@@ -335,7 +353,13 @@ class KbEngine {
         // Same bytes already queued or imported: drop our placeholder row so the
         // list shows the file once, not twice.
         store.deleteDocument(id);
-        this.emit({ type: 'ingest', docId: existing.id, name, stage: 'skipped', message: '这个文件已经在库里了' });
+        this.emit({
+          type: 'ingest',
+          docId: existing.id,
+          name,
+          stage: 'skipped',
+          message: uiText.t('main.kb.ingest.duplicate'),
+        });
         this.emit({ type: 'refresh', ...this.snapshot() });
         return;
       }
@@ -348,23 +372,29 @@ class KbEngine {
 
       // Push the row's new state to the UI before the slow part starts.
       this.emit({ type: 'refresh', ...this.snapshot() });
-      this.emit({ type: 'ingest', docId: id, name, stage: 'parsing', message: '正在解析文本' });
+      this.emit({
+        type: 'ingest',
+        docId: id,
+        name,
+        stage: 'parsing',
+        message: uiText.t('main.kb.ingest.parsing'),
+      });
 
       const { pages } = await extract(filePath);
       const chunks = chunkPages(pages, this.config.chunk);
 
-      if (chunks.length === 0) throw new Error('没有解析出可用文本（可能是扫描件）');
+      if (chunks.length === 0) throw new Error(uiText.t('main.kb.ingest.noText'));
 
       this.emit({
         type: 'ingest',
         docId: id,
         name,
         stage: 'embedding',
-        message: `切分出 ${chunks.length} 段，正在向量化`,
+        message: uiText.t('main.kb.ingest.chunked', { count: chunks.length }),
         progress: 0,
       });
 
-      if (!this.config.embedding.model) throw new Error('还没有配置向量模型，请到设置里选择 Embedding 模型');
+      if (!this.config.embedding.model) throw new Error(uiText.t('main.kb.error.noModel'));
 
       const vectors = await embedTexts(
         chunks.map((chunk) => chunk.text),
@@ -376,7 +406,7 @@ class KbEngine {
               docId: id,
               name,
               stage: 'embedding',
-              message: `向量化 ${done}/${total}`,
+              message: uiText.t('main.kb.ingest.embedding', { done, total }),
               progress: Math.round((done / total) * 100),
             }),
         },
@@ -388,7 +418,14 @@ class KbEngine {
       );
 
       this.index = null;
-      this.emit({ type: 'ingest', docId: id, name, stage: 'ready', message: `${chunks.length} 段已入库`, progress: 100 });
+      this.emit({
+        type: 'ingest',
+        docId: id,
+        name,
+        stage: 'ready',
+        message: uiText.t('main.kb.ingest.ready', { count: chunks.length }),
+        progress: 100,
+      });
     } catch (error) {
       const message = error?.message || String(error);
       if (this.store?.getDocument(id)) {
@@ -413,10 +450,10 @@ class KbEngine {
 
   async search(query, options = {}) {
     const trimmed = String(query || '').trim();
-    if (!trimmed) return { results: [], note: '查询为空' };
+    if (!trimmed) return { results: [], note: uiText.t('main.kb.note.emptyQuery') };
 
     const index = this.ensureIndex();
-    if (index.size === 0) return { results: [], note: '知识库还是空的' };
+    if (index.size === 0) return { results: [], note: uiText.t('main.kb.note.emptyStore') };
 
     let queryVector = null;
     let note = null;
@@ -425,10 +462,10 @@ class KbEngine {
       try {
         queryVector = await embedQuery(trimmed, this.config.embedding);
       } catch (error) {
-        note = `向量检索不可用，已退回关键词检索：${error.message}`;
+        note = uiText.t('main.kb.note.vectorFallback', { error: error.message });
       }
     } else {
-      note = '未配置向量模型，当前只做关键词检索';
+      note = uiText.t('main.kb.note.noVectorModel');
     }
 
     const rerankMode = options.rerank ?? this.config.retrieval.rerank;

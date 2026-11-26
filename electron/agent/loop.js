@@ -37,6 +37,7 @@ const {
 } = require('./tools');
 const { decide, commandKey, normalizeAskLevel, secretParameters } = require('./policy');
 const { reviewCommand } = require('./reviewer');
+const uiText = require('../ui-text');
 const {
   buildSystemPrompt,
   buildToolEditorPrompt,
@@ -130,7 +131,7 @@ async function runPool(items, limit, worker) {
 }
 
 function abortError() {
-  const error = new Error('已中断');
+  const error = new Error(uiText.t('main.agent.interrupted'));
   error.name = 'AbortError';
   return error;
 }
@@ -779,7 +780,11 @@ class AgentRun {
         // look like it stopped for no reason, mid-checklist. Fail loudly.
         if (!text.trim()) {
           throw new Error(
-            `模型返回了空回复${finishReason ? `（finish_reason: ${finishReason}）` : ''}，这一轮没有执行任何操作。再发一次消息可以重试。`,
+            uiText.t('main.agent.emptyReply', {
+              detail: finishReason
+                ? uiText.t('main.agent.emptyReplyDetail', { reason: finishReason })
+                : '',
+            }),
           );
         }
         return;
@@ -791,7 +796,7 @@ class AgentRun {
 
     this.send({
       type: 'delta',
-      text: `\n\n（已达到单轮工具调用上限 ${this.maxSteps} 步，先停在这里。继续发消息可以接着做。）`,
+      text: uiText.t('main.agent.stepLimit', { max: this.maxSteps }),
     });
   }
 
@@ -941,7 +946,7 @@ class AgentRun {
           type: 'tool',
           status: 'done',
           call,
-          summary: `加载 ${call.name}`,
+          summary: uiText.t('main.agent.loadSummary', { name: call.name }),
           result,
           startedAt,
           endedAt: Date.now(),
@@ -1014,7 +1019,13 @@ class AgentRun {
       try {
         answer = await this.wait(call.id);
       } catch (error) {
-        this.send({ type: 'tool', status: 'denied', call, result: '已中断', startedAt: Date.now() });
+        this.send({
+          type: 'tool',
+          status: 'denied',
+          call,
+          result: uiText.t('main.agent.interrupted'),
+          startedAt: Date.now(),
+        });
         throw error;
       }
 
@@ -1043,7 +1054,7 @@ class AgentRun {
         type: 'permission',
         call,
         summary: summarize(tool.name, args),
-        reason: '第二次确认：删除后无法恢复，确定继续吗？',
+        reason: uiText.t('main.agent.confirmDeleteSecond'),
         danger: true,
         doubleConfirm: true,
       });
@@ -1051,7 +1062,13 @@ class AgentRun {
       try {
         answer = await this.wait(call.id);
       } catch (error) {
-        this.send({ type: 'tool', status: 'denied', call, result: '已中断', startedAt: Date.now() });
+        this.send({
+          type: 'tool',
+          status: 'denied',
+          call,
+          result: uiText.t('main.agent.interrupted'),
+          startedAt: Date.now(),
+        });
         throw error;
       }
       if (!answer?.allow) {
@@ -1073,7 +1090,7 @@ class AgentRun {
           type: 'permission',
           call,
           summary: summarize(tool.name, args),
-          reason: '独立 AI 安全评估认为这条命令有风险，请你决定是否执行。',
+          reason: uiText.t('main.agent.reviewRisk'),
           danger: true,
           reviewReason: verdict.reason,
         });
@@ -1081,7 +1098,13 @@ class AgentRun {
         try {
           answer = await this.wait(call.id);
         } catch (error) {
-          this.send({ type: 'tool', status: 'denied', call, result: '已中断', startedAt: Date.now() });
+          this.send({
+          type: 'tool',
+          status: 'denied',
+          call,
+          result: uiText.t('main.agent.interrupted'),
+          startedAt: Date.now(),
+        });
           throw error;
         }
 
@@ -1105,7 +1128,7 @@ class AgentRun {
     let status = 'done';
     try {
       if (missingSecret) {
-        throw new Error(`缺少凭据 ${missingSecret.name}：请在确认卡片里填写后再调用。`);
+        throw new Error(uiText.t('main.agent.missingSecret', { name: missingSecret.name }));
       }
       const raw = await tool.run(
         {
@@ -1189,7 +1212,7 @@ class AgentRun {
       type: 'tool',
       status: 'running',
       call: reviewCall,
-      summary: '交给独立 AI 评估这条命令的风险…',
+      summary: uiText.t('main.agent.reviewRunning'),
       startedAt,
     });
 
@@ -1211,7 +1234,9 @@ class AgentRun {
       // A provider outage must not turn into a silent approval.
       verdict = {
         safe: false,
-        reason: `安全评估没有完成（${error?.message || String(error)}），按不安全处理。`,
+        reason: uiText.t('main.agent.reviewIncomplete', {
+          error: error?.message || String(error),
+        }),
       };
     }
 
@@ -1219,8 +1244,15 @@ class AgentRun {
       type: 'tool',
       status: 'done',
       call: reviewCall,
-      summary: verdict.safe ? '独立 AI 判定：可以执行' : '独立 AI 判定：风险过高，交给你确认',
-      result: `判定：${verdict.safe ? '可以执行' : '不可执行'}\n理由：${verdict.reason}`,
+      summary: uiText.t(
+        verdict.safe ? 'main.agent.reviewSafeSummary' : 'main.agent.reviewUnsafeSummary',
+      ),
+      result: uiText.t('main.agent.reviewResult', {
+        verdict: verdict.safe
+          ? uiText.t('main.agent.reviewVerdictSafe')
+          : uiText.t('main.agent.reviewVerdictUnsafe'),
+        reason: verdict.reason,
+      }),
       startedAt,
       endedAt: Date.now(),
     });
@@ -1232,7 +1264,7 @@ class AgentRun {
     this.send({
       type: 'question',
       call,
-      question: String(args.question ?? '请选择'),
+      question: String(args.question ?? uiText.t('main.agent.askDefault')),
       options: Array.isArray(args.options) ? args.options.map(String).slice(0, 6) : [],
     });
 

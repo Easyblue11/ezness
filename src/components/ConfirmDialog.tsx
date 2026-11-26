@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useI18n } from '../i18n';
 import { InfoIcon, TrashIcon } from './Icons';
 
 interface Props {
@@ -22,14 +23,15 @@ interface Props {
 export function ConfirmDialog({
   title,
   message,
-  confirmLabel = '确认',
-  cancelLabel = '取消',
+  confirmLabel,
+  cancelLabel,
   danger = false,
   busy = false,
   raised = false,
   onConfirm,
   onCancel,
 }: Props) {
+  const { t } = useI18n();
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -59,14 +61,14 @@ export function ConfirmDialog({
         <p className="modal__message">{message}</p>
         <div className="modal__actions">
           <button ref={cancelRef} className="btn btn--ghost" onClick={onCancel} disabled={busy}>
-            {cancelLabel}
+            {cancelLabel ?? t('common.cancel')}
           </button>
           <button
             className={`btn ${danger ? 'btn--danger' : 'btn--primary'}`}
             onClick={onConfirm}
             disabled={busy}
           >
-            {confirmLabel}
+            {confirmLabel ?? t('common.confirm')}
           </button>
         </div>
       </div>

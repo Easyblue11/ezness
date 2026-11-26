@@ -15,6 +15,7 @@ const { spawn } = require('node:child_process');
 const { RUNTIMES, resolveRuntime, splitCommand, applyArgDefaults } = require('./custom-tools');
 const { resolveInside } = require('./paths');
 const deps = require('./deps');
+const uiText = require('../ui-text');
 
 const TEST_TIMEOUT_MS = 15000;
 const OUTPUT_LIMIT = 4000;
@@ -99,7 +100,7 @@ function runCaptured(argv, { cwd, env, timeoutMs }) {
       resolve({
         code: null,
         stdout: '',
-        stderr: `无法启动命令：${error?.message || String(error)}`,
+        stderr: uiText.t('main.tool.errCommandStart', { error: error?.message || String(error) }),
         timedOut: false,
       });
       return;
@@ -137,7 +138,11 @@ function runCaptured(argv, { cwd, env, timeoutMs }) {
       timedOut = true;
       killTree(child);
       stopTimer = setTimeout(
-        () => finish(null, new Error(`测试超时（${Math.round(timeoutMs / 1000)} 秒）。`)),
+        () =>
+          finish(
+            null,
+            new Error(uiText.t('main.agent.testTimedOut', { seconds: Math.round(timeoutMs / 1000) })),
+          ),
         1500,
       );
     }, timeoutMs);
@@ -227,7 +232,9 @@ async function evaluateDefinition(
   const missing = missingRequired(definition, args);
   if (missing.length > 0) {
     await fs.rm(stageDir, { recursive: true, force: true }).catch(() => {});
-    const message = `缺少测试参数：${missing.join('、')}。请提供 testArgs。`;
+    const message = uiText.t('main.agent.testMissingArgs', {
+      names: missing.join(uiText.t('main.tool.listSeparator')),
+    });
     return {
       ok: false,
       errors: [{ phase: 'test', message }],
@@ -241,7 +248,9 @@ async function evaluateDefinition(
       cwd = await resolveInside(cwdBase, definition.cwd);
     } catch (error) {
       await fs.rm(stageDir, { recursive: true, force: true }).catch(() => {});
-      const message = `运行目录不可用：${error?.message || String(error)}`;
+      const message = uiText.t('main.agent.testCwdUnavailable', {
+        error: error?.message || String(error),
+      });
       return {
         ok: false,
         errors: [{ phase: 'test', message }],
@@ -256,7 +265,7 @@ async function evaluateDefinition(
     if (definition.runtime === 'executable') {
       const argv = substitute(splitCommand(definition.command), args);
       if (argv.length === 0 || !argv[0]) {
-        const message = '执行命令为空。';
+        const message = uiText.t('main.tool.errCommandEmptyRun');
         return {
           ok: false,
           errors: [{ phase: 'syntax', message }],
@@ -273,7 +282,7 @@ async function evaluateDefinition(
 
     const runtime = RUNTIMES[definition.runtime];
     if (!runtime) {
-      const message = '执行方式不合法。';
+      const message = uiText.t('main.agent.testRuntimeInvalid');
       return {
         ok: false,
         errors: [{ phase: 'syntax', message }],
@@ -302,8 +311,13 @@ async function evaluateDefinition(
       timeoutMs: TEST_TIMEOUT_MS,
     });
     if (syntax.timedOut || syntax.code !== 0) {
-      const detail = sanitize(syntax.stderr || syntax.stdout || '语法检查没有通过。', dirs);
-      const message = `语法错误：${clipText(detail.split('\n')[0] || detail, 400)}`;
+      const detail = sanitize(
+        syntax.stderr || syntax.stdout || uiText.t('main.agent.testSyntaxDetail'),
+        dirs,
+      );
+      const message = uiText.t('main.agent.testSyntaxError', {
+        detail: clipText(detail.split('\n')[0] || detail, 400),
+      });
       return {
         ok: false,
         errors: [{ phase: 'syntax', message, detail }],
@@ -326,7 +340,10 @@ async function evaluateDefinition(
         pythonMeta: meta,
       });
       if (!result.ok) {
-        const message = `依赖安装失败（${definition.dependencies.join('、')}）：${result.error}`;
+        const message = uiText.t('main.tool.errDepsInstall', {
+          specs: definition.dependencies.join(uiText.t('main.tool.listSeparator')),
+          error: result.error,
+        });
         return {
           ok: false,
           installed: [],
@@ -384,7 +401,7 @@ function outcome(result, args, dirs, installed = []) {
   const stderr = sanitize(result.stderr, dirs);
   const base = { testArgs: args, exitCode: result.code, stdout, stderr };
   if (result.timedOut) {
-    const message = '测试超时：脚本在限定时间内没有结束。';
+    const message = uiText.t('main.agent.testTimeout');
     return {
       ok: false,
       installed,
@@ -393,8 +410,12 @@ function outcome(result, args, dirs, installed = []) {
     };
   }
   if (result.code !== 0) {
-    const detail = stderr || stdout || `退出码 ${result.code}`;
-    const message = `测试未通过（退出码 ${result.code}）：${clipText(detail.split('\n')[0] || detail, 400)}`;
+    const detail =
+      stderr || stdout || uiText.t('main.agent.testExitDetail', { code: result.code });
+    const message = uiText.t('main.agent.testFailed', {
+      code: result.code,
+      detail: clipText(detail.split('\n')[0] || detail, 400),
+    });
     return {
       ok: false,
       installed,

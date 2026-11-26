@@ -1,5 +1,6 @@
 import type { AgentReviewChange, AgentReviewResult } from '../types';
 import type { AgentReviewState } from '../lib/useAgentReview';
+import { useI18n } from '../i18n';
 import { CheckIcon, ChevronDownIcon, CloseIcon, ScanIcon } from './Icons';
 
 /**
@@ -12,20 +13,20 @@ import { CheckIcon, ChevronDownIcon, CloseIcon, ScanIcon } from './Icons';
  * plus 全选 / 批量同意 in the footer.
  */
 
-const KIND_LABEL: Record<AgentReviewChange['kind'], string> = {
-  'capability-add': '添加能力',
-  'capability-remove': '移除能力',
-  'knowledge-add': '添加知识库',
-  'knowledge-remove': '移除知识库',
-  definition: '修改定义',
+const KIND_LABEL_KEY: Record<AgentReviewChange['kind'], string> = {
+  'capability-add': 'director.review.kind.capabilityAdd',
+  'capability-remove': 'director.review.kind.capabilityRemove',
+  'knowledge-add': 'director.review.kind.knowledgeAdd',
+  'knowledge-remove': 'director.review.kind.knowledgeRemove',
+  definition: 'director.review.kind.definition',
 };
 
-const FIELD_LABEL: Record<string, string> = {
-  role: '角色',
-  personality: '性格',
-  inputSpec: '输入约定',
-  outputSpec: '输出约定',
-  prompt: '提示词',
+const FIELD_LABEL_KEY: Record<string, string> = {
+  role: 'director.review.field.role',
+  personality: 'director.review.field.personality',
+  inputSpec: 'director.review.field.inputSpec',
+  outputSpec: 'director.review.field.outputSpec',
+  prompt: 'director.review.field.prompt',
 };
 
 interface Props {
@@ -35,8 +36,8 @@ interface Props {
   onClose: () => void;
 }
 
-function timeOf(at: number): string {
-  return new Date(at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+function timeOf(at: number, locale: string): string {
+  return new Date(at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
 function pendingOf(result: AgentReviewResult, isApplied: (id: string) => boolean): number {
@@ -44,6 +45,7 @@ function pendingOf(result: AgentReviewResult, isApplied: (id: string) => boolean
 }
 
 export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Props) {
+  const { t, locale } = useI18n();
   const { phase, results, error, notice, applying, finishedAt, pending, selectedPending } = review;
 
   const adjust = results.filter((result) => result.changes.length > 0);
@@ -51,7 +53,12 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
   const fineCount = results.length - adjust.length - failed.length;
   const allSelected = pending.length > 0 && selectedPending.length === pending.length;
 
-  const startLabel = phase === 'running' ? '审查中…' : results.length > 0 ? '重新审查' : '开始审查';
+  const startLabel =
+    phase === 'running'
+      ? t('director.review.start.running')
+      : results.length > 0
+        ? t('director.review.start.restart')
+        : t('director.review.start.start');
   const startClass = phase === 'ready' ? 'btn btn--ghost' : 'btn btn--primary';
 
   return (
@@ -65,23 +72,21 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
         className="modal__panel agent-review"
         role="dialog"
         aria-modal="true"
-        aria-label="Agent 审查"
+        aria-label={t('director.review.title')}
       >
         <header className="agent-review__head">
           <div className="agent-review__titles">
             <h2 className="modal__title">
               <ScanIcon size={16} />
-              Agent 审查
+              {t('director.review.title')}
             </h2>
-            <p className="agent-review__sub">
-              按每个 Agent 的定义检查能力范围与知识库，逐条确认后直接修改。关掉这个窗口，审查仍会在后台继续。
-            </p>
+            <p className="agent-review__sub">{t('director.review.subtitle')}</p>
           </div>
           <button
             type="button"
             className="agent-review__close"
-            title="关闭"
-            aria-label="关闭"
+            title={t('director.common.close')}
+            aria-label={t('director.common.close')}
             onClick={onClose}
             disabled={applying}
           >
@@ -92,12 +97,10 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
         {phase === 'idle' && (
           <div className="agent-review__state is-idle">
             <ScanIcon size={20} />
-            <p>还没有审查结果</p>
-            <span>
-              点击下方的「开始审查」，逐个检查 {agentCount} 个 Agent 的定义、能力和知识库是否匹配。
-            </span>
+            <p>{t('director.review.idle.title')}</p>
+            <span>{t('director.review.idle.desc', { count: agentCount })}</span>
             {!modelReady && (
-              <div className="notice notice--warn">当前没有可用的模型，请先在设置里接入一个对话模型。</div>
+              <div className="notice notice--warn">{t('director.review.error.noModel')}</div>
             )}
           </div>
         )}
@@ -105,15 +108,15 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
         {phase === 'running' && (
           <div className="agent-review__state">
             <ScanIcon size={20} />
-            <p>正在审查 {agentCount} 个 Agent…</p>
-            <span>可以放心关掉这个窗口，审查会在后台继续；完成后重新打开就能看到结果。</span>
+            <p>{t('director.review.running.title', { count: agentCount })}</p>
+            <span>{t('director.review.running.desc')}</span>
           </div>
         )}
 
         {phase === 'error' && (
           <div className="agent-review__body">
             <div className="notice notice--warn">{error}</div>
-            <p className="agent-review__fine">处理完上面的问题后，点下方的按钮重新开始。</p>
+            <p className="agent-review__fine">{t('director.review.errorHint')}</p>
           </div>
         )}
 
@@ -123,21 +126,31 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
             {error && <div className="notice notice--warn">{error}</div>}
 
             <div className="agent-review__overview">
-              共审查 {results.length} 个 Agent
+              {t('director.review.summary.total', { count: results.length })}
               {adjust.length > 0 && (
-                <span className="agent-review__count is-adjust">{adjust.length} 个需要整改</span>
+                <span className="agent-review__count is-adjust">
+                  {t('director.review.summary.adjust', { count: adjust.length })}
+                </span>
               )}
-              {fineCount > 0 && <span className="agent-review__count">{fineCount} 个配置合理</span>}
+              {fineCount > 0 && (
+                <span className="agent-review__count">
+                  {t('director.review.summary.fine', { count: fineCount })}
+                </span>
+              )}
               {failed.length > 0 && (
-                <span className="agent-review__count is-error">{failed.length} 个审查失败</span>
+                <span className="agent-review__count is-error">
+                  {t('director.review.summary.failed', { count: failed.length })}
+                </span>
               )}
               {finishedAt !== null && (
-                <span className="agent-review__time">完成于 {timeOf(finishedAt)}</span>
+                <span className="agent-review__time">
+                  {t('director.review.summary.finishedAt', { time: timeOf(finishedAt, locale) })}
+                </span>
               )}
             </div>
 
             {adjust.length === 0 && failed.length === 0 && (
-              <p className="agent-review__fine">所有 Agent 的配置都合适，没有需要整改的地方。</p>
+              <p className="agent-review__fine">{t('director.review.allFine')}</p>
             )}
 
             {adjust.map((result) => {
@@ -150,7 +163,9 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
                     <span
                       className={`agent-review__verdict ${left > 0 ? 'is-adjust' : 'is-ok'}`}
                     >
-                      {left > 0 ? `${left} 项待整改` : '已全部应用'}
+                      {left > 0
+                        ? t('director.review.agent.pending', { count: left })
+                        : t('director.review.agent.appliedAll')}
                     </span>
                   </summary>
                   {result.summary && <p className="agent-review__summary">{result.summary}</p>}
@@ -167,14 +182,16 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
                               type="checkbox"
                               checked={review.isSelected(change.id) && !isApplied}
                               disabled={isApplied || applying}
-                              aria-label={`选择建议：${change.label}`}
+                              aria-label={t('director.review.selectSuggestion', {
+                                label: change.label,
+                              })}
                               onChange={() => review.toggleSelected(change.id)}
                             />
                           </label>
                           <div className="agent-review__change">
                             <span className="agent-review__label">
                               <span className={`agent-review__kind is-${change.kind}`}>
-                                {KIND_LABEL[change.kind]}
+                                {t(KIND_LABEL_KEY[change.kind])}
                               </span>
                               {change.label}
                             </span>
@@ -184,7 +201,11 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
                             {change.kind === 'definition' && change.value !== undefined && (
                               <details className="agent-review__diff">
                                 <summary>
-                                  查看改写后的{FIELD_LABEL[change.field ?? ''] ?? '内容'}
+                                  {t('director.review.viewRewrite', {
+                                    field: change.field
+                                      ? t(FIELD_LABEL_KEY[change.field] ?? 'director.review.field.fallback')
+                                      : t('director.review.field.fallback'),
+                                  })}
                                 </summary>
                                 <pre>{change.value}</pre>
                               </details>
@@ -193,7 +214,7 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
                           {isApplied ? (
                             <span className="agent-review__done">
                               <CheckIcon size={13} />
-                              已应用
+                              {t('director.review.applied')}
                             </span>
                           ) : (
                             <button
@@ -202,7 +223,7 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
                               disabled={applying}
                               onClick={() => void review.apply([change.id])}
                             >
-                              {applying ? '应用中…' : '同意'}
+                              {applying ? t('director.review.applying') : t('director.review.accept')}
                             </button>
                           )}
                         </li>
@@ -217,7 +238,9 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
               <article key={result.agentId} className="agent-review__agent is-failed">
                 <header className="agent-review__agent-head">
                   <span className="agent-review__name">{result.name}</span>
-                  <span className="agent-review__verdict is-error">审查失败</span>
+                  <span className="agent-review__verdict is-error">
+                    {t('director.review.failedBadge')}
+                  </span>
                 </header>
                 {result.error && <div className="notice notice--warn">{result.error}</div>}
               </article>
@@ -233,10 +256,13 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
               disabled={pending.length === 0 || applying || phase === 'running'}
               onChange={(event) => review.selectAll(event.target.checked)}
             />
-            全选
+            {t('director.review.selectAll')}
           </label>
           <span className="ws__selectcount">
-            已选 {selectedPending.length} 条 · 共 {pending.length} 条建议
+            {t('director.review.selected', {
+              selected: selectedPending.length,
+              total: pending.length,
+            })}
           </span>
           <button
             type="button"
@@ -253,8 +279,10 @@ export function AgentReviewPanel({ review, agentCount, modelReady, onClose }: Pr
             onClick={() => void review.apply(selectedPending.map((change) => change.id))}
           >
             {applying
-              ? '应用中…'
-              : `批量同意${selectedPending.length > 0 ? `（${selectedPending.length}）` : ''}`}
+              ? t('director.review.applying')
+              : selectedPending.length > 0
+                ? t('director.review.bulkApplyCount', { count: selectedPending.length })
+                : t('director.review.bulkApply')}
           </button>
         </footer>
       </div>

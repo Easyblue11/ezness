@@ -17,6 +17,8 @@ import type {
 } from '../types';
 import { CodeEditor } from './CodeEditor';
 import { ConfirmDialog } from './ConfirmDialog';
+import { useI18n } from '../i18n';
+import { categoryName } from '../lib/categoryName';
 import {
   ChevronDownIcon,
   CloseIcon,
@@ -35,17 +37,17 @@ import {
 /** Virtual sidebar entry; built-in tools are not stored as a category. */
 const BUILTIN_CATEGORY = '__builtin';
 
-const MODE_LABEL: Record<CapabilityMode, string> = {
-  'read-only': '只读',
-  plan: '计划',
-  'workspace-write': '工作区写入',
-  'danger-full-access': '完全访问',
+const MODE_LABEL_KEYS: Record<CapabilityMode, string> = {
+  'read-only': 'ability.mode.readOnly',
+  plan: 'ability.mode.plan',
+  'workspace-write': 'ability.mode.workspaceWrite',
+  'danger-full-access': 'ability.mode.fullAccess',
 };
 
-const DECISION_LABEL: Record<CapabilityDecision, string> = {
-  allow: '自动',
-  ask: '询问',
-  deny: '禁止',
+const DECISION_LABEL_KEYS: Record<CapabilityDecision, string> = {
+  allow: 'ability.decision.allow',
+  ask: 'ability.decision.ask',
+  deny: 'ability.decision.deny',
 };
 
 const MODE_KEYS: CapabilityMode[] = [
@@ -87,7 +89,10 @@ function initialPolicy(definition: CustomToolDefinition | null) {
 const EMPTY_STATS = { calls: 0, errors: 0, denied: 0, interrupted: 0 };
 
 /** A broken definition is not in the compiled registry, but it still shows up. */
-function capabilityFromDefinition(definition: CustomToolDefinition): AgentToolCapability {
+function capabilityFromDefinition(
+  definition: CustomToolDefinition,
+  policyNote: string,
+): AgentToolCapability {
   return {
     name: definition.name,
     description: definition.description,
@@ -104,7 +109,7 @@ function capabilityFromDefinition(definition: CustomToolDefinition): AgentToolCa
       values: null,
     })),
     policy: initialPolicy(definition),
-    policyNote: '这个功能当前有故障，不会交给模型调用。修复并测试通过后会自动恢复。',
+    policyNote,
     command: definition.command,
     runtime: definition.runtime,
     cwd: definition.cwd,
@@ -114,48 +119,53 @@ function capabilityFromDefinition(definition: CustomToolDefinition): AgentToolCa
   };
 }
 
-const RUNTIME_LABEL: Record<CustomToolRuntime, string> = {
-  node: 'Node.js',
-  python: 'Python 3',
-  executable: '自定义命令',
+const RUNTIME_LABEL_KEYS: Record<CustomToolRuntime, string> = {
+  node: 'ability.runtime.node',
+  python: 'ability.runtime.python',
+  executable: 'ability.runtime.executable',
 };
 
 /** Where the interpreter comes from — matters when the app moves to another PC. */
-const RUNTIME_SOURCE_LABEL: Record<string, string> = {
-  builtin: 'Ezness 内置',
-  portable: '便携运行时',
-  system: '系统安装',
+const RUNTIME_SOURCE_LABEL_KEYS: Record<string, string> = {
+  builtin: 'ability.runtimeSource.builtin',
+  portable: 'ability.runtimeSource.portable',
+  system: 'ability.runtimeSource.system',
 };
 
-/** Starting programs for new tools. Users can replace them entirely. */
-const SCRIPT_TEMPLATES: Record<CustomToolRuntime, string> = {
-  node: [
-    '// 参数从 EZNESS_TOOL_ARGS 读取（JSON），也按声明顺序出现在 process.argv.slice(2)。',
-    'const args = JSON.parse(process.env.EZNESS_TOOL_ARGS || "{}");',
-    '',
-    'console.log(`你好，${args.query ?? ""}`);',
-  ].join('\n'),
-  python: [
-    '# 参数从 EZNESS_TOOL_ARGS 读取（JSON），也按声明顺序出现在 sys.argv[1:]。',
-    'import json, os',
-    '',
-    'args = json.loads(os.environ.get("EZNESS_TOOL_ARGS") or "{}")',
-    'print("你好，" + str(args.get("query", "")))',
-  ].join('\n'),
-  executable: '',
-};
+/**
+ * Starting programs for new tools. Users can replace them entirely, so the
+ * comments and the greeting follow the interface language.
+ */
+function scriptTemplate(
+  runtime: CustomToolRuntime,
+  t: (key: string) => string,
+): string {
+  if (runtime === 'node') {
+    return [
+      t('ability.script.nodeComment'),
+      'const args = JSON.parse(process.env.EZNESS_TOOL_ARGS || "{}");',
+      '',
+      t('ability.script.nodeHello'),
+    ].join('\n');
+  }
+  if (runtime === 'python') {
+    return [
+      t('ability.script.pythonComment'),
+      'import json, os',
+      '',
+      'args = json.loads(os.environ.get("EZNESS_TOOL_ARGS") or "{}")',
+      t('ability.script.pythonHello'),
+    ].join('\n');
+  }
+  return '';
+}
 
-const RUNTIME_FALLBACK: AgentRuntimeInfo[] = (
-  Object.keys(RUNTIME_LABEL) as CustomToolRuntime[]
-).map((id) => ({
-  id,
-  label: RUNTIME_LABEL[id],
-  available: id === 'node' || id === 'executable',
-  version: '',
-  detail: '',
-  hint: '',
-  source: id === 'node' ? 'builtin' : '',
-}));
+const FLOW_STEP_KEYS = [
+  'ability.flow.model',
+  'ability.flow.policy',
+  'ability.flow.local',
+  'ability.flow.result',
+] as const;
 
 /**
  * AI能力：本地预置、可被模型调用的工具一览。
@@ -175,6 +185,7 @@ export function SensoryPage({
   active?: boolean;
   onOpenToolEditor?: (category: { id: string; name: string }) => void;
 }) {
+  const { t } = useI18n();
   const [data, setData] = useState<AgentCapabilities | null>(null);
   const [definitions, setDefinitions] = useState<CustomToolDefinition[]>([]);
   const [categories, setCategories] = useState<ToolCategory[]>([]);
@@ -211,7 +222,7 @@ export function SensoryPage({
 
   const load = useCallback(async () => {
     const api = window.ezness;
-    if (!api?.agentCapabilities) throw new Error('工具能力只在桌面端可用。');
+    if (!api?.agentCapabilities) throw new Error(t('ability.error.desktopOnly'));
     const [capabilities, custom, categoryRows, healthRows] = await Promise.all([
       api.agentCapabilities(),
       api.agentCustomTools?.() ?? Promise.resolve<CustomToolDefinition[]>([]),
@@ -369,7 +380,7 @@ export function SensoryPage({
   }
 
   function openNewTool() {
-    const fallback = currentCategory?.name ?? orderedCategories[0]?.name ?? '自定义';
+    const fallback = currentCategory?.name ?? orderedCategories[0]?.name ?? t('ability.tool.defaultCategory');
     setEditor({ definition: null, defaultCategory: fallback });
   }
 
@@ -393,30 +404,34 @@ export function SensoryPage({
         ...(args ? { args } : {}),
       });
       if (!result.ok) {
-        setError(result.error || '测试失败');
+        setError(result.error || t('ability.test.failed'));
         return;
       }
       await refresh();
       if (result.passed) {
         const output = result.health?.stdout?.trim() ?? '';
         const installed = result.installed?.length
-          ? `已自动安装依赖：${result.installed.join('、')}。`
+          ? t('ability.test.installed', {
+              list: result.installed.join(t('ability.separator')),
+            })
           : '';
         setTestNotice({
           kind: 'ok',
-          text: `${definition.name} 测试通过，功能已启用。${installed}${
-            output ? `输出：${output.slice(0, 200)}` : ''
+          text: `${t('ability.test.passed', { name: definition.name })}${installed}${
+            output
+              ? t('ability.test.output', { output: output.slice(0, 200) })
+              : ''
           }`,
         });
       } else {
-        const message = result.health?.errors?.[0]?.message ?? '测试未通过';
-        // The stored message already starts with 「测试未通过…」 for smoke-test
-        // failures; avoid repeating it.
+        const message = result.health?.errors?.[0]?.message ?? t('ability.test.notPassed');
+        // The stored message already starts with the "did not pass" wording for
+        // smoke-test failures; avoid repeating it.
         setTestNotice({
           kind: 'bad',
-          text: message.startsWith('测试')
-            ? `${definition.name}：${message}`
-            : `${definition.name} 测试未通过：${message}`,
+          text: message.startsWith(t('ability.test.notPassed'))
+            ? t('ability.test.failedWithName', { name: definition.name, message })
+            : t('ability.test.notPassedWithName', { name: definition.name, message }),
         });
       }
     } catch (err) {
@@ -475,7 +490,7 @@ export function SensoryPage({
     try {
       const result = await api.agentCustomToolDelete(target.id);
       if (!result.ok) {
-        setError(result.error || '删除失败');
+        setError(result.error || t('ability.error.deleteFailed'));
         return;
       }
       setDefinitions(result.definitions ?? []);
@@ -496,7 +511,7 @@ export function SensoryPage({
     try {
       const result = await api.agentCategorySave({ id: category.id, pinned: !category.pinned });
       if (!result.ok) {
-        setError(result.error || '操作失败');
+        setError(result.error || t('ability.error.operationFailed'));
         return;
       }
       setCategories(result.categories ?? []);
@@ -508,7 +523,7 @@ export function SensoryPage({
   async function handleCategoryExport(category: ToolCategory) {
     const api = window.ezness;
     if (!api?.agentCategoryExport) {
-      setPkgNotice({ kind: 'bad', text: '下载只在桌面端可用。' });
+      setPkgNotice({ kind: 'bad', text: t('ability.export.desktopOnly') });
       return;
     }
     setPkgNotice(null);
@@ -516,11 +531,14 @@ export function SensoryPage({
       const result = await api.agentCategoryExport(category.id);
       if (result.canceled) return;
       if (!result.ok) {
-        setPkgNotice({ kind: 'bad', text: result.error || '导出失败' });
+        setPkgNotice({ kind: 'bad', text: result.error || t('ability.export.failed') });
         return;
       }
       const warnings = result.warnings ?? [];
-      const summary = `已导出「${category.name}」：${result.tools ?? 0} 个功能。`;
+      const summary = t('ability.export.success', {
+        name: category.name,
+        count: result.tools ?? 0,
+      });
       setPkgNotice({
         kind: warnings.length > 0 ? 'warn' : 'ok',
         text: warnings.length > 0 ? `${summary}\n${warnings.join('\n')}` : summary,
@@ -533,7 +551,7 @@ export function SensoryPage({
   async function handleCategoryImport() {
     const api = window.ezness;
     if (!api?.agentCategoryImport) {
-      setPkgNotice({ kind: 'bad', text: '导入只在桌面端可用。' });
+      setPkgNotice({ kind: 'bad', text: t('ability.import.desktopOnly') });
       return;
     }
     setPkgNotice(null);
@@ -541,7 +559,7 @@ export function SensoryPage({
       const result = await api.agentCategoryImport();
       if (result.canceled) return;
       if (!result.ok) {
-        setPkgNotice({ kind: 'bad', text: result.error || '导入失败' });
+        setPkgNotice({ kind: 'bad', text: result.error || t('ability.import.failed') });
         return;
       }
       if (result.definitions) setDefinitions(result.definitions);
@@ -552,7 +570,10 @@ export function SensoryPage({
         setSearch('');
       }
       const warnings = result.warnings ?? [];
-      const summary = `已导入「${result.category?.name ?? '分类'}」：${result.imported ?? 0} 个功能。`;
+      const summary = t('ability.import.success', {
+        name: result.category?.name ?? t('ability.category.unnamed'),
+        count: result.imported ?? 0,
+      });
       setPkgNotice({
         kind: warnings.length > 0 ? 'warn' : 'ok',
         text: warnings.length > 0 ? `${summary}\n${warnings.join('\n')}` : summary,
@@ -570,7 +591,7 @@ export function SensoryPage({
     try {
       const result = await api.agentCategoryDelete(target.id);
       if (!result.ok) {
-        setError(result.error || '删除分类失败');
+        setError(result.error || t('ability.error.deleteCategoryFailed'));
         return;
       }
       setCategories(result.categories ?? []);
@@ -611,9 +632,10 @@ export function SensoryPage({
       .filter((definition) => definition.category === currentCategory.name)
       .map(
         (definition) =>
-          capabilityByName.get(definition.name) ?? capabilityFromDefinition(definition),
+          capabilityByName.get(definition.name) ??
+          capabilityFromDefinition(definition, t('ability.tool.brokenPolicyNote')),
       );
-  }, [data, builtinTools, currentCategory, selected, definitions, capabilityByName]);
+  }, [data, builtinTools, currentCategory, selected, definitions, capabilityByName, t]);
 
   /** Usage counters follow the category so each user category is independent. */
   const categoryStats = useMemo(
@@ -672,8 +694,8 @@ export function SensoryPage({
     <div className="sensory">
       <header className="sensory__head">
         <div className="sensory__title">
-          AI能力
-          <span>本地预置 · 模型可调用</span>
+          {t('ability.page.title')}
+          <span>{t('ability.page.subtitle')}</span>
         </div>
         <div className="sensory__actions">
           <div className="cap-search">
@@ -684,15 +706,15 @@ export function SensoryPage({
               onKeyDown={(event) => {
                 if (event.key === 'Escape') setSearch('');
               }}
-              placeholder="搜索功能"
-              aria-label="搜索功能"
+              placeholder={t('ability.search.placeholder')}
+              aria-label={t('ability.search.placeholder')}
               spellCheck={false}
             />
             {search && (
               <button
                 type="button"
                 className="cap-search__clear"
-                aria-label="清空搜索"
+                aria-label={t('ability.search.clear')}
                 onClick={() => setSearch('')}
               >
                 <CloseIcon size={12} />
@@ -705,15 +727,15 @@ export function SensoryPage({
             disabled={loading || refreshing}
           >
             <RefreshIcon size={13} />
-            刷新
+            {t('ability.action.refresh')}
           </button>
           <button
             className="btn btn--ghost"
             onClick={() => void handleCategoryImport()}
-            title="导入一个能力分类包：分类和它下面的功能会一起加进来，撞名自动改名"
+            title={t('ability.import.title')}
           >
             <UploadIcon size={13} />
-            导入分类
+            {t('ability.import.label')}
           </button>
           <button
             className="btn btn--ghost"
@@ -721,32 +743,32 @@ export function SensoryPage({
             disabled={!aiTarget || !currentCategory || !onOpenToolEditor}
             title={
               !aiTarget
-                ? '先在设置里选择一个聊天模型'
+                ? t('ability.aiTool.noModel')
                 : !currentCategory
-                  ? '内置能力不能由 AI 修改，请先选择一个自建分类'
-                  : `打开「功能编辑-${currentCategory.name}」工作空间，用对话新增或修复功能`
+                  ? t('ability.aiTool.builtinLocked')
+                  : t('ability.aiTool.open', { name: currentCategory.name })
             }
           >
             <SparkleIcon size={13} />
-            AI添加
+            {t('ability.action.aiAdd')}
           </button>
           <button className="btn btn--primary" onClick={openNewTool}>
             <PlusIcon size={14} />
-            手动添加
+            {t('ability.action.manualAdd')}
           </button>
         </div>
       </header>
 
       <div className="sensory__body sensory__body--split">
-        <aside className="cat-rail" aria-label="功能分类">
+        <aside className="cat-rail" aria-label={t('ability.categories.aria')}>
           <button
             type="button"
             className={`cat-item cat-item--builtin ${selected === BUILTIN_CATEGORY ? 'is-active' : ''}`}
             onClick={() => selectCategory(BUILTIN_CATEGORY)}
           >
             <SparkleIcon size={14} className="cat-item__icon" />
-            <span className="cat-item__name" title="内置能力">
-              内置能力
+            <span className="cat-item__name" title={t('ability.categories.builtin')}>
+              {t('ability.categories.builtin')}
             </span>
             <span className="cat-item__count">{builtinTools.length}</span>
           </button>
@@ -759,7 +781,7 @@ export function SensoryPage({
             onClick={() => setCategoryDialog({ category: null })}
           >
             <PlusIcon size={13} />
-            新增分类
+            {t('ability.categories.add')}
           </button>
 
           <div className="cat-rail__list">
@@ -779,11 +801,14 @@ export function SensoryPage({
                     onClick={() => selectCategory(category.id)}
                   >
                     {category.pinned && <PinIcon size={11} className="cat-item__pin" />}
-                    <span className="cat-item__name" title={category.name}>
-                      {category.name}
+                    <span className="cat-item__name" title={categoryName(category.name, t)}>
+                      {categoryName(category.name, t)}
                     </span>
                     {broken > 0 && (
-                      <span className="cat-item__broken" title={`${broken} 个功能有故障`}>
+                      <span
+                        className="cat-item__broken"
+                        title={t('ability.categories.broken', { count: broken })}
+                      >
                         !{broken}
                       </span>
                     )}
@@ -792,8 +817,12 @@ export function SensoryPage({
                   <span className="cat-item__actions">
                     <button
                       type="button"
-                      aria-label={category.pinned ? '取消置顶' : '置顶分类'}
-                      title={category.pinned ? '取消置顶' : '置顶分类'}
+                      aria-label={
+                        category.pinned ? t('ability.categories.unpin') : t('ability.categories.pin')
+                      }
+                      title={
+                        category.pinned ? t('ability.categories.unpin') : t('ability.categories.pin')
+                      }
                       className={category.pinned ? 'is-pinned' : ''}
                       onClick={() => void togglePin(category)}
                     >
@@ -801,24 +830,24 @@ export function SensoryPage({
                     </button>
                     <button
                       type="button"
-                      aria-label="重命名分类"
-                      title="重命名分类"
+                      aria-label={t('ability.categories.rename')}
+                      title={t('ability.categories.rename')}
                       onClick={() => setCategoryDialog({ category })}
                     >
                       <EditIcon size={12} />
                     </button>
                     <button
                       type="button"
-                      aria-label="导出分类"
-                      title="导出这个分类（含全部功能脚本）"
+                      aria-label={t('ability.categories.exportAria')}
+                      title={t('ability.categories.exportTitle')}
                       onClick={() => void handleCategoryExport(category)}
                     >
                       <DownloadIcon size={12} />
                     </button>
                     <button
                       type="button"
-                      aria-label="删除分类"
-                      title="删除分类"
+                      aria-label={t('ability.categories.delete')}
+                      title={t('ability.categories.delete')}
                       onClick={() => setPendingCategoryDelete(category)}
                     >
                       <TrashIcon size={12} />
@@ -827,40 +856,53 @@ export function SensoryPage({
                 </div>
               );
             })}
-            {orderedCategories.length === 0 && <p className="cat-rail__empty">还没有分类</p>}
+            {orderedCategories.length === 0 && (
+              <p className="cat-rail__empty">{t('ability.categories.empty')}</p>
+            )}
           </div>
         </aside>
 
         <div className="sensory__main">
           <section className="sensory__intro">
-            <p>
-              这些是通过工具协议交给模型的全部函数。点击任意一行展开详情；
-              内置能力随应用发布，只能查看；自定义功能可以用 JavaScript、Python
-              或任意本地命令实现，保存后从后续任务开始交给模型调用。
-            </p>
+            <p>{t('ability.intro')}</p>
             <div className="cap-flow">
-              {['模型发起调用', '权限策略判定', '本地执行', '结果回传模型'].map((step, index) => (
-                <span key={step} className="cap-flow__piece">
+              {FLOW_STEP_KEYS.map((stepKey, index) => (
+                <span key={stepKey} className="cap-flow__piece">
                   {index > 0 && <span className="cap-flow__arrow">→</span>}
-                  <span className="cap-flow__step">{step}</span>
+                  <span className="cap-flow__step">{t(stepKey)}</span>
                 </span>
               ))}
             </div>
           </section>
 
-          {loading && <p className="sensory__empty">正在读取工具能力…</p>}
+          {loading && <p className="sensory__empty">{t('ability.loading')}</p>}
           {!loading && error && !data && <p className="sensory__empty">{error}</p>}
 
           {data && (
             <>
-              <p className="sensory__meta" title="只统计当前分类下的功能">
-                <span>本分类调用 <b>{categoryStats.calls}</b> 次</span>
+              <p className="sensory__meta" title={t('ability.stats.title')}>
+                <span>
+                  {t('ability.stats.callsBefore')}
+                  <b>{categoryStats.calls}</b>
+                  {t('ability.stats.callsAfter')}
+                </span>
                 {categoryStats.errors > 0 && (
-                  <span className="is-error">失败 <b>{categoryStats.errors}</b></span>
+                  <span className="is-error">
+                    {t('ability.stats.errorsBefore')}
+                    <b>{categoryStats.errors}</b>
+                  </span>
                 )}
-                {categoryStats.denied > 0 && <span>拒绝 <b>{categoryStats.denied}</b></span>}
+                {categoryStats.denied > 0 && (
+                  <span>
+                    {t('ability.stats.deniedBefore')}
+                    <b>{categoryStats.denied}</b>
+                  </span>
+                )}
                 {categoryStats.interrupted > 0 && (
-                  <span>中断 <b>{categoryStats.interrupted}</b></span>
+                  <span>
+                    {t('ability.stats.interruptedBefore')}
+                    <b>{categoryStats.interrupted}</b>
+                  </span>
                 )}
               </p>
 
@@ -891,19 +933,23 @@ export function SensoryPage({
               <section className="cap-section">
                 <div className="cap-section__head">
                   <span className="cap-section__title">
-                    {currentCategory?.name ?? '内置能力'}
+                    {currentCategory?.name ?? t('ability.categories.builtin')}
                   </span>
                   <span className="cap-section__count">{visibleTools.length}</span>
                   {brokenInCategory > 0 && (
                     <span className="cap-section__broken">
-                      故障 {brokenInCategory}
+                      {t('ability.section.broken', { count: brokenInCategory })}
                     </span>
                   )}
                   <span className="cap-section__hint">
-                    {currentCategory ? '你添加的本地脚本或命令' : 'Ezness 预置，随版本更新'}
+                    {currentCategory
+                      ? t('ability.section.customHint')
+                      : t('ability.section.builtinHint')}
                   </span>
                   {searching && (
-                    <span className="cap-section__hint">搜索「{search.trim()}」</span>
+                    <span className="cap-section__hint">
+                      {t('ability.section.searching', { query: search.trim() })}
+                    </span>
                   )}
                 </div>
 
@@ -911,15 +957,14 @@ export function SensoryPage({
                   <div className="cap-list">{visibleTools.map(renderToolRow)}</div>
                 ) : searching ? (
                   <p className="cap-section__empty">
-                    这个分类里没有匹配「{search.trim()}」的功能。
+                    {t('ability.section.noMatch', { query: search.trim() })}
                   </p>
                 ) : currentCategory ? (
                   <p className="cap-section__empty">
-                    「{currentCategory.name}」还没有功能。点右上角「手动添加」创建，或点「AI添加」
-                    在功能编辑工作空间里用对话生成。
+                    {t('ability.section.categoryEmpty', { name: currentCategory.name })}
                   </p>
                 ) : (
-                  <p className="cap-section__empty">没有内置能力。</p>
+                  <p className="cap-section__empty">{t('ability.section.builtinEmpty')}</p>
                 )}
               </section>
             </>
@@ -962,9 +1007,9 @@ export function SensoryPage({
 
       {pendingDelete && (
         <ConfirmDialog
-          title="删除功能"
-          message={`删除「${pendingDelete.name}」？模型之后将不能再调用它。`}
-          confirmLabel="删除"
+          title={t('ability.deleteTool.title')}
+          message={t('ability.deleteTool.message', { name: pendingDelete.name })}
+          confirmLabel={t('ability.action.delete')}
           danger
           onConfirm={() => void handleDelete()}
           onCancel={() => setPendingDelete(null)}
@@ -973,15 +1018,18 @@ export function SensoryPage({
 
       {pendingCategoryDelete && (
         <ConfirmDialog
-          title="删除分类"
+          title={t('ability.deleteCategory.title')}
           message={
             (toolsByCategory.get(pendingCategoryDelete.name) ?? 0) > 0
-              ? `删除分类「${pendingCategoryDelete.name}」？分类里的 ${
-                  toolsByCategory.get(pendingCategoryDelete.name) ?? 0
-                } 个功能也会一起删除，模型之后将不能再调用它们。`
-              : `删除分类「${pendingCategoryDelete.name}」？`
+              ? t('ability.deleteCategory.withTools', {
+                  name: pendingCategoryDelete.name,
+                  count: toolsByCategory.get(pendingCategoryDelete.name) ?? 0,
+                })
+              : t('ability.deleteCategory.message', {
+                  name: pendingCategoryDelete.name,
+                })
           }
-          confirmLabel="删除"
+          confirmLabel={t('ability.action.delete')}
           danger
           onConfirm={() => void handleCategoryDelete()}
           onCancel={() => setPendingCategoryDelete(null)}
@@ -1019,6 +1067,7 @@ function ToolRow({
   onRetest,
   onViewConfig,
 }: ToolRowProps) {
+  const { t, locale } = useI18n();
   const broken = health?.status === 'broken';
 
   return (
@@ -1026,50 +1075,68 @@ function ToolRow({
       <button className="cap-row__head" aria-expanded={expanded} onClick={onToggle}>
         <ChevronDownIcon size={14} className="cap-row__chevron" />
         <code className="cap-row__name">{tool.name}</code>
-        <span className="cap-row__cat">{tool.category}</span>
+        <span className="cap-row__cat">{categoryName(tool.category, t)}</span>
         {definition && (
-          <span className="cap-row__runtime">{RUNTIME_LABEL[definition.runtime]}</span>
+          <span className="cap-row__runtime">
+            {t(RUNTIME_LABEL_KEYS[definition.runtime])}
+          </span>
         )}
         <span className="cap-row__badges">
-          {tool.readOnly && <span className="cap-badge cap-badge--read">只读</span>}
-          {!tool.readOnly && !tool.network && !tool.interactive && (
-            <span className="cap-badge cap-badge--write">变更</span>
+          {tool.readOnly && (
+            <span className="cap-badge cap-badge--read">{t('ability.badge.readOnly')}</span>
           )}
-          {tool.network && <span className="cap-badge cap-badge--net">联网</span>}
-          {tool.interactive && <span className="cap-badge cap-badge--ask">交互</span>}
-          {tool.custom && <span className="cap-badge cap-badge--custom">自定义</span>}
-          {broken && <span className="cap-badge cap-badge--broken">故障</span>}
+          {!tool.readOnly && !tool.network && !tool.interactive && (
+            <span className="cap-badge cap-badge--write">{t('ability.badge.mutating')}</span>
+          )}
+          {tool.network && (
+            <span className="cap-badge cap-badge--net">{t('ability.badge.network')}</span>
+          )}
+          {tool.interactive && (
+            <span className="cap-badge cap-badge--ask">{t('ability.badge.interactive')}</span>
+          )}
+          {tool.custom && (
+            <span className="cap-badge cap-badge--custom">{t('ability.badge.custom')}</span>
+          )}
+          {broken && (
+            <span className="cap-badge cap-badge--broken">{t('ability.badge.broken')}</span>
+          )}
         </span>
         <span className="cap-row__spacer" />
         {tool.parameters.length > 0 && (
-          <span className="cap-row__param-count">{tool.parameters.length} 个参数</span>
+          <span className="cap-row__param-count">
+            {t('ability.row.params', { count: tool.parameters.length })}
+          </span>
         )}
         <span className={`cap-row__calls ${tool.stats.calls === 0 ? 'is-empty' : ''}`}>
-          {tool.stats.calls === 0 ? '未使用' : `${tool.stats.calls} 次`}
+          {tool.stats.calls === 0
+            ? t('ability.row.unused')
+            : t('ability.row.calls', { count: tool.stats.calls })}
         </span>
       </button>
 
       {broken && (
-        <p className="cap-row__error-line">{health?.errors?.[0]?.message ?? '测试未通过'}</p>
+        <p className="cap-row__error-line">
+          {health?.errors?.[0]?.message ?? t('ability.test.notPassed')}
+        </p>
       )}
 
       {expanded && (
         <div className="cap-row__body">
           {broken && (
             <div className="cap-row__health">
-              <div className="cap-row__health-title">故障详情</div>
+              <div className="cap-row__health-title">{t('ability.health.title')}</div>
               {(health?.errors?.length ?? 0) > 0 ? (
                 <ul>
                   {health?.errors?.map((error, index) => (
                     <li key={`${error.phase}-${index}`}>
                       <span className="cap-row__health-phase">
                         {error.phase === 'syntax'
-                          ? '语法错误'
+                          ? t('ability.health.phase.syntax')
                           : error.phase === 'schema'
-                            ? '结构错误'
+                            ? t('ability.health.phase.schema')
                             : error.phase === 'runtime'
-                              ? '运行错误'
-                              : '测试失败'}
+                              ? t('ability.health.phase.runtime')
+                              : t('ability.health.phase.failed')}
                       </span>
                       <span>{error.message}</span>
                       {error.detail && error.detail !== error.message && (
@@ -1079,13 +1146,15 @@ function ToolRow({
                   ))}
                 </ul>
               ) : (
-                <p>没有记录到具体错误。</p>
+                <p>{t('ability.health.noErrors')}</p>
               )}
               {health?.testedAt && (
                 <p className="cap-row__health-meta">
-                  测试时间：{new Date(health.testedAt).toLocaleString()}
+                  {t('ability.health.testedAt', {
+                    time: new Date(health.testedAt).toLocaleString(locale),
+                  })}
                   {health.exitCode !== undefined && health.exitCode !== null
-                    ? ` · 退出码 ${health.exitCode}`
+                    ? ` · ${t('ability.health.exitCode', { code: health.exitCode })}`
                     : ''}
                 </p>
               )}
@@ -1094,11 +1163,11 @@ function ToolRow({
 
           {!broken && health?.status === 'ok' && health.testedAt && (
             <div className="cap-row__health cap-row__health--ok">
-              <div className="cap-row__health-title">上次测试通过</div>
+              <div className="cap-row__health-title">{t('ability.health.lastPassed')}</div>
               <p className="cap-row__health-meta">
-                {new Date(health.testedAt).toLocaleString()}
+                {new Date(health.testedAt).toLocaleString(locale)}
                 {health.exitCode !== undefined && health.exitCode !== null
-                  ? ` · 退出码 ${health.exitCode}`
+                  ? ` · ${t('ability.health.exitCode', { code: health.exitCode })}`
                   : ''}
               </p>
               {health.stdout?.trim() && <pre>{health.stdout.trim().slice(0, 400)}</pre>}
@@ -1106,18 +1175,16 @@ function ToolRow({
           )}
 
           {!broken && (!health || health.status === 'untested') && (
-            <p className="cap-row__health-meta">
-              保存时没有运行测试。点「测试」可以现在验证一次。
-            </p>
+            <p className="cap-row__health-meta">{t('ability.health.untested')}</p>
           )}
 
           <div className="cap-row__block">
-            <div className="cap-row__block-title">接口规范</div>
+            <div className="cap-row__block-title">{t('ability.section.interface')}</div>
             <p className="cap-row__desc">{tool.description}</p>
 
             {tool.parameters.length > 0 && (
               <div>
-                <div className="cap-row__label">参数</div>
+                <div className="cap-row__label">{t('ability.field.params')}</div>
                 <ul className="cap-row__params">
                   {tool.parameters.map((parameter) => (
                     <li key={parameter.name}>
@@ -1140,23 +1207,31 @@ function ToolRow({
           </div>
 
           <div className="cap-row__block">
-            <div className="cap-row__block-title">执行配置</div>
+            <div className="cap-row__block-title">{t('ability.section.execution')}</div>
             {definition ? (
               <div className="cap-row__command">
                 <code>
                   {definition.runtime === 'executable'
                     ? definition.command
-                    : `${RUNTIME_LABEL[definition.runtime]} 脚本`}
+                    : t('ability.row.scriptOf', {
+                        runtime: t(RUNTIME_LABEL_KEYS[definition.runtime]),
+                      })}
                 </code>
                 <span className="cap-row__command-meta">
                   {definition.runtime === 'executable'
-                    ? '参数替换命令里的 {参数名}，不经过 shell'
-                    : '参数经 EZNESS_TOOL_ARGS（JSON）或按声明顺序作为命令行参数传入'}
-                  {definition.cwd ? ` · 运行目录 ${definition.cwd}` : ''}
-                  {definition.dependencies?.length
-                    ? ` · 依赖 ${definition.dependencies.join('、')}`
+                    ? t('ability.command.executableMeta')
+                    : t('ability.command.scriptMeta')}
+                  {definition.cwd
+                    ? ` · ${t('ability.command.cwd', { path: definition.cwd })}`
                     : ''}
-                  {` · 超时 ${Math.round(definition.timeoutMs / 1000)} 秒`}
+                  {definition.dependencies?.length
+                    ? ` · ${t('ability.command.deps', {
+                        list: definition.dependencies.join(t('ability.separator')),
+                      })}`
+                    : ''}
+                  {` · ${t('ability.command.timeout', {
+                    seconds: Math.round(definition.timeoutMs / 1000),
+                  })}`}
                 </span>
               </div>
             ) : tool.implementation ? (
@@ -1174,20 +1249,20 @@ function ToolRow({
                 )}
               </div>
             ) : (
-              <p className="cap-row__note">由 Ezness 主进程直接执行。</p>
+              <p className="cap-row__note">{t('ability.row.builtinExec')}</p>
             )}
           </div>
 
           <div className="cap-row__block">
-            <div className="cap-row__block-title">权限策略</div>
+            <div className="cap-row__block-title">{t('ability.section.policy')}</div>
             <div className="cap-row__policy">
               {(['read-only', 'plan', 'workspace-write', 'danger-full-access'] as CapabilityMode[]).map(
                 (mode) => {
                   const decision = tool.policy[mode];
                   return (
                     <span key={mode} className={`cap-pill cap-pill--${decision}`}>
-                      <span>{MODE_LABEL[mode]}</span>
-                      <b>{DECISION_LABEL[decision]}</b>
+                      <span>{t(MODE_LABEL_KEYS[mode])}</span>
+                      <b>{t(DECISION_LABEL_KEYS[decision])}</b>
                     </span>
                   );
                 },
@@ -1198,36 +1273,44 @@ function ToolRow({
 
           <div className="cap-row__foot">
             <span className="cap-row__stats">
-              {tool.stats.calls === 0 ? '还没有调用记录' : `调用 ${tool.stats.calls} 次`}
+              {tool.stats.calls === 0
+                ? t('ability.row.noCalls')
+                : t('ability.row.callsCount', { count: tool.stats.calls })}
               {tool.stats.errors > 0 && (
                 <>
                   {' · '}
-                  <b>失败 {tool.stats.errors}</b>
+                  <b>{t('ability.row.errors', { count: tool.stats.errors })}</b>
                 </>
               )}
-              {tool.stats.denied > 0 && ` · 拒绝 ${tool.stats.denied}`}
-              {tool.stats.interrupted > 0 && ` · 中断 ${tool.stats.interrupted}`}
+              {tool.stats.denied > 0 &&
+                ` · ${t('ability.row.denied', { count: tool.stats.denied })}`}
+              {tool.stats.interrupted > 0 &&
+                ` · ${t('ability.row.interrupted', { count: tool.stats.interrupted })}`}
             </span>
             <div className="cap-row__actions">
               {definition ? (
                 <>
                   <button className="btn btn--ghost" onClick={onRetest} disabled={busy}>
                     <RefreshIcon size={13} className={testing ? 'is-spinning' : undefined} />
-                    {testing ? '测试中…' : broken ? '重新测试' : '测试'}
+                    {testing
+                      ? t('ability.test.testing')
+                      : broken
+                        ? t('ability.test.retest')
+                        : t('ability.test.test')}
                   </button>
                   <button className="btn btn--ghost" onClick={onEdit}>
                     <EditIcon size={13} />
-                    编辑
+                    {t('ability.action.edit')}
                   </button>
                   <button className="btn btn--ghost" onClick={onDelete}>
                     <TrashIcon size={13} />
-                    删除
+                    {t('ability.action.delete')}
                   </button>
                 </>
               ) : (
                 <button className="btn btn--ghost" onClick={onViewConfig}>
                   <InfoIcon size={13} />
-                  查看配置
+                  {t('ability.action.viewConfig')}
                 </button>
               )}
             </div>
@@ -1244,6 +1327,7 @@ function ToolRow({
  * no save button: built-in implementations ship with the app.
  */
 function ToolConfigDialog({ tool, onClose }: { tool: AgentToolCapability; onClose: () => void }) {
+  const { t } = useI18n();
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -1269,27 +1353,27 @@ function ToolConfigDialog({ tool, onClose }: { tool: AgentToolCapability; onClos
         className="modal__panel cap-dialog cap-config"
         role="dialog"
         aria-modal="true"
-        aria-label={`${tool.name} 配置`}
+        aria-label={t('ability.config.aria', { name: tool.name })}
       >
         <header className="cap-dialog__head">
-          <h2 className="modal__title">查看配置</h2>
-          <p className="cap-dialog__sub">内置能力由 Ezness 提供，这里只能查看，不能修改。</p>
+          <h2 className="modal__title">{t('ability.action.viewConfig')}</h2>
+          <p className="cap-dialog__sub">{t('ability.config.subtitle')}</p>
         </header>
 
         <div className="cap-dialog__body">
           <div className="field-grid">
             <label className="field">
-              <span className="field__label">名称</span>
+              <span className="field__label">{t('ability.field.name')}</span>
               <input className="input" value={tool.name} readOnly spellCheck={false} />
             </label>
             <label className="field">
-              <span className="field__label">分类</span>
+              <span className="field__label">{t('ability.field.category')}</span>
               <input className="input" value={tool.category} readOnly />
             </label>
           </div>
 
           <label className="field">
-            <span className="field__label">说明</span>
+            <span className="field__label">{t('ability.field.description')}</span>
             <textarea
               className="input cap-dialog__textarea"
               value={tool.description}
@@ -1300,18 +1384,18 @@ function ToolConfigDialog({ tool, onClose }: { tool: AgentToolCapability; onClos
 
           <div className="field">
             <span className="field__label">
-              参数
-              <span className="field__hint">模型调用时可以传的参数</span>
+              {t('ability.field.params')}
+              <span className="field__hint">{t('ability.field.paramsHint')}</span>
             </span>
             {tool.parameters.length === 0 ? (
-              <p className="cap-config__empty">这个功能不需要参数。</p>
+              <p className="cap-config__empty">{t('ability.config.noParams')}</p>
             ) : (
               <div className="cap-param-list">
                 <div className="cap-param-head">
-                  <span>名称</span>
-                  <span>类型</span>
-                  <span>必填</span>
-                  <span>说明</span>
+                  <span>{t('ability.field.name')}</span>
+                  <span>{t('ability.field.type')}</span>
+                  <span>{t('ability.field.required')}</span>
+                  <span>{t('ability.field.description')}</span>
                   <span />
                 </div>
                 {tool.parameters.map((parameter) => (
@@ -1328,7 +1412,7 @@ function ToolConfigDialog({ tool, onClose }: { tool: AgentToolCapability; onClos
                     />
                     <label className="cap-check">
                       <input type="checkbox" checked={parameter.required} disabled readOnly />
-                      必填
+                      {t('ability.field.required')}
                     </label>
                     <input className="input" value={parameter.description} readOnly />
                     <span />
@@ -1341,30 +1425,30 @@ function ToolConfigDialog({ tool, onClose }: { tool: AgentToolCapability; onClos
           <div className="cap-dialog__checks">
             <label className="cap-check">
               <input type="checkbox" checked={tool.readOnly} disabled readOnly />
-              只读功能
+              {t('ability.field.readOnly')}
             </label>
             <label className="cap-check">
               <input type="checkbox" checked={tool.network} disabled readOnly />
-              需要联网
+              {t('ability.field.network')}
             </label>
             {tool.interactive && (
               <label className="cap-check">
                 <input type="checkbox" checked disabled readOnly />
-                交互功能（会向你提问）
+                {t('ability.field.interactive')}
               </label>
             )}
           </div>
 
           <div className="field">
-            <span className="field__label">权限策略</span>
+            <span className="field__label">{t('ability.section.policy')}</span>
             <div className="cap-row__policy">
               {(['read-only', 'plan', 'workspace-write', 'danger-full-access'] as CapabilityMode[]).map(
                 (mode) => {
                   const decision = tool.policy[mode];
                   return (
                     <span key={mode} className={`cap-pill cap-pill--${decision}`}>
-                      <span>{MODE_LABEL[mode]}</span>
-                      <b>{DECISION_LABEL[decision]}</b>
+                      <span>{t(MODE_LABEL_KEYS[mode])}</span>
+                      <b>{t(DECISION_LABEL_KEYS[decision])}</b>
                     </span>
                   );
                 },
@@ -1374,23 +1458,23 @@ function ToolConfigDialog({ tool, onClose }: { tool: AgentToolCapability; onClos
           </div>
 
           <div className="field">
-            <span className="field__label">执行配置</span>
+            <span className="field__label">{t('ability.section.execution')}</span>
             {tool.implementation ? (
               <div className="cap-config__impl">
                 <div className="cap-config__impl-row">
-                  <span>实现位置</span>
+                  <span>{t('ability.config.implFile')}</span>
                   <code>{tool.implementation.file}</code>
                 </div>
                 <div className="cap-config__impl-row">
-                  <span>执行函数</span>
+                  <span>{t('ability.config.implFn')}</span>
                   <code>{tool.implementation.fn}()</code>
                 </div>
                 <div className="cap-config__impl-row">
-                  <span>进程模型</span>
+                  <span>{t('ability.config.implProcess')}</span>
                   <span>{tool.implementation.process}</span>
                 </div>
                 <div className="cap-config__impl-row">
-                  <span>固定参数</span>
+                  <span>{t('ability.config.limits')}</span>
                   <ul>
                     {tool.implementation.limits.map((line) => (
                       <li key={line}>{line}</li>
@@ -1399,17 +1483,15 @@ function ToolConfigDialog({ tool, onClose }: { tool: AgentToolCapability; onClos
                 </div>
               </div>
             ) : (
-              <p className="cap-config__text">内置实现：由 Ezness 主进程直接执行。</p>
+              <p className="cap-config__text">{t('ability.config.builtinImpl')}</p>
             )}
-            <p className="cap-config__text">
-              这些是模型调用时实际执行的进程和固定参数。内置能力随应用发布，不能在界面里修改。
-            </p>
+            <p className="cap-config__text">{t('ability.config.notes')}</p>
           </div>
         </div>
 
         <footer className="cap-dialog__actions">
           <button ref={closeRef} type="button" className="btn btn--primary" onClick={onClose}>
-            关闭
+            {t('ability.action.close')}
           </button>
         </footer>
       </div>
@@ -1441,6 +1523,7 @@ function CategoryDialog({
   onClose: () => void;
   onSaved: (result: CategoryResult) => void;
 }) {
+  const { t } = useI18n();
   const [name, setName] = useState(category?.name ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1464,19 +1547,19 @@ function CategoryDialog({
     if (saving) return;
     const value = name.trim();
     if (!value) {
-      setError('分类名称不能为空。');
+      setError(t('ability.category.nameRequired'));
       return;
     }
     setSaving(true);
     setError('');
     try {
       const api = window.ezness;
-      if (!api?.agentCategorySave) throw new Error('保存接口不可用。');
+      if (!api?.agentCategorySave) throw new Error(t('ability.error.saveUnavailable'));
       const result = await api.agentCategorySave(
         category ? { id: category.id, name: value } : { name: value },
       );
       if (!result.ok) {
-        setError(result.error || '保存失败');
+        setError(result.error || t('ability.error.saveFailed'));
         return;
       }
       onSaved(result);
@@ -1498,27 +1581,27 @@ function CategoryDialog({
         className="modal__panel cap-dialog cap-category-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={category ? '重命名分类' : '新增分类'}
+        aria-label={category ? t('ability.categories.rename') : t('ability.categories.add')}
         onSubmit={handleSubmit}
       >
         <header className="cap-dialog__head">
-          <h2 className="modal__title">{category ? '重命名分类' : '新增分类'}</h2>
+          <h2 className="modal__title">
+            {category ? t('ability.categories.rename') : t('ability.categories.add')}
+          </h2>
           <p className="cap-dialog__sub">
-            {category
-              ? '改名后，分类里的功能会一起更新。'
-              : '分类只用来整理功能，新建后可以在左侧置顶、重命名或删除。'}
+            {category ? t('ability.category.renameSub') : t('ability.category.addSub')}
           </p>
         </header>
 
         <div className="cap-dialog__body">
           <label className="field">
-            <span className="field__label">分类名称</span>
+            <span className="field__label">{t('ability.field.categoryName')}</span>
             <input
               ref={inputRef}
               className="input cat-name-input"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="例如：数据处理"
+              placeholder={t('ability.category.namePlaceholder')}
               maxLength={24}
               spellCheck={false}
             />
@@ -1528,10 +1611,14 @@ function CategoryDialog({
 
         <footer className="cap-dialog__actions">
           <button type="button" className="btn btn--ghost" onClick={onClose}>
-            取消
+            {t('ability.action.cancel')}
           </button>
           <button type="submit" className="btn btn--primary" disabled={saving}>
-            {saving ? '保存中…' : category ? '保存' : '创建'}
+            {saving
+              ? t('ability.action.saving')
+              : category
+                ? t('ability.action.save')
+                : t('ability.action.create')}
           </button>
         </footer>
       </form>
@@ -1546,15 +1633,18 @@ function CustomToolDialog({
   onClose,
   onSaved,
 }: DialogProps) {
+  const { t } = useI18n();
   const seed = definition ?? null;
   const editing = Boolean(definition);
   const [name, setName] = useState(seed?.name ?? '');
   const [category, setCategory] = useState(
-    seed?.category ?? defaultCategory ?? '自定义',
+    seed?.category ?? defaultCategory ?? t('ability.tool.defaultCategory'),
   );
   const [description, setDescription] = useState(seed?.description ?? '');
   const [runtime, setRuntime] = useState<CustomToolRuntime>(seed?.runtime ?? 'node');
-  const [script, setScript] = useState(seed ? seed.script : SCRIPT_TEMPLATES.node);
+  const [script, setScript] = useState(
+    seed ? seed.script : scriptTemplate('node', t),
+  );
   const [command, setCommand] = useState(seed?.command ?? '');
   const [runtimes, setRuntimes] = useState<AgentRuntimeInfo[]>([]);
   const [cwd, setCwd] = useState(seed?.cwd ?? '');
@@ -1574,7 +1664,21 @@ function CustomToolDialog({
   const errorRef = useRef<HTMLParagraphElement>(null);
 
   const runtimeInfo = runtimes.find((item) => item.id === runtime);
-  const runtimeRows = runtimes.length > 0 ? runtimes : RUNTIME_FALLBACK;
+  const runtimeRows = useMemo(
+    () =>
+      runtimes.length > 0
+        ? runtimes
+        : (Object.keys(RUNTIME_LABEL_KEYS) as CustomToolRuntime[]).map((id) => ({
+            id,
+            label: t(RUNTIME_LABEL_KEYS[id]),
+            available: id === 'node' || id === 'executable',
+            version: '',
+            detail: '',
+            hint: '',
+            source: id === 'node' ? 'builtin' : '',
+          })),
+    [runtimes, t],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -1593,8 +1697,10 @@ function CustomToolDialog({
 
   function changeRuntime(next: CustomToolRuntime) {
     if (next === runtime) return;
-    if (!script.trim() || script === SCRIPT_TEMPLATES[runtime]) {
-      setScript(SCRIPT_TEMPLATES[next]);
+    // An untouched starter program is swapped for the other language's starter;
+    // anything the user wrote is left alone.
+    if (!script.trim() || script === scriptTemplate(runtime, t)) {
+      setScript(scriptTemplate(next, t));
     }
     setRuntime(next);
   }
@@ -1641,7 +1747,7 @@ function CustomToolDialog({
     setSaving(true);
     try {
       const api = window.ezness;
-      if (!api?.agentCustomToolSave) throw new Error('保存接口不可用。');
+      if (!api?.agentCustomToolSave) throw new Error(t('ability.error.saveUnavailable'));
       const result = await api.agentCustomToolSave({
         id: definition?.id ?? '',
         name: name.trim(),
@@ -1674,7 +1780,7 @@ function CustomToolDialog({
         })),
       });
       if (!result.ok) {
-        setError(result.error || '保存失败');
+        setError(result.error || t('ability.error.saveFailed'));
         return;
       }
       onSaved(name.trim());
@@ -1696,24 +1802,23 @@ function CustomToolDialog({
         className="modal__panel cap-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={editing ? '编辑功能' : '添加功能'}
+        aria-label={editing ? t('ability.tool.editTitle') : t('ability.tool.addTitle')}
         onSubmit={handleSubmit}
       >
         <header className="cap-dialog__head">
-          <h2 className="modal__title">{editing ? '编辑功能' : '添加功能'}</h2>
-          <p className="cap-dialog__sub">
-            保存后模型就能在后续任务里调用它。可以选一种语言直接写脚本，也可以运行任意本地命令；
-            脚本和命令都在独立进程里执行。
-          </p>
+          <h2 className="modal__title">
+            {editing ? t('ability.tool.editTitle') : t('ability.tool.addTitle')}
+          </h2>
+          <p className="cap-dialog__sub">{t('ability.tool.subtitle')}</p>
         </header>
 
         <div className="cap-dialog__body">
           <div className="cap-dialog__section">
-            <div className="cap-dialog__section-title">接口规范</div>
+            <div className="cap-dialog__section-title">{t('ability.section.interface')}</div>
 
             <div className="field-grid">
               <label className="field">
-                <span className="field__label">名称</span>
+                <span className="field__label">{t('ability.field.name')}</span>
                 <input
                   ref={firstRef}
                   className="input"
@@ -1724,13 +1829,13 @@ function CustomToolDialog({
                 />
               </label>
               <label className="field">
-                <span className="field__label">分类</span>
+                <span className="field__label">{t('ability.field.category')}</span>
                 <input
                   className="input cap-category-input"
                   list="tool-category-options"
                   value={category}
                   onChange={(event) => setCategory(event.target.value)}
-                  placeholder="自定义"
+                  placeholder={t('ability.tool.defaultCategory')}
                   maxLength={24}
                 />
                 <datalist id="tool-category-options">
@@ -1741,40 +1846,38 @@ function CustomToolDialog({
               </label>
             </div>
 
-            <p className="field__hint">
-              名称只能包含字母、数字和下划线，模型看到的就是这个名字。分类可以选已有的，也可以输入新名字，保存时会自动新建。
-            </p>
+            <p className="field__hint">{t('ability.tool.nameHint')}</p>
 
             <label className="field">
               <span className="field__label">
-                说明
-                <span className="field__hint">模型据此判断什么时候调用</span>
+                {t('ability.field.description')}
+                <span className="field__hint">{t('ability.tool.descriptionHint')}</span>
               </span>
               <textarea
                 className="input cap-dialog__textarea"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="这个功能做什么、什么时候该用、返回什么。"
+                placeholder={t('ability.tool.descriptionPlaceholder')}
                 rows={3}
               />
             </label>
 
             <div className="field">
               <span className="field__label">
-                参数
+                {t('ability.field.params')}
                 <span className="field__hint">
                   {runtime === 'executable'
-                    ? '会替换命令里的 {参数名}'
-                    : '按声明顺序作为命令行参数，也可从 EZNESS_TOOL_ARGS 读取'}
+                    ? t('ability.tool.executableParamsHint')
+                    : t('ability.tool.scriptParamsHint')}
                 </span>
               </span>
               {parameters.length > 0 && (
                 <div className="cap-param-list">
                   <div className="cap-param-head">
-                    <span>名称</span>
-                    <span>类型</span>
-                    <span>必填</span>
-                    <span>说明</span>
+                    <span>{t('ability.field.name')}</span>
+                    <span>{t('ability.field.type')}</span>
+                    <span>{t('ability.field.required')}</span>
+                    <span>{t('ability.field.description')}</span>
                     <span />
                   </div>
                   {parameters.map((parameter, index) => (
@@ -1783,7 +1886,7 @@ function CustomToolDialog({
                         className="input"
                         value={parameter.name}
                         onChange={(event) => patchParameter(index, { name: event.target.value })}
-                        placeholder="参数名"
+                        placeholder={t('ability.field.paramName')}
                         spellCheck={false}
                       />
                       <select
@@ -1817,8 +1920,8 @@ function CustomToolDialog({
                         <option value="string">string</option>
                         <option value="number">number</option>
                         <option value="boolean">boolean</option>
-                        <option value="secret-text">保密文本</option>
-                        <option value="secret-file">保密文件</option>
+                        <option value="secret-text">{t('ability.option.secretText')}</option>
+                        <option value="secret-file">{t('ability.option.secretFile')}</option>
                       </select>
                       <label className="cap-check">
                         <input
@@ -1828,7 +1931,7 @@ function CustomToolDialog({
                             patchParameter(index, { required: event.target.checked })
                           }
                         />
-                        必填
+                        {t('ability.field.required')}
                       </label>
                       <input
                         className="input"
@@ -1836,12 +1939,16 @@ function CustomToolDialog({
                         onChange={(event) =>
                           patchParameter(index, { description: event.target.value })
                         }
-                        placeholder={parameter.secret ? '说明（给用户看，填写在确认卡片里）' : '说明（给模型看）'}
+                        placeholder={
+                          parameter.secret
+                            ? t('ability.field.secretDesc')
+                            : t('ability.field.paramDesc')
+                        }
                       />
                       <button
                         type="button"
                         className="cap-param-row__del"
-                        title="删除参数"
+                        title={t('ability.field.removeParam')}
                         onClick={() =>
                           setParameters((prev) => prev.filter((_item, at) => at !== index))
                         }
@@ -1858,18 +1965,18 @@ function CustomToolDialog({
                 onClick={() => setParameters((prev) => [...prev, { ...EMPTY_PARAMETER }])}
               >
                 <PlusIcon size={13} />
-                添加参数
+                {t('ability.action.addParam')}
               </button>
             </div>
           </div>
 
           <div className="cap-dialog__section">
-            <div className="cap-dialog__section-title">执行配置</div>
+            <div className="cap-dialog__section-title">{t('ability.section.execution')}</div>
 
             <label className="field">
               <span className="field__label">
-                语言 / 运行时
-                <span className="field__hint">脚本在独立子进程里运行，不会加载进 Ezness</span>
+                {t('ability.field.runtime')}
+                <span className="field__hint">{t('ability.field.runtimeHint')}</span>
               </span>
               <select
                 className="select"
@@ -1880,8 +1987,8 @@ function CustomToolDialog({
                   <option key={item.id} value={item.id}>
                     {item.label}
                     {item.version ? ` · ${item.version}` : ''}
-                    {item.source === 'portable' ? '（便携）' : ''}
-                    {!item.available ? '（未检测到）' : ''}
+                    {item.source === 'portable' ? t('ability.runtime.portableSuffix') : ''}
+                    {!item.available ? t('ability.runtime.missingSuffix') : ''}
                   </option>
                 ))}
               </select>
@@ -1894,7 +2001,7 @@ function CustomToolDialog({
                   : runtime === 'executable'
                     ? runtimeInfo.hint
                     : [
-                        RUNTIME_SOURCE_LABEL[runtimeInfo.source],
+                        t(RUNTIME_SOURCE_LABEL_KEYS[runtimeInfo.source]),
                         runtimeInfo.version,
                         runtimeInfo.detail,
                       ]
@@ -1905,16 +2012,15 @@ function CustomToolDialog({
 
             {runtime !== 'node' && runtime !== 'executable' && (
               <p className="field__hint">
-                换电脑也能用：把便携版解释器放进数据目录的 runtimes/{runtime}/ 文件夹，Ezness
-                会优先使用它。
+                {t('ability.runtime.portableHint', { runtime })}
               </p>
             )}
 
             {runtime !== 'executable' && (
               <label className="field">
                 <span className="field__label">
-                  依赖包
-                  <span className="field__hint">保存测试时自动安装，不需要手动 pip / npm</span>
+                  {t('ability.field.dependencies')}
+                  <span className="field__hint">{t('ability.field.depsHint')}</span>
                 </span>
                 <input
                   className="input"
@@ -1932,9 +2038,9 @@ function CustomToolDialog({
               <>
                 <label className="field">
                   <span className="field__label">
-                    执行命令
+                    {t('ability.field.command')}
                     <span className="field__hint">
-                      例如 python "D:\tools\my_tool.py" --query {'{query}'}
+                      {t('ability.field.commandSample')} python "D:\tools\my_tool.py" --query {'{query}'}
                     </span>
                   </span>
                   <textarea
@@ -1946,47 +2052,42 @@ function CustomToolDialog({
                     spellCheck={false}
                   />
                 </label>
-                <p className="field__hint">
-                  按空格拆成参数，不经过 shell，因此不支持管道和重定向；用 {'{参数名}'} 引用调用参数。
-                </p>
+                <p className="field__hint">{t('ability.field.commandHint')}</p>
               </>
             ) : (
               <>
                 <label className="field">
                   <span className="field__label">
-                    脚本内容
-                    <span className="field__hint">stdout 会作为结果返回给模型</span>
+                    {t('ability.field.script')}
+                    <span className="field__hint">{t('ability.field.scriptHint')}</span>
                   </span>
                   <CodeEditor
                     value={script}
                     onChange={setScript}
                     language={runtime === 'python' ? 'python' : 'javascript'}
                     rows={12}
-                    ariaLabel="脚本内容"
+                    ariaLabel={t('ability.field.script')}
                   />
                 </label>
-                <p className="field__hint">
-                  参数通过环境变量 EZNESS_TOOL_ARGS（JSON）传入，也按声明顺序作为命令行参数；
-                  退出码 0 表示成功，stderr 会和 stdout 一起返回。
-                </p>
+                <p className="field__hint">{t('ability.field.scriptNote')}</p>
               </>
             )}
 
             <div className="field-grid">
               <label className="field">
                 <span className="field__label">
-                  运行目录
-                  <span className="field__hint">相对工作空间</span>
+                  {t('ability.field.cwd')}
+                  <span className="field__hint">{t('ability.field.cwdHint')}</span>
                 </span>
                 <input
                   className="input"
                   value={cwd}
                   onChange={(event) => setCwd(event.target.value)}
-                  placeholder=". （根目录）"
+                  placeholder={t('ability.field.cwdPlaceholder')}
                 />
               </label>
               <label className="field">
-                <span className="field__label">超时（毫秒）</span>
+                <span className="field__label">{t('ability.field.timeout')}</span>
                 <input
                   className="input"
                   type="number"
@@ -2001,7 +2102,7 @@ function CustomToolDialog({
           </div>
 
           <div className="cap-dialog__section">
-            <div className="cap-dialog__section-title">权限策略</div>
+            <div className="cap-dialog__section-title">{t('ability.section.policy')}</div>
 
             <div className="cap-dialog__checks">
               <label className="cap-check">
@@ -2010,7 +2111,7 @@ function CustomToolDialog({
                   checked={readOnly}
                   onChange={(event) => changeReadOnly(event.target.checked)}
                 />
-                只读功能（不修改任何内容）
+                {t('ability.field.readOnlyHint')}
               </label>
               <label className="cap-check">
                 <input
@@ -2018,7 +2119,7 @@ function CustomToolDialog({
                   checked={network}
                   onChange={(event) => setNetwork(event.target.checked)}
                 />
-                需要联网（受「联网」开关控制）
+                {t('ability.field.networkHint')}
               </label>
             </div>
 
@@ -2026,10 +2127,12 @@ function CustomToolDialog({
               <div className="cap-policy-grid">
                 {MODE_KEYS.map((mode) => (
                   <label className="cap-policy-row" key={mode}>
-                    <span className="cap-policy-row__mode">{MODE_LABEL[mode]}</span>
+                    <span className="cap-policy-row__mode">{t(MODE_LABEL_KEYS[mode])}</span>
                     <select
                       className="select cap-policy-select"
-                      aria-label={`${MODE_LABEL[mode]}权限`}
+                      aria-label={t('ability.policy.aria', {
+                        mode: t(MODE_LABEL_KEYS[mode]),
+                      })}
                       value={policy[mode]}
                       onChange={(event) =>
                         setPolicy((prev) => ({
@@ -2038,9 +2141,9 @@ function CustomToolDialog({
                         }))
                       }
                     >
-                      <option value="allow">自动执行</option>
-                      <option value="ask">询问</option>
-                      <option value="deny">禁止</option>
+                      <option value="allow">{t('ability.decision.autoRun')}</option>
+                      <option value="ask">{t('ability.decision.ask')}</option>
+                      <option value="deny">{t('ability.decision.deny')}</option>
                     </select>
                   </label>
                 ))}
@@ -2048,10 +2151,8 @@ function CustomToolDialog({
             )}
 
             <p className="cap-row__note">
-              {readOnly
-                ? '只读功能：四种权限模式下都自动执行。'
-                : '变更功能：每个权限模式可以分别选择自动执行、询问或禁止。'}
-              {network && ' 调用前需要打开本次对话的「联网」开关。'}
+              {readOnly ? t('ability.policy.readOnlyNote') : t('ability.policy.mutatingNote')}
+              {network && ` ${t('ability.policy.networkNote')}`}
             </p>
           </div>
 
@@ -2064,10 +2165,10 @@ function CustomToolDialog({
 
         <footer className="cap-dialog__actions">
           <button type="button" className="btn btn--ghost" onClick={onClose}>
-            取消
+            {t('ability.action.cancel')}
           </button>
           <button type="submit" className="btn btn--primary" disabled={saving}>
-            {saving ? '保存中…' : '保存'}
+            {saving ? t('ability.action.saving') : t('ability.action.save')}
           </button>
         </footer>
       </form>
@@ -2091,6 +2192,7 @@ function TestArgsDialog({
   onCancel: () => void;
   onSubmit: (args: Record<string, unknown>) => void;
 }) {
+  const { t } = useI18n();
   const parameters = definition.parameters ?? [];
   const [values, setValues] = useState<Record<string, string>>(() => {
     const next: Record<string, string> = {};
@@ -2108,7 +2210,7 @@ function TestArgsDialog({
     for (const parameter of parameters) {
       const raw = (values[parameter.name] ?? '').trim();
       if (parameter.type !== 'boolean' && parameter.required && raw === '') {
-        setError(`请填写参数「${parameter.name}」。`);
+        setError(t('ability.test.requiredParam', { name: parameter.name }));
         return;
       }
       if (parameter.type === 'number') {
@@ -2134,27 +2236,30 @@ function TestArgsDialog({
         className="modal__panel cap-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="测试参数"
+        aria-label={t('ability.test.argsTitle')}
         onSubmit={submit}
       >
         <header className="cap-dialog__head">
-          <h2 className="modal__title">测试「{definition.name}」</h2>
-          <p className="cap-dialog__sub">
-            先填一组参数，本地真的运行一次脚本；这些参数不会发给模型。
-            测试通过后功能才会启用，失败会标红并暂停使用。
-          </p>
+          <h2 className="modal__title">
+            {t('ability.test.title', { name: definition.name })}
+          </h2>
+          <p className="cap-dialog__sub">{t('ability.test.subtitle')}</p>
         </header>
 
         <div className="cap-dialog__body">
           <div className="cap-dialog__section">
-            <div className="cap-dialog__section-title">测试参数</div>
+            <div className="cap-dialog__section-title">{t('ability.test.argsTitle')}</div>
             <div className="field-grid">
               {parameters.map((parameter) => (
                 <label className="field" key={parameter.name}>
                   <span className="field__label">
                     {parameter.name}
                     <span className="field__hint">
-                      {parameter.required ? '必填' : '可选'} · {parameter.type}
+                      {parameter.required
+                        ? t('ability.field.required')
+                        : t('ability.field.optional')}
+                      {' · '}
+                      {parameter.type}
                     </span>
                   </span>
                   {parameter.type === 'boolean' ? (
@@ -2192,10 +2297,10 @@ function TestArgsDialog({
 
         <footer className="cap-dialog__actions">
           <button type="button" className="btn btn--ghost" onClick={onCancel}>
-            取消
+            {t('ability.action.cancel')}
           </button>
           <button type="submit" className="btn btn--primary">
-            开始测试
+            {t('ability.test.start')}
           </button>
         </footer>
       </form>

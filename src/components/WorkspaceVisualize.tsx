@@ -17,6 +17,7 @@ import {
   vizRunSnapshot,
 } from '../lib/vizRunner';
 import { ChartIcon, CloseIcon, CollapseIcon, ExpandIcon, ScanIcon } from './Icons';
+import { useI18n } from '../i18n';
 import { VizChartCard } from './VizChart';
 import { VizTableSheet } from './VizTableSheet';
 
@@ -77,14 +78,14 @@ interface Props {
   onClose: () => void;
 }
 
-const PRESETS = [
-  '折线图',
-  '曲线图',
-  '散点图',
-  '饼图',
-  '柱状图',
-  '条形图',
-  '分组柱状图',
+const PRESET_KEYS = [
+  'workspace.viz.preset.line',
+  'workspace.viz.preset.curve',
+  'workspace.viz.preset.scatter',
+  'workspace.viz.preset.pie',
+  'workspace.viz.preset.column',
+  'workspace.viz.preset.bar',
+  'workspace.viz.preset.groupedColumn',
 ];
 
 export function WorkspaceVisualize({
@@ -98,6 +99,7 @@ export function WorkspaceVisualize({
   target,
   onClose,
 }: Props) {
+  const { t } = useI18n();
   const api = window.ezness;
   const key = storeKey(workspaceId, activeChatId);
   const stored = useRef<StoredDashboard | null>(null);
@@ -187,11 +189,11 @@ export function WorkspaceVisualize({
 
   function run() {
     if (!api?.workspaceVisualize) {
-      setError('这个版本还不能生成可视化，请先更新应用。');
+      setError(t('workspace.viz.error.unsupported'));
       return;
     }
     if (!target) {
-      setError('还没有连接模型。先去「设置 → 模型接入」填好地址并获取模型。');
+      setError(t('workspace.viz.error.noModel'));
       return;
     }
     const asked = topic.trim();
@@ -208,6 +210,9 @@ export function WorkspaceVisualize({
       scope,
       topic: asked,
       provider: target,
+      // A run can outlive this dialog and fail later; its stored error text is
+      // built by the runner, so it needs the translator rather than a string.
+      translate: t,
       // Saved here rather than in the component: the run may finish long after
       // the dialog was closed.
       onResult: (next) => writeStored(key, { scope, topic: asked, at: Date.now(), result: next }),
@@ -225,7 +230,9 @@ export function WorkspaceVisualize({
   };
 
   const placeholder =
-    scope === 'task' ? '不填则梳理当前任务里的数据' : '不填则汇总整个工作空间';
+    scope === 'task'
+      ? t('workspace.viz.placeholderTask')
+      : t('workspace.viz.placeholderWorkspace');
 
   return (
     <div
@@ -238,38 +245,35 @@ export function WorkspaceVisualize({
         className={`modal__panel viz-dialog ${fullscreen ? 'is-full' : ''}`}
         role="dialog"
         aria-modal="true"
-        aria-label="可视化工具"
+        aria-label={t('workspace.viz.title')}
       >
         <header className="viz-dialog__head">
           <div className="viz-dialog__titles">
             <h2 className="modal__title">
               <ChartIcon size={16} />
-              可视化工具
+              {t('workspace.viz.title')}
             </h2>
-            <p className="viz-dialog__sub">
-              把当前任务里的对话和表格数据做成一块看板。表格（对话里的 Markdown 表格，以及工作空间里的
-              Excel、SQLite、CSV、JSON、Markdown 文件）会先按行列读出真实数据，再按指标汇总成图表。
-            </p>
+            <p className="viz-dialog__sub">{t('workspace.viz.subtitle')}</p>
           </div>
           <div className="viz-dialog__actions">
             {result && !running && (
               <div className="viz-clear">
                 {confirmClear ? (
                   <>
-                    <span className="viz-clear__ask">清空这块看板？</span>
+                    <span className="viz-clear__ask">{t('workspace.viz.clear.ask')}</span>
                     <button
                       type="button"
                       className="viz-clear__btn viz-clear__btn--danger"
                       onClick={clearResult}
                     >
-                      确认清空
+                      {t('workspace.viz.clear.confirm')}
                     </button>
                     <button
                       type="button"
                       className="viz-clear__btn"
                       onClick={() => setConfirmClear(false)}
                     >
-                      取消
+                      {t('workspace.viz.clear.cancel')}
                     </button>
                   </>
                 ) : (
@@ -278,7 +282,7 @@ export function WorkspaceVisualize({
                     className="viz-clear__btn"
                     onClick={() => setConfirmClear(true)}
                   >
-                    清空
+                    {t('workspace.viz.clear.clear')}
                   </button>
                 )}
               </div>
@@ -286,14 +290,27 @@ export function WorkspaceVisualize({
             <button
               type="button"
               className="viz-dialog__icon"
-              aria-label={fullscreen ? '退出全屏' : '全屏'}
+              aria-label={
+                fullscreen
+                  ? t('workspace.viz.exitFullscreen')
+                  : t('workspace.viz.fullscreen')
+              }
               aria-pressed={fullscreen}
-              title={fullscreen ? '退出全屏' : '全屏'}
+              title={
+                fullscreen
+                  ? t('workspace.viz.exitFullscreen')
+                  : t('workspace.viz.fullscreen')
+              }
               onClick={() => applyFullscreen(!fullscreen)}
             >
               {fullscreen ? <CollapseIcon size={15} /> : <ExpandIcon size={15} />}
             </button>
-            <button type="button" className="viz-dialog__close" aria-label="关闭" onClick={onClose}>
+            <button
+              type="button"
+              className="viz-dialog__close"
+              aria-label={t('workspace.viz.close')}
+              onClick={onClose}
+            >
               <CloseIcon size={15} />
             </button>
           </div>
@@ -305,7 +322,7 @@ export function WorkspaceVisualize({
             ref={inputRef}
             value={topic}
             placeholder={placeholder}
-            aria-label="想总结的方向"
+            aria-label={t('workspace.viz.inputAria')}
             spellCheck={false}
             disabled={running}
             onChange={(event) => setTopic(event.target.value)}
@@ -314,21 +331,29 @@ export function WorkspaceVisualize({
               cancel, or a double click throws the generation away. */}
           {running && (
             <button type="button" className="viz-ask__stop" onClick={stopRun}>
-              停止
+              {t('workspace.viz.stop')}
             </button>
           )}
           <button
             type="submit"
             className="btn btn--primary viz-ask__go"
             disabled={running || !target}
-            title={target ? '' : '还没有连接模型'}
+            title={target ? '' : t('workspace.viz.noModelTitle')}
           >
-            {running ? '生成中…' : result ? '重新生成' : '生成'}
+            {running
+              ? t('workspace.viz.generating')
+              : result
+                ? t('workspace.viz.regenerate')
+                : t('workspace.viz.generate')}
           </button>
         </form>
 
         {activeChatId && (
-          <div className="viz-scope" role="group" aria-label="数据范围">
+          <div
+            className="viz-scope"
+            role="group"
+            aria-label={t('workspace.viz.scopeAria')}
+          >
             <button
               type="button"
               className={`viz-scope__item ${scope === 'task' ? 'is-active' : ''}`}
@@ -336,7 +361,9 @@ export function WorkspaceVisualize({
               disabled={running}
               onClick={() => setScope('task')}
             >
-              当前任务{taskTitle ? `：${taskTitle}` : ''}
+              {taskTitle
+                ? t('workspace.viz.scope.taskWithTitle', { title: taskTitle })
+                : t('workspace.viz.scope.task')}
             </button>
             <button
               type="button"
@@ -345,7 +372,7 @@ export function WorkspaceVisualize({
               disabled={running}
               onClick={() => setScope('workspace')}
             >
-              整个工作空间
+              {t('workspace.viz.scope.workspace')}
             </button>
           </div>
         )}
@@ -354,7 +381,7 @@ export function WorkspaceVisualize({
           {running && result && (
             <div className="viz-running">
               <ScanIcon size={13} />
-              正在按新的关注点重新生成…
+              {t('workspace.viz.state.regenerating')}
             </div>
           )}
 
@@ -365,7 +392,7 @@ export function WorkspaceVisualize({
           {snapshot?.status === 'stopped' && (
             <div className="viz-running">
               <ScanIcon size={13} />
-              已停止这次生成。
+              {t('workspace.viz.state.stopped')}
             </div>
           )}
 
@@ -374,33 +401,38 @@ export function WorkspaceVisualize({
               <div className="viz-intro__icon">
                 <ChartIcon size={24} />
               </div>
-              <h3>把对话里的数据变成看板</h3>
-              <p>
-                默认只看当前任务：对话里的统计数字、Markdown 表格，以及工作空间里 Agent
-                写出的 Excel、SQLite、CSV 等文件的真实数据都会被读出来（按国家、年龄、性别、
-                年份这类指标汇总），排成一块看板。图只在本机展示，不会写回任务或消息。
-              </p>
+              <h3>{t('workspace.viz.intro.title')}</h3>
+              <p>{t('workspace.viz.intro.desc')}</p>
               <div className="viz-presets">
-                {PRESETS.map((item) => (
-                  <span key={item}>{item}</span>
+                {PRESET_KEYS.map((item) => (
+                  <span key={item}>{t(item)}</span>
                 ))}
               </div>
-              {!target && <p className="viz-intro__warn">还没有连接模型，先去设置里接入一个再回来。</p>}
+              {!target && (
+                <p className="viz-intro__warn">{t('workspace.viz.intro.warn')}</p>
+              )}
             </div>
           )}
 
           {running && !result && (
             <div className="viz-state">
               <ScanIcon size={22} />
-              <p>正在梳理{scope === 'task' ? '当前任务' : '这个工作空间'}里的数据…</p>
-              <span>会先读出对话和本地表格，再规划图表，通常需要十几秒。</span>
+              <p>
+                {t('workspace.viz.state.title', {
+                  scope:
+                    scope === 'task'
+                      ? t('workspace.viz.state.scopeTask')
+                      : t('workspace.viz.state.scopeWorkspace'),
+                })}
+              </p>
+              <span>{t('workspace.viz.state.hint')}</span>
             </div>
           )}
 
           {result && (
             <div className={`viz-result ${running ? 'is-stale' : ''}`}>
               <section className="viz-summary">
-                <h3>{result.title || '数据看板'}</h3>
+                <h3>{result.title || t('workspace.viz.result.title')}</h3>
                 {result.summary && <p>{result.summary}</p>}
                 {result.highlights && result.highlights.length > 0 && (
                   <ul>
@@ -435,14 +467,10 @@ export function WorkspaceVisualize({
                   ))}
                 </div>
               ) : (
-                <div className="viz-empty-note">
-                  这次没有生成图表。可以在关注点里写清楚要看的指标，例如「各国死亡人数对比」。
-                </div>
+                <div className="viz-empty-note">{t('workspace.viz.result.empty')}</div>
               )}
 
-              <p className="viz-foot">
-                图表由模型根据读到的数据生成。每张图右上角可以切到表格核对具体数值。
-              </p>
+              <p className="viz-foot">{t('workspace.viz.result.foot')}</p>
             </div>
           )}
         </div>

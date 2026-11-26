@@ -14,6 +14,25 @@
 import type { ChatTarget, ChatStreamEvent, ChatTurn, Message, UsageFeature, UsageRecord } from '../types';
 import { estimateTokens } from './chat';
 
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * English fallbacks for callers that do not pass a translator yet, so a failed
+ * compression never surfaces a raw i18n key.
+ */
+const FALLBACK_ERRORS: Record<string, string> = {
+  'app.compression.desktopOnly': 'Compression is only available in the desktop app.',
+  'app.compression.canceled': 'Compression cancelled.',
+  'app.compression.requestFailed': 'The compression request failed.',
+  'app.compression.requestNotStarted': 'The compression request could not start.',
+  'app.compression.empty': 'There are no messages to compress.',
+  'app.compression.noContent': 'Compression returned no content.',
+};
+
+function translateError(t: Translate | undefined, key: string): string {
+  return t ? t(key) : (FALLBACK_ERRORS[key] ?? key);
+}
+
 /** Tokens per map step. Long inputs are summarised in pieces, then merged. */
 export const MAX_CHUNK_TOKENS = 20_000;
 
@@ -223,12 +242,19 @@ function newRequestId(): string {
 }
 
 /** One non-streaming, independent completion on the conversation's model. */
-function completeOnce(target: ChatTarget, messages: ChatTurn[], token: CompressionToken): Promise<string> {
+function completeOnce(
+  target: ChatTarget,
+  messages: ChatTurn[],
+  token: CompressionToken,
+  t?: Translate,
+): Promise<string> {
   const api = window.ezness;
   if (!api?.chatSend || !api.onChatEvent) {
-    return Promise.reject(new Error('压缩只在桌面端可用。'));
+    return Promise.reject(new Error(translateError(t, 'app.compression.desktopOnly')));
   }
-  if (token.canceled) return Promise.reject(new Error('已取消压缩。'));
+  if (token.canceled) {
+    return Promise.reject(new Error(translateError(t, 'app.compression.canceled')));
+  }
 
   const requestId = newRequestId();
   return new Promise<string>((resolve, reject) => {
@@ -256,13 +282,16 @@ function completeOnce(target: ChatTarget, messages: ChatTurn[], token: Compressi
       // abort every compression on such models before the answer arrived.
       if (event.type === 'thinking') return;
       if (event.type === 'done') finish();
-      else if (event.type === 'aborted') finish(new Error('已取消压缩。'));
-      else if (event.type === 'error') finish(new Error(event.error || '压缩请求失败。'));
+      else if (event.type === 'aborted') {
+        finish(new Error(translateError(t, 'app.compression.canceled')));
+      } else if (event.type === 'error') {
+        finish(new Error(event.error || translateError(t, 'app.compression.requestFailed')));
+      }
     });
 
     token.abort = () => {
       void api.chatAbort?.(requestId);
-      finish(new Error('已取消压缩。'));
+      finish(new Error(translateError(t, 'app.compression.canceled')));
     };
 
     void api
@@ -270,7 +299,9 @@ function completeOnce(target: ChatTarget, messages: ChatTurn[], token: Compressi
       .then((ok: boolean) => {
         // The main process refuses the request before emitting anything when
         // the provider is incomplete; without this the promise would hang.
-        if (ok === false) finish(new Error('压缩请求未能启动。'));
+        if (ok === false) {
+          finish(new Error(translateError(t, 'app.compression.requestNotStarted')));
+        }
       })
       .catch((error: unknown) => {
         finish(new Error(error instanceof Error ? error.message : String(error)));
@@ -287,20 +318,23 @@ export async function compressConversation({
   messages,
   token,
   onProgress,
+  t,
 }: {
   target: ChatTarget;
   messages: Message[];
   token: CompressionToken;
   onProgress?: (progress: CompressionProgress) => void;
+  /** Translator from the calling component; English copy is used without one. */
+  t?: Translate;
 }): Promise<CompressionResult> {
   const chunks = chunkMessages(messages);
-  if (chunks.length === 0) throw new Error('没有可压缩的消息。');
+  if (chunks.length === 0) throw new Error(translateError(t, 'app.compression.empty'));
 
   const total = chunks.length + (chunks.length > 1 ? 1 : 0);
   const notes: string[] = [];
 
   for (let index = 0; index < chunks.length; index += 1) {
-    if (token.canceled) throw new Error('已取消压缩。');
+    if (token.canceled) throw new Error(translateError(t, 'app.compression.canceled'));
     onProgress?.({ step: index + 1, total, phase: 'map' });
     const note = await completeOnce(
       target,
@@ -309,14 +343,15 @@ export async function compressConversation({
         { role: 'user', content: `【对话片段】\n${transcriptOf(chunks[index])}` },
       ],
       token,
+      t,
     );
-    if (!note) throw new Error('压缩没有返回内容。');
+    if (!note) throw new Error(translateError(t, 'app.compression.noContent'));
     notes.push(note);
   }
 
   let summary = notes[0];
   if (notes.length > 1) {
-    if (token.canceled) throw new Error('已取消压缩。');
+    if (token.canceled) throw new Error(translateError(t, 'app.compression.canceled'));
     onProgress?.({ step: total, total, phase: 'reduce' });
     summary = await completeOnce(
       target,
@@ -325,8 +360,9 @@ export async function compressConversation({
         { role: 'user', content: notes.map((note, index) => `【第 ${index + 1} 段】\n${note}`).join('\n\n') },
       ],
       token,
+      t,
     );
-    if (!summary) throw new Error('压缩没有返回内容。');
+    if (!summary) throw new Error(translateError(t, 'app.compression.noContent'));
   }
 
   return {

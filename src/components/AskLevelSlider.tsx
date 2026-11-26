@@ -1,20 +1,39 @@
 import type { CSSProperties } from 'react';
 import type { AskLevel } from '../types';
+import { useI18n } from '../i18n';
+
+export type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 /** The four stops of the question slider. */
-export const ASK_LEVELS: { level: AskLevel; name: string; hint: string }[] = [
+export const ASK_LEVELS: { level: AskLevel; nameKey: string; hintKey: string }[] = [
   {
     level: 0,
-    name: '自动',
-    hint: '不再询问：常规操作直接执行，破坏性命令先交给独立 AI 评估，评估认为有风险时由你决定是否执行。',
+    nameKey: 'workspace.askLevel.auto',
+    hintKey: 'workspace.askLevel.autoHint',
   },
-  { level: 1, name: '1 级', hint: '只有破坏性操作或工作空间之外的命令才询问。' },
-  { level: 2, name: '2 级', hint: '关键操作才询问：未知命令、自定义功能等。' },
-  { level: 3, name: '3 级', hint: '常规操作也询问：修改文件、不熟悉的命令。' },
+  {
+    level: 1,
+    nameKey: 'workspace.askLevel.level1',
+    hintKey: 'workspace.askLevel.level1Hint',
+  },
+  {
+    level: 2,
+    nameKey: 'workspace.askLevel.level2',
+    hintKey: 'workspace.askLevel.level2Hint',
+  },
+  {
+    level: 3,
+    nameKey: 'workspace.askLevel.level3',
+    hintKey: 'workspace.askLevel.level3Hint',
+  },
 ];
 
-export function askLevelName(level: AskLevel): string {
-  return ASK_LEVELS[level]?.name ?? ASK_LEVELS[3].name;
+export function askLevelNameKey(level: AskLevel): string {
+  return (ASK_LEVELS[level] ?? ASK_LEVELS[3]).nameKey;
+}
+
+export function askLevelName(level: AskLevel, t: Translate): string {
+  return t(askLevelNameKey(level));
 }
 
 interface Props {
@@ -30,7 +49,9 @@ interface Props {
  * input so arrow keys work, with the labels below acting as buttons.
  */
 export function AskLevelSlider({ value, onChange, disabled, hideHint }: Props) {
+  const { t } = useI18n();
   const percent = (value / 3) * 100;
+  const current = ASK_LEVELS[value] ?? ASK_LEVELS[3];
   return (
     <div className={`ask-slider ${disabled ? 'is-disabled' : ''}`}>
       <input
@@ -41,7 +62,7 @@ export function AskLevelSlider({ value, onChange, disabled, hideHint }: Props) {
         step={1}
         value={value}
         disabled={disabled}
-        aria-label="问询级别"
+        aria-label={t('workspace.askLevel.aria')}
         style={{ '--ask-fill': `${percent}%` } as CSSProperties}
         onChange={(event) => onChange(Number(event.target.value) as AskLevel)}
       />
@@ -56,11 +77,11 @@ export function AskLevelSlider({ value, onChange, disabled, hideHint }: Props) {
             onClick={() => onChange(item.level)}
           >
             <span className="ask-slider__dot" />
-            {item.name}
+            {t(item.nameKey)}
           </button>
         ))}
       </div>
-      {!hideHint && <p className="ask-slider__hint">{ASK_LEVELS[value]?.hint}</p>}
+      {!hideHint && <p className="ask-slider__hint">{t(current.hintKey)}</p>}
     </div>
   );
 }

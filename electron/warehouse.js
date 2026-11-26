@@ -10,6 +10,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID, createHash } = require('node:crypto');
+const uiText = require('./ui-text');
 
 const MANIFEST = 'warehouse.json';
 const FILES_DIR = 'files';
@@ -46,7 +47,10 @@ function normalizeItem(raw) {
   const ext = String(raw.ext || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   return {
     id: raw.id,
-    name: typeof raw.name === 'string' && raw.name ? raw.name : `未命名${ext ? `.${ext}` : ''}`,
+    name:
+      typeof raw.name === 'string' && raw.name
+        ? raw.name
+        : uiText.t('main.warehouse.unnamed', { suffix: ext ? `.${ext}` : '' }),
     size: Number.isFinite(raw.size) ? raw.size : 0,
     ext,
     kind: raw.kind === 'image' || kindOf(ext) === 'image' ? 'image' : 'file',
@@ -250,7 +254,7 @@ class Warehouse {
         const full = String(raw || '');
         try {
           const stat = await fsp.stat(full);
-          if (!stat.isFile()) throw new Error('不是文件');
+          if (!stat.isFile()) throw new Error(uiText.t('main.warehouse.notAFile'));
 
           const hash = await hashFile(full);
           const existing = await this.findByContent(stat.size, hash);
@@ -302,14 +306,18 @@ class Warehouse {
             continue;
           }
 
-          const name = rawName || '未命名文件';
+          const name = rawName || uiText.t('main.warehouse.unnamed', { suffix: '' });
           const item = this.makeItem(name, data.length, source, hash);
 
           await fsp.writeFile(this.filePath(item), data);
           this.items.push(item);
           added.push(publicItem(item));
         } catch (error) {
-          errors.push(`${rawName || '剪贴板文件'}: ${error?.message || String(error)}`);
+          errors.push(
+            `${rawName || uiText.t('main.warehouse.clipboardFile')}: ${
+              error?.message || String(error)
+            }`,
+          );
         }
       }
 
@@ -409,19 +417,19 @@ class Warehouse {
    */
   async migrate(rawTarget) {
     await this.load();
-    if (!rawTarget) throw new Error('没有选择新的存储位置');
+    if (!rawTarget) throw new Error(uiText.t('main.warehouse.noTarget'));
 
     const current = path.resolve(this.root);
     const target = path.resolve(String(rawTarget));
 
     if (target === current) return this.snapshot();
     if (target.startsWith(current + path.sep) || current.startsWith(target + path.sep)) {
-      throw new Error('不能在仓库目录内部互相迁移，请选择其他位置');
+      throw new Error(uiText.t('main.warehouse.insideWarehouse'));
     }
 
     try {
       const entries = await fsp.readdir(target);
-      if (entries.length > 0) throw new Error('目标文件夹不是空目录，请换一个位置');
+      if (entries.length > 0) throw new Error(uiText.t('main.warehouse.targetNotEmpty'));
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
     }
@@ -439,7 +447,9 @@ class Warehouse {
       );
     } catch (error) {
       await fsp.rm(target, { recursive: true, force: true }).catch(() => undefined);
-      throw new Error(`迁移失败：${error?.message || String(error)}`);
+      throw new Error(
+        uiText.t('main.warehouse.migrateFailed', { error: error?.message || String(error) }),
+      );
     }
 
     const missing = this.items.filter(
@@ -447,7 +457,7 @@ class Warehouse {
     );
     if (missing.length > 0) {
       await fsp.rm(target, { recursive: true, force: true }).catch(() => undefined);
-      throw new Error(`迁移校验失败：${missing.length} 个文件没有复制过去，已保留原位置`);
+      throw new Error(uiText.t('main.warehouse.verifyFailed', { count: missing.length }));
     }
 
     // Switch first, then clean the old copy; if deletion fails the data is

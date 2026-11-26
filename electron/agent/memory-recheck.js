@@ -15,6 +15,7 @@
 
 const { streamChat } = require('../chat');
 const { webSearch } = require('../websearch');
+const uiText = require('../ui-text');
 const memory = require('./memory');
 
 const SYSTEM_PROMPT = `你是 Ezness 的记忆核验器。给你一条旧记忆和当前的搜索结果，判断它现在是否仍然正确。
@@ -131,7 +132,9 @@ async function verifyEntry({ entry, provider, webEntries = null, searchImpl = we
   if (!search?.ok || !Array.isArray(search.results) || search.results.length === 0) {
     return {
       kind: 'unverifiable',
-      reason: `没有搜到可用于核对的资料${search?.error ? `（${search.error}）` : ''}。`,
+      reason: search?.error
+        ? uiText.t('main.memory.recheck.noResultsDetail', { error: search.error })
+        : uiText.t('main.memory.recheck.noResults'),
       search,
     };
   }
@@ -172,7 +175,9 @@ async function verifyEntry({ entry, provider, webEntries = null, searchImpl = we
   } catch (error) {
     return {
       kind: 'unverifiable',
-      reason: `核验模型调用失败（${error?.message || String(error)}）。`,
+      reason: uiText.t('main.memory.recheck.modelFailed', {
+        error: error?.message || String(error),
+      }),
       search,
       usage: error?.usage,
     };
@@ -195,7 +200,7 @@ async function verifyEntry({ entry, provider, webEntries = null, searchImpl = we
   if (kind === 'changed' && !String(parsed?.content ?? '').trim()) {
     return {
       kind: 'unverifiable',
-      reason: '核验认为有变化，但没有给出可用的新内容。',
+      reason: uiText.t('main.memory.recheck.noNewContent'),
       search,
       usage: result?.usage,
     };
