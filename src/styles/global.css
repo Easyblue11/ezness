@@ -765,11 +765,11 @@ button {
   overflow-y: auto;
   /* No top padding: a sticky code header pins to the scrollport's edge, and
      padding here would leave a strip of scrolling code above it.
-     The composer floats over the transcript (see `.composer`), so its height
+     The input dock (`.chat__foot`) floats over the transcript, so its height
      is reserved as padding instead of shrinking the scrollport: growing the
      input must never re-lay-out the conversation, which gets slower the longer
-     the transcript is. `--composer-h` is kept current from Composer.tsx. */
-  padding: 0 0 calc(var(--composer-h, 96px) + 10px);
+     the transcript is. `--chat-foot-h` is kept current from Composer.tsx. */
+  padding: 0 0 calc(var(--chat-foot-h, 96px) + 10px);
   /* The view is pinned by script; browser scroll anchoring would fight it and
      shift the reader's position whenever markdown re-lays-out mid-stream. */
   overflow-anchor: none;
@@ -1478,17 +1478,22 @@ button {
 /* ---------- composer ---------- */
 
 .composer {
-  /* Floats over the transcript rather than sitting in the flex column: in flow,
-     every textarea growth shrank `.chat__body` and forced a full-document
-     layout of the whole conversation on each keystroke. The scroll box reserves
-     this height as padding instead, so typing only lays out the composer. */
+  flex: none;
+  padding: 4px 28px 14px;
+}
+
+/* The bottom dock: confirmation cards, questions, the todo list and the
+   composer. It floats over the transcript so growing any of them never
+   re-lays-out the conversation; `.chat__body` reserves its height instead. */
+.chat__foot {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 4;
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
-  padding: 4px 28px 14px;
 }
 
 .composer__box {
@@ -7490,6 +7495,75 @@ button {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+/* 总监派出的员工收成一个折叠组：组头比任务行矮一档，只回答"多少个、几个在跑"，
+   免得一次派工就把用户自己的任务挤出列表。 */
+.ws-group {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-faint);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.ws-group:hover {
+  background: var(--bg-hover);
+  color: var(--text-dim);
+}
+
+.ws-group:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.ws-group__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-group__count {
+  flex: none;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+
+.ws-group__running {
+  flex: none;
+  font-size: 10px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.ws-group__running.is-attention {
+  color: var(--warning);
+}
+
+/* 缩进加一道竖线，一眼看出这些任务属于上面那个组，而不是又一个普通任务。 */
+.ws-group__items {
+  margin-left: 13px;
+  padding-left: 4px;
+  border-left: 1px solid var(--border);
+}
+
 .ws-chat__text {
   flex: 1;
   min-width: 0;
@@ -9758,12 +9832,8 @@ button {
 
 /* Plan mode hand-off: the plan is done, ask before executing it. */
 .plan-start {
-  /* Floats just above the composer, which no longer takes part in the column. */
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: calc(var(--composer-h, 96px) + 10px);
-  z-index: 4;
+  flex: none;
+  margin: 0 18px 10px;
   padding: 10px 14px;
   display: flex;
   align-items: center;
@@ -14338,7 +14408,7 @@ button {
 }
 
 .chat__pending--down {
-  bottom: 116px;
+  bottom: calc(var(--chat-foot-h, 116px) + 16px);
 }
 
 .chat__pending--up {

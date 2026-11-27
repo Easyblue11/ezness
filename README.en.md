@@ -361,15 +361,22 @@ back at it on another machine.
 
 ## Maintenance log
 
-### 2026-11-25
+### 2026-11-27
 
-- You now choose what closing the window does: **Settings → System** has a "When closing
-  the window" option with minimize to tray, quit, or ask every time. The first ✕ asks once —
-  minimize to tray is the default — and the answer is remembered. Dismissing the prompt
-  (✕ or Esc) is not a decision: nothing happens and the window stays open. While minimized to tray
-  the app keeps running in the background and tasks in progress are not interrupted;
-  double-click the tray icon to come back, or right-click it to quit. The prompt and the
-  tray menu follow the interface language (Chinese / English).
+- The composer keeps a separate draft for every conversation and task: switch away and back to
+  find the text you had not sent and the files you had picked still there; sending or clearing it
+  drops the draft. Drafts live in memory only and do not survive a restart.
+- Employees created by the Work Director now sit in one collapsible group in the task list. The
+  header shows how many there are and how many are active or waiting; pinned employees stay in the
+  main list, a search flattens the group, and batch selection or an open employee task expands it
+  automatically. Employees do not take part in drag-to-reorder.
+- The same permission or question card is no longer asked twice. Once you answer in the task's own
+  conversation, the matching card in the Work Director closes and says it was handled in the task;
+  if the request is already gone, clicking it settles the card instead of leaving a dead button.
+- Temporary scripts, logs and intermediate files in `.ezness` no longer ask for confirmation each
+  time, and session-only prefixes such as `cd`, `set`, `chcp` and `pushd` are no longer treated as
+  unknown commands; `2>&1` and `>nul` no longer split an ordinary command into an unknown segment.
+  Real files in the workspace, paths outside it, and destructive commands still ask.
 
 ### 2026-11-26
 
@@ -386,6 +393,16 @@ back at it on another machine.
   names, chart titles and the like) is asked for in the interface language.
 - Dates, counts and file sizes in settings and the Work Director now follow the active language's
   formatting rules instead of keeping Chinese date and counter styles.
+
+### 2026-11-25
+
+- You now choose what closing the window does: **Settings → System** has a "When closing
+  the window" option with minimize to tray, quit, or ask every time. The first ✕ asks once —
+  minimize to tray is the default — and the answer is remembered. Dismissing the prompt
+  (✕ or Esc) is not a decision: nothing happens and the window stays open. While minimized to tray
+  the app keeps running in the background and tasks in progress are not interrupted;
+  double-click the tray icon to come back, or right-click it to quit. The prompt and the
+  tray menu follow the interface language (Chinese / English).
 
 ### 2026-11-24
 

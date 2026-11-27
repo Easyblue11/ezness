@@ -65,8 +65,13 @@ const CHANGELOG = [
   'about.changelog.line4',
   'about.changelog.line5',
   'about.changelog.line6',
+  'about.changelog.taskDrafts',
+  'about.changelog.employees',
+  'about.changelog.directorConfirm',
+  'about.changelog.scratch',
 ] as const;
-const CHANGELOG_DATE = '2026-11-26';
+/** 最新一条改动的日期；版本号是活的，不写在这里。 */
+const CHANGELOG_DATE = '2026-11-27';
 
 const PLATFORM_LABEL: Record<string, string> = {
   win32: 'Windows',

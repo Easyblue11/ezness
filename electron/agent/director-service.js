@@ -1217,6 +1217,7 @@ class DirectorService {
    * @param {() => object} options.getState  current director state
    * @param {() => Promise<object|null>} options.getProvider
    * @param {(taskId, callId, decision) => boolean} options.resolveRun
+   * @param {(taskId, callId) => boolean} [options.isPending] still waiting on a call
    * @param {(channel: string, payload: unknown) => void} options.broadcast
    * @param {(report: object) => void} [options.onUsage]
    * @param {(taskId: string, since: number) => object|null} [options.usageFor]
@@ -1227,6 +1228,9 @@ class DirectorService {
     this.getState = options.getState;
     this.getProvider = options.getProvider;
     this.resolveRun = options.resolveRun;
+    // 没有探测函数时一律当作还在等：宁可多问一次，也不要漏掉一个确认。
+    this.isPending =
+      typeof options.isPending === 'function' ? options.isPending : () => true;
     this.broadcast = options.broadcast ?? (() => {});
     this.onUsage = options.onUsage ?? (() => {});
     this.usageFor =
@@ -3600,6 +3604,8 @@ class DirectorService {
     const access = this.spaceAccess(taskId);
     if (!state.enabled || access === 'off') return;
     if (director.ownerOf(state, taskId) === 'human') return;
+    // 用户可能已经在任务自己的对话里点过：同一个请求不能再问第二遍。
+    if (!this.isPending(taskId, payload?.call?.id)) return;
     const task = this.taskOf(taskId);
     const summary = oneLine(payload?.summary || payload?.call?.name, 200);
     const danger = Boolean(
@@ -3698,6 +3704,8 @@ class DirectorService {
     const access = this.spaceAccess(taskId);
     if (!state.enabled || access === 'off') return;
     if (director.ownerOf(state, taskId) === 'human') return;
+    // 用户可能已经在任务自己的对话里答过这一问。
+    if (!this.isPending(taskId, payload?.call?.id)) return;
     const task = this.taskOf(taskId);
     const question = oneLine(payload?.question, 400);
     const options = Array.isArray(payload?.options) ? payload.options.map((item) => oneLine(item, 80)) : [];
@@ -3811,6 +3819,63 @@ class DirectorService {
       },
       urgent: true,
     });
+  }
+
+  /**
+   * 用户在任务自己的对话里处理了这条权限/提问。总监手上同一张确认卡必须跟着
+   * 收起——同一个请求只问一次，否则第二张卡点了只会得到“已失效”。
+   * 返回是否真的收掉了一张卡。
+   */
+  noteHumanResolved(taskId, callId, decision) {
+    if (!taskId || !callId) return false;
+    let changed = false;
+    for (const item of this.inbox) {
+      if (item.status !== 'open') continue;
+      if (item.kind !== 'confirm' || !Array.isArray(item.actions)) continue;
+      if (item.taskId !== taskId) continue;
+      if (item.payload?.callId !== callId) continue;
+      if (item.payload?.kind !== 'permission' && item.payload?.kind !== 'question') continue;
+      this.closeInTask(item);
+      this.ledgerPush({
+        kind: decision?.allow === false ? 'confirm:deny' : 'confirm:allow',
+        taskId,
+        title: item.taskTitle,
+        text: uiText.t('main.director.permission.handledInTask', {
+          summary: oneLine(item.body, 160),
+        }),
+      });
+      changed = true;
+    }
+    if (changed) {
+      this.scheduleSave('inbox');
+      this.broadcastSummary();
+    }
+    return changed;
+  }
+
+  /** 这张卡的事已经在任务里解决了：收掉按钮，写明是谁处理的。 */
+  closeInTask(item) {
+    item.status = 'resolved';
+    item.resolution = 'external';
+    item.read = true;
+    item.mustRead = false;
+    item.needsRead = false;
+  }
+
+  /** 点按钮时才发现请求已经没了：照样收卡，返回成功让界面直接刷新。 */
+  settleInTask(item, taskId) {
+    this.closeInTask(item);
+    this.ledgerPush({
+      kind: 'confirm:resolved',
+      taskId,
+      title: item.taskTitle,
+      text: uiText.t('main.director.permission.handledInTask', {
+        summary: oneLine(item.body, 160),
+      }),
+    });
+    this.scheduleSave('inbox');
+    this.broadcastSummary();
+    return { ok: true, already: true };
   }
 
   mayAutoApprove(taskId) {
@@ -4065,7 +4130,9 @@ class DirectorService {
     if (action === 'allow' || action === 'deny') {
       if (!callId) return { ok: false, error: uiText.t('main.director.error.confirmExpired') };
       const allowed = this.resolveRun(taskId, callId, { allow: action === 'allow' });
-      if (!allowed) return { ok: false, error: uiText.t('main.director.error.confirmGone') };
+      // 请求已经不在了：多半是用户在任务自己的对话里处理过。卡片按“已处理”
+      // 收掉，不要留一个永远点不动的按钮。
+      if (!allowed) return this.settleInTask(item, taskId);
       item.status = 'resolved';
       item.resolution = action;
       item.read = true;
@@ -4085,7 +4152,7 @@ class DirectorService {
       if (!answer) return { ok: false, error: uiText.t('main.director.error.answerEmpty') };
       if (!callId) return { ok: false, error: uiText.t('main.director.error.questionExpired') };
       const allowed = this.resolveRun(taskId, callId, { allow: true, answer });
-      if (!allowed) return { ok: false, error: uiText.t('main.director.error.questionGone') };
+      if (!allowed) return this.settleInTask(item, taskId);
       item.status = 'resolved';
       item.resolution = 'answer';
       item.read = true;

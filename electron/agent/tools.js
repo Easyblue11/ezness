@@ -459,13 +459,27 @@ function killsAllNamedProcesses(command) {
   return false;
 }
 
+/**
+ * Windows: `Start-Process` opens a console window unless told otherwise. The
+ * agent uses it to restart a dev server; with stdout redirected the window
+ * shows nothing and just sits on the user's desktop. Hide it by default — the
+ * flag changes nothing for processes that never create a window.
+ */
+function hideStartProcessWindows(command) {
+  const text = String(command ?? '');
+  if (!/\bStart-Process\b/i.test(text)) return text;
+  if (/-WindowStyle\b/i.test(text) || /-NoNewWindow\b/i.test(text)) return text;
+  return text.replace(/\bStart-Process\b/gi, 'Start-Process -WindowStyle Hidden');
+}
+
 async function runCommand(ctx, args = {}) {
-  const command = String(args.command ?? '').trim();
-  if (!command) throw new Error(uiText.t('main.tool.errCommandRequired'));
-  if (killsAllNamedProcesses(command)) {
+  const requested = String(args.command ?? '').trim();
+  if (!requested) throw new Error(uiText.t('main.tool.errCommandRequired'));
+  if (killsAllNamedProcesses(requested)) {
     throw new Error(uiText.t('main.tool.errKillsAllProcesses'));
   }
   const ws = workspaceFsOf(ctx);
+  const command = ws.remote ? requested : hideStartProcessWindows(requested);
   const cwd = args.cwd ? await ws.resolve(args.cwd) : ws.root;
   const timeout = Math.min(Math.max(Number(args.timeout_ms ?? 120000), 1000), 300000);
   return ws.exec(command, { cwd, timeoutMs: timeout, signal: ctx.signal });
@@ -3135,6 +3149,7 @@ module.exports = {
   smokeCheck,
   normalizeSmokeSteps,
   killsAllNamedProcesses,
+  hideStartProcessWindows,
   setCustomTools,
   allTools,
   builtinNames,

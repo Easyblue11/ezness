@@ -573,6 +573,7 @@
   "main.director.permission.autoBody": "\"{title}\": {summary}",
   "main.director.permission.autoTitle": "I approved a step for you",
   "main.director.permission.body": "\"{title}\" needs confirmation: {summary}{opinion}",
+  "main.director.permission.handledInTask": "Handled in the task: {summary}",
   "main.director.permission.opinionSuffix": "\n\nMy recommendation: {opinion}",
   "main.director.permission.pendingBody": "\"{title}\" needs confirmation: {summary}\nReason: {reason}",
   "main.director.permission.pendingTitle": "Task is waiting for your approval",

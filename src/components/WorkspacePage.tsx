@@ -68,6 +68,7 @@ import { WorkspaceVisualize } from './WorkspaceVisualize';
 import {
   AlertIcon,
   CheckIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
   DirectorIcon,
   FolderIcon,
@@ -499,6 +500,17 @@ export function WorkspacePage({
    * 只记在内存里；用户主动停止的任务不算。
    */
   const [unreadChats, setUnreadChats] = useState<Set<string>>(() => new Set());
+  /**
+   * 总监派工建出来的员工任务收成一个折叠组：一次派工就有好几个，留展开状态
+   * 会把用户自己建的任务挤出屏幕。折叠状态记在 localStorage，重启保持。
+   */
+  const [employeesOpen, setEmployeesOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem('ezness.employeesOpen') === '1';
+    } catch {
+      return false;
+    }
+  });
   const activeChatIdRef = useRef<string | null>(activeChatId);
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -584,6 +596,17 @@ export function WorkspacePage({
       return a.order === undefined ? -1 : 1;
     });
   }, [workspaceChats, chatKeyword, chatSnippets]);
+  // 总监派出的员工单独成组。置顶的员工留在普通列表里——用户主动置顶的东西
+  // 不该再被藏起来。
+  const isEmployeeChat = (chat: WorkspaceChat) => Boolean(chat.employee) && !chat.pinned;
+  const ownChats = useMemo(
+    () => visibleChats.filter((chat) => !isEmployeeChat(chat)),
+    [visibleChats],
+  );
+  const employeeChats = useMemo(
+    () => visibleChats.filter((chat) => isEmployeeChat(chat)),
+    [visibleChats],
+  );
   const menuPinned = menu
     ? Boolean(
         menu.kind === 'space'
@@ -2890,6 +2913,8 @@ export function WorkspacePage({
     if (chatKeyword) return false;
     const dragged = chats.find((chat) => chat.id === dragChatId);
     if (!dragged || dragged.workspaceId !== target.workspaceId) return false;
+    // 员工的顺序由总监的派工节奏决定，不参与手动排序。
+    if (dragged.employee || target.employee) return false;
     return Boolean(dragged.pinned) === Boolean(target.pinned);
   }
 
@@ -3855,6 +3880,139 @@ export function WorkspacePage({
   const selectedSpaceIds = selectingSpaces ? selection.ids : null;
   const selectedChatIds = selectingChats ? selection.ids : null;
 
+  /**
+   * 搜索时平铺（组里也要能搜到）；批量选择和当前打开的员工任务自动展开，
+   * 免得选中的东西被折叠藏起来。
+   */
+  const groupingEmployees = !chatKeyword;
+  const showEmployees =
+    !groupingEmployees ||
+    employeesOpen ||
+    selectingChats ||
+    Boolean(activeChat?.employee && activeChat.workspaceId === activeWorkspaceId);
+  const employeesWaiting = employeeChats.filter(
+    (chat) => chatActivity.get(chat.id) === 'attention',
+  ).length;
+  const employeesRunning = employeeChats.filter(
+    (chat) => chatActivity.get(chat.id) === 'running',
+  ).length;
+  function toggleEmployees() {
+    setEmployeesOpen((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('ezness.employeesOpen', next ? '1' : '0');
+      } catch {
+        /* storage unavailable: keep it in memory for this session */
+      }
+      return next;
+    });
+  }
+
+  /** One task row: the normal list and the employee group render the same thing. */
+  const renderChatRow = (chat: WorkspaceChat) => {
+    const renamingThis = renaming?.kind === 'chat' && renaming.id === chat.id;
+    return (
+      <div
+        key={chat.id}
+        className={[
+          'ws-chat',
+          chat.id === activeChatId ? 'is-active' : '',
+          selectedChatIds?.has(chat.id) ? 'is-selected' : '',
+          dragChatId === chat.id ? 'is-dragging' : '',
+          dropChatAt?.id === chat.id
+            ? dropChatAt.before
+              ? 'is-drop-before'
+              : 'is-drop-after'
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        title={chat.title}
+        role={selectingChats ? 'checkbox' : 'button'}
+        aria-checked={selectingChats ? selectedChatIds?.has(chat.id) : undefined}
+        tabIndex={0}
+        draggable={!renamingThis && !chatKeyword && !selectingChats && !chat.employee}
+        onClick={() =>
+          selectingChats ? toggleSelect('chat', chat.id) : setActiveChatId(chat.id)
+        }
+        onDragStart={(event) => {
+          setDragChatId(chat.id);
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', chat.id);
+        }}
+        onDragOver={(event) => {
+          if (!canDropChat(chat)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+          const rect = event.currentTarget.getBoundingClientRect();
+          setDropChatAt({
+            id: chat.id,
+            before: event.clientY < rect.top + rect.height / 2,
+          });
+        }}
+        onDrop={(event) => {
+          if (!canDropChat(chat)) return;
+          event.preventDefault();
+          const rect = event.currentTarget.getBoundingClientRect();
+          if (dragChatId) {
+            reorderChat(
+              dragChatId,
+              chat.id,
+              event.clientY < rect.top + rect.height / 2,
+            );
+          }
+          clearChatDrag();
+        }}
+        onDragEnd={clearChatDrag}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            if (selectingChats) toggleSelect('chat', chat.id);
+            else setActiveChatId(chat.id);
+          }
+        }}
+      >
+        <ActivityDot status={chatActivity.get(chat.id) ?? null} />
+        {renamingThis ? (
+          renameInput('chat')
+        ) : (
+          <span className="ws-chat__text">
+            <span className="ws-chat__title">{chat.title}</span>
+            {chatSnippets.has(chat.id) && (
+              <span className="ws-chat__snippet">{chatSnippets.get(chat.id)}</span>
+            )}
+          </span>
+        )}
+        {selectingChats ? (
+          <span
+            className={`select-box ${selectedChatIds?.has(chat.id) ? 'is-checked' : ''}`}
+            aria-hidden="true"
+          >
+            {selectedChatIds?.has(chat.id) && <CheckIcon size={12} />}
+          </span>
+        ) : (
+          <>
+            {chat.pinned && !renamingThis && (
+              <span className="ws-item__pin" title={t('workspace.item.pinned')}>
+                <PinIcon size={11} />
+              </span>
+            )}
+            <span className="ws-chat__meta">{shortStamp(chat.updatedAt)}</span>
+            {!renamingThis && (
+              <button
+                className="ws-item__more"
+                title={t('workspace.item.more')}
+                onClick={(event) => openMenu(event, 'chat', chat.id)}
+              >
+                <MoreIcon size={15} />
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className={`ws ${panel ? `ws--${panel}` : ''}`}>
       <nav className="ws__rail" aria-label={t('workspace.rail.aria')}>
@@ -4242,111 +4400,36 @@ export function WorkspacePage({
                 : t('workspace.empty.spaceNoChats')}
             </div>
           )}
-          {visibleChats.map((chat) => {
-            const renamingThis = renaming?.kind === 'chat' && renaming.id === chat.id;
-            return (
-              <div
-                key={chat.id}
-                className={[
-                  'ws-chat',
-                  chat.id === activeChatId ? 'is-active' : '',
-                  selectedChatIds?.has(chat.id) ? 'is-selected' : '',
-                  dragChatId === chat.id ? 'is-dragging' : '',
-                  dropChatAt?.id === chat.id
-                    ? dropChatAt.before
-                      ? 'is-drop-before'
-                      : 'is-drop-after'
-                    : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                title={chat.title}
-                role={selectingChats ? 'checkbox' : 'button'}
-                aria-checked={selectingChats ? selectedChatIds?.has(chat.id) : undefined}
-                tabIndex={0}
-                draggable={!renamingThis && !chatKeyword && !selectingChats}
-                onClick={() =>
-                  selectingChats
-                    ? toggleSelect('chat', chat.id)
-                    : setActiveChatId(chat.id)
-                }
-                onDragStart={(event) => {
-                  setDragChatId(chat.id);
-                  event.dataTransfer.effectAllowed = 'move';
-                  event.dataTransfer.setData('text/plain', chat.id);
-                }}
-                onDragOver={(event) => {
-                  if (!canDropChat(chat)) return;
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = 'move';
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setDropChatAt({
-                    id: chat.id,
-                    before: event.clientY < rect.top + rect.height / 2,
-                  });
-                }}
-                onDrop={(event) => {
-                  if (!canDropChat(chat)) return;
-                  event.preventDefault();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  if (dragChatId) {
-                    reorderChat(
-                      dragChatId,
-                      chat.id,
-                      event.clientY < rect.top + rect.height / 2,
-                    );
-                  }
-                  clearChatDrag();
-                }}
-                onDragEnd={clearChatDrag}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    if (selectingChats) toggleSelect('chat', chat.id);
-                    else setActiveChatId(chat.id);
-                  }
-                }}
-              >
-                <ActivityDot status={chatActivity.get(chat.id) ?? null} />
-                {renamingThis ? (
-                  renameInput('chat')
-                ) : (
-                  <span className="ws-chat__text">
-                    <span className="ws-chat__title">{chat.title}</span>
-                    {chatSnippets.has(chat.id) && (
-                      <span className="ws-chat__snippet">{chatSnippets.get(chat.id)}</span>
-                    )}
-                  </span>
-                )}
-                {selectingChats ? (
-                  <span
-                    className={`select-box ${selectedChatIds?.has(chat.id) ? 'is-checked' : ''}`}
-                    aria-hidden="true"
-                  >
-                    {selectedChatIds?.has(chat.id) && <CheckIcon size={12} />}
-                  </span>
-                ) : (
-                  <>
-                    {chat.pinned && !renamingThis && (
-                      <span className="ws-item__pin" title={t('workspace.item.pinned')}>
-                        <PinIcon size={11} />
-                      </span>
-                    )}
-                    <span className="ws-chat__meta">{shortStamp(chat.updatedAt)}</span>
-                    {!renamingThis && (
-                      <button
-                        className="ws-item__more"
-                        title={t('workspace.item.more')}
-                        onClick={(event) => openMenu(event, 'chat', chat.id)}
-                      >
-                        <MoreIcon size={15} />
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-          })}
+          {(groupingEmployees ? ownChats : visibleChats).map(renderChatRow)}
+          {groupingEmployees && employeeChats.length > 0 && (
+            <button
+              type="button"
+              className="ws-group"
+              aria-expanded={showEmployees}
+              onClick={toggleEmployees}
+            >
+              {showEmployees ? (
+                <ChevronDownIcon size={12} />
+              ) : (
+                <ChevronRightIcon size={12} />
+              )}
+              <span className="ws-group__title">{t('workspace.group.employees')}</span>
+              <span className="ws-group__count">{employeeChats.length}</span>
+              {/* 折叠着也要知道里面有东西在动；等确认比在跑更要紧，只显示一个。 */}
+              {employeesWaiting > 0 ? (
+                <span className="ws-group__running is-attention">
+                  {t('workspace.group.waiting', { count: employeesWaiting })}
+                </span>
+              ) : employeesRunning > 0 ? (
+                <span className="ws-group__running">
+                  {t('workspace.group.running', { count: employeesRunning })}
+                </span>
+              ) : null}
+            </button>
+          )}
+          {groupingEmployees && showEmployees && (
+            <div className="ws-group__items">{employeeChats.map(renderChatRow)}</div>
+          )}
         </div>
       </aside>
 

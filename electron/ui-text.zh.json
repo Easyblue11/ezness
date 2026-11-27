@@ -573,6 +573,7 @@
   "main.director.permission.autoBody": "「{title}」：{summary}",
   "main.director.permission.autoTitle": "我替你批准了一步",
   "main.director.permission.body": "「{title}」需要确认：{summary}{opinion}",
+  "main.director.permission.handledInTask": "已在任务里处理：{summary}",
   "main.director.permission.opinionSuffix": "\n\n我的意见：{opinion}",
   "main.director.permission.pendingBody": "「{title}」需要确认：{summary}\n原因：{reason}",
   "main.director.permission.pendingTitle": "任务在等你批准",

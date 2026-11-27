@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   AgentDefinition,
   KbCategory,
@@ -35,6 +35,8 @@ import { WebModeSlider } from './WebModeSlider';
 type VoiceState = 'idle' | 'starting' | 'listening' | 'stopping';
 
 interface Props {
+  /** 草稿归属：对话 / 任务的 id。切换时各自带上自己的草稿。 */
+  draftKey: string;
   models: ModelOption[];
   model: string;
   kb: KbChatSettings;
@@ -133,6 +135,7 @@ function extLabel(ext: string): string {
 }
 
 export function Composer({
+  draftKey,
   models,
   model,
   kb,
@@ -194,6 +197,31 @@ export function Composer({
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const dragDepth = useRef(0);
+
+  /**
+   * 每个对话 / 任务各留各的草稿。原来只有一个输入框状态，切走再切回来字还在，
+   * 换到另一个任务时那段没发出去的话（和挑好的文件）会跟着跑过去。
+   * 草稿只放在内存里：草稿不是资料，关掉程序就没了。
+   */
+  const draftsRef = useRef(new Map<string, { text: string; attachments: WarehouseItem[] }>());
+  const draftKeyRef = useRef(draftKey);
+  useLayoutEffect(() => {
+    const previous = draftKeyRef.current;
+    if (previous === draftKey) return;
+    if (value || attachments.length > 0) {
+      draftsRef.current.set(previous, { text: value, attachments });
+    } else {
+      draftsRef.current.delete(previous);
+    }
+    draftKeyRef.current = draftKey;
+    const next = draftsRef.current.get(draftKey);
+    setValue(next?.text ?? '');
+    setAttachments(next?.attachments ?? []);
+    // 换走了就不再算“正在输入”，否则总监会以为你还在原来的对话里打字。
+    onTyping?.(false);
+    // 只在对话/任务变化时切换：value / attachments 用切换那一刻还没被换掉的
+    // 旧值，所以故意不放进依赖里。
+  }, [draftKey]);
 
   // Warehouse picker: selections are kept by id, so changing the search filter
   // never clears what the user ticked; they only leave via「取消」or confirm.
@@ -365,18 +393,20 @@ export function Composer({
     publishComposerHeight.current();
   }, [value]);
 
-  // The composer floats over the transcript, so its height is published as a
-  // CSS variable that the scroll box reserves as bottom padding. Only real size
-  // changes (a new line, an attachment strip) reach it — typing inside one line
+  // The input dock (composer plus the confirmation cards above it) floats over
+  // the transcript, so its height is published as a CSS variable that the
+  // scroll box reserves as bottom padding. Only real size changes (a new line,
+  // an attachment strip, a card appearing) reach it — typing inside one line
   // does not — so the conversation is never re-laid-out on a keystroke.
   useEffect(() => {
     const el = rootRef.current;
+    const dock = (el?.closest('.chat__foot') as HTMLElement | null) ?? el;
     const host = el?.closest('.chat') as HTMLElement | null;
     const slot = el?.closest('.view-slot') as HTMLElement | null;
-    if (!el || !host) return;
+    if (!el || !dock || !host) return;
     let last = -1;
     const publish = () => {
-      const height = el.getBoundingClientRect().height;
+      const height = dock.getBoundingClientRect().height;
       // A view that is not on screen has no box; keep the last real value.
       if (height <= 0) return;
       const next = Math.round(height);
@@ -388,7 +418,7 @@ export function Composer({
         ? scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= 48
         : false;
       last = next;
-      host.style.setProperty('--composer-h', `${next}px`);
+      host.style.setProperty('--chat-foot-h', `${next}px`);
       if (pinned && scroll) scroll.scrollTop = scroll.scrollHeight;
     };
     publishComposerHeight.current = publish;
@@ -397,14 +427,14 @@ export function Composer({
     // its slot is still hidden, and a hidden window does not deliver resize
     // notifications at all. The slot's class change is what makes it visible.
     const observer = new ResizeObserver(publish);
-    observer.observe(el);
+    observer.observe(dock);
     const reveal = new MutationObserver(publish);
     if (slot) reveal.observe(slot, { attributes: true, attributeFilter: ['class'] });
     return () => {
       observer.disconnect();
       reveal.disconnect();
       publishComposerHeight.current = () => undefined;
-      host.style.removeProperty('--composer-h');
+      host.style.removeProperty('--chat-foot-h');
     };
   }, []);
 

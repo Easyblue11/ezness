@@ -86,6 +86,9 @@ const SAFE_HEADS = new Set([
   'ls', 'dir', 'cat', 'type', 'head', 'tail', 'more', 'find', 'findstr',
   'grep', 'rg', 'wc', 'echo', 'pwd', 'mkdir', 'copy', 'cp', 'where',
   'which', 'sort', 'tree',
+  // Session setup with no lasting effect of its own: the commands after them
+  // are judged separately. `cd D:\outside` is still caught as escaping.
+  'cd', 'pushd', 'popd', 'set', 'chcp', 'cls', 'title',
 ]);
 
 /**
@@ -159,9 +162,36 @@ function isSafeSegment(segment) {
   return allowed ? allowed.has(sub) : true;
 }
 
+/**
+ * The agent's own scratch folder. It is told to put throwaway scripts, logs and
+ * intermediate data in `<workspace>/.ezness`, and the folder is deleted after
+ * the task, so writing there does not need a confirmation card.
+ */
+function isScratchPath(value, root = '') {
+  const raw = String(value ?? '').trim().replace(/^["']|["']$/g, '');
+  if (!raw) return false;
+  const slashed = raw.replace(/\\/g, '/');
+  if (/^\.ezness(\/|$)/i.test(slashed)) return true;
+  if (!root) return false;
+  const base = path.resolve(root).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const resolved = path.resolve(root, raw).replace(/\\/g, '/').toLowerCase();
+  return resolved === `${base}/.ezness` || resolved.startsWith(`${base}/.ezness/`);
+}
+
+/**
+ * `2>&1` merges streams and contains `&` and `>`; left in place it splits into
+ * a bogus command segment and turns an ordinary `python probe.py 2>&1` into an
+ * "unknown command" card.
+ */
+function stripStreamMerges(command) {
+  return String(command)
+    .replace(/\d?>&\d/g, ' ')
+    .replace(/[12]?\s*>\s*(?:nul|\/dev\/null)\b/gi, ' ');
+}
+
 /** Every segment must be a recognised, non-destructive development command. */
 function isSafeCommand(command) {
-  const segments = commandSegments(command);
+  const segments = commandSegments(stripStreamMerges(command));
   return segments.length > 0 && segments.every(isSafeSegment);
 }
 
@@ -375,6 +405,11 @@ function decide({
   // unknown commands ask at levels 2-3 (once, and can be remembered). A plain
   // read outside the workspace runs at levels 0-1 and asks at 2-3.
   if (tool.name === 'write_file' || tool.name === 'edit_file') {
+    // `.ezness` holds the agent's throwaway scripts and logs, and is deleted at
+    // the end of the task. Confirming every scratch write means a dozen clicks
+    // before the first probe runs; the folder is the one place that is by
+    // definition disposable.
+    if (isScratchPath(args.path ?? args.file ?? args.target, root)) return { action: 'allow' };
     if (level >= 3) {
       return {
         action: 'ask',
@@ -444,6 +479,7 @@ module.exports = {
   commandKey,
   isDestructive,
   isSafeCommand,
+  isScratchPath,
   normalizeAskLevel,
   MODES,
   DEFAULT_ASK_LEVEL,

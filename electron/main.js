@@ -408,6 +408,7 @@ app.whenReady().then(async () => {
     // 总监可以单独选模型；空字符串 = 跟随设置里的默认对话模型。
     getProvider: (pick = '') => memoryProvider(pick),
     resolveRun: (taskId, callId, decision) => resolveRunBySession(taskId, callId, decision),
+    isPending: (taskId, callId) => isPendingBySession(taskId, callId),
     broadcast,
     // 总监判断派工是否合理要看真实消耗：按会话汇总用量账本。
     usageFor: (taskId, since) => {
@@ -1085,6 +1086,19 @@ function resolveRunBySession(sessionId, callId, decision) {
     // The renderer keeps its own card list; tell it to drop this one.
     broadcast('agent:event', { requestId, type: 'permission-resolved', callId });
     return run.resolve(callId, decision);
+  }
+  return false;
+}
+
+/** Is this task still waiting on the given permission/question call? */
+function isPendingBySession(sessionId, callId) {
+  if (!sessionId || !callId) return false;
+  for (const snapshot of agentSnapshots.values()) {
+    if (snapshot.sessionId !== sessionId) continue;
+    return (
+      snapshot.permissions.some((item) => item.callId === callId) ||
+      snapshot.questions.some((item) => item.callId === callId)
+    );
   }
   return false;
 }
@@ -2116,7 +2130,13 @@ ipcMain.handle('agent:resolve', (_event, request) => {
     snapshot.permissions = snapshot.permissions.filter((item) => item.callId !== request.callId);
     snapshot.questions = snapshot.questions.filter((item) => item.callId !== request.callId);
   }
-  return run ? run.resolve(request.callId, request.decision) : false;
+  const resolved = run ? run.resolve(request.callId, request.decision) : false;
+  // 用户在任务自己的对话里答过了：总监手上同一张确认卡要跟着收起，否则用户
+  // 会在总监对话里被再问一遍，而那一张点了只会得到“已失效”。
+  if (resolved && snapshot?.sessionId && request?.callId) {
+    directorService?.noteHumanResolved?.(snapshot.sessionId, request.callId, request.decision);
+  }
+  return resolved;
 });
 
 ipcMain.handle('agent:abort', (_event, requestId) => {

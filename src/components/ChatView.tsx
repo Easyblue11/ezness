@@ -247,6 +247,7 @@ const DIRECTOR_DONE_KEYS: Record<string, string> = {
   'choose-model': 'chat.director.done.model',
   ack: 'chat.director.done.ack',
   ignore: 'chat.director.done.ignore',
+  external: 'chat.director.done.external',
 };
 
 /**
@@ -1945,6 +1946,11 @@ export function ChatView({
         </button>
       )}
 
+      {/* Everything from the confirmation cards down floats over the transcript
+          as one dock, so a keystroke only lays out this block, never the
+          conversation. Its height is reserved as bottom padding on the
+          transcript (see `--chat-foot-h`). */}
+      <div className="chat__foot">
       {batchPermission ? (
         <div className="perm perm--batch">
           <div className="perm__title">
@@ -2214,6 +2220,7 @@ export function ChatView({
       )}
 
       <Composer
+        draftKey={session?.id ?? 'none'}
         models={models}
         model={model}
         kb={kb}
@@ -2256,6 +2263,7 @@ export function ChatView({
         onConfigure={onConfigure}
         onTyping={onTyping}
       />
+      </div>
 
       {toast && <div className="chat__toast">{toast}</div>}
     </main>
